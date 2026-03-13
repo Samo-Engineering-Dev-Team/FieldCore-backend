@@ -26,7 +26,13 @@
       "Bash(pip install python-dotenv)",
       "Bash(python seed_admin.py)",
       "Bash(docker ps --format \"table {{.Names}}\\\\t{{.Status}}\")",
-      "Bash(docker exec samodevprojects-db-1 psql -U postgres -l)"
+      "Bash(docker exec samodevprojects-db-1 psql -U postgres -l)",
+      "Read(//c/Users/BonganiNkomo/OneDrive - Samo Engineering/Desktop/Coding/Samo Dev Projects/seacom-app-backend/**)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_task_report_resolution.py -v)",
+      "Bash(.venv/Scripts/python -m pytest tests/ -v)",
+      "Bash(.venv/Scripts/python -c \":*)",
+      "Bash(npx eslint src/ --ext .ts,.tsx --max-warnings 0)",
+      "Bash(npx eslint src/ --ext .ts,.tsx)"
     ]
   }
 }

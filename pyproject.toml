@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "seacom-app-backend"
 version = "0.1.0"
@@ -21,6 +25,7 @@ dependencies = [
     "redis>=4.5.0",
     "tzdata>=2024.1",
     "aiosmtplib>=3.0.0",
+    "gunicorn>=22.0.0",
 ]
 
 [dependency-groups]
