@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import Depends
 from loguru import logger as LOG
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.exceptions.http import (
@@ -43,6 +44,15 @@ class NotificationTemplates:
     def _label(value: str | object) -> str:
         text = str(value).replace("-", " ").replace("_", " ").strip()
         return text.title()
+
+    @staticmethod
+    def _priority_from_text(priority: str | None) -> NotificationPriority:
+        normalized = (priority or "").strip().lower()
+        if normalized == "critical":
+            return NotificationPriority.CRITICAL
+        if normalized == "high":
+            return NotificationPriority.HIGH
+        return NotificationPriority.NORMAL
 
     @staticmethod
     def task_assigned(site_name: str, description: str | None, ref_no: str | None = None) -> NotificationTemplate:
@@ -291,6 +301,18 @@ class NotificationTemplates:
         )
 
     @staticmethod
+    def task_cancelled(site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+        ref = f" [{ref_no}]" if ref_no else ""
+        return NotificationTemplate(
+            title=f"RHS task cancelled{ref}",
+            message=(
+                f"The RHS task{ref} at {site_name} has been cancelled by NOC. "
+                "Do not travel to the site — contact NOC if you have any questions."
+            ),
+            priority=NotificationPriority.HIGH,
+        )
+
+    @staticmethod
     def technician_escalation(technician_name: str, priority: str, reason: str) -> NotificationTemplate:
         return NotificationTemplate(
             title="Technician escalation",
@@ -298,11 +320,18 @@ class NotificationTemplates:
                 f"{technician_name} escalation ({priority.upper()}): "
                 f"{NotificationTemplates._preview(reason, 180)}"
             ),
-            priority=(
-                NotificationPriority.HIGH
-                if priority.upper() == "HIGH"
-                else NotificationPriority.NORMAL
+            priority=NotificationTemplates._priority_from_text(priority),
+        )
+
+    @staticmethod
+    def technician_help_alert(technician_name: str, priority: str, reason: str) -> NotificationTemplate:
+        return NotificationTemplate(
+            title="Technician help alert",
+            message=(
+                f"{technician_name} needs help ({priority.upper()}): "
+                f"{NotificationTemplates._preview(reason, 180)}"
             ),
+            priority=NotificationTemplates._priority_from_text(priority),
         )
 
 
@@ -311,14 +340,14 @@ class _NotificationService:
         return NotificationResponse(**notification.model_dump())
 
     def create_notification(self, data: NotificationCreate, session: Session) -> NotificationResponse:
-        statement = select(User).where(User.id == data.user_id, User.deleted_at.is_(None))  # type: ignore
-        user: User | None = session.exec(statement).first()
-
-        if not user:
-            raise NotFoundException("user not found")
-
-        notification = Notification(**data.model_dump(), user=user)
         try:
+            statement = select(User).where(User.id == data.user_id, User.deleted_at.is_(None))  # type: ignore
+            user: User | None = session.exec(statement).first()
+
+            if not user:
+                raise NotFoundException("user not found")
+
+            notification = Notification(**data.model_dump(), user=user)
             session.add(notification)
             session.commit()
             session.refresh(notification)
@@ -407,12 +436,12 @@ class _NotificationService:
         return [self.notification_to_response(notification) for notification in notifications]
 
     def get_unread_count(self, user_id: UUID, session: Session) -> int:
-        statement = select(Notification).where(
+        statement = select(func.count(Notification.id)).where(
             Notification.deleted_at.is_(None),  # type: ignore
             Notification.user_id == user_id,
             Notification.read.is_(False),
         )
-        return len(session.exec(statement).all())
+        return int(session.exec(statement).one())
 
     def delete_notification(self, notification_id: UUID, session: Session) -> None:
         notification = self._get_notification(notification_id, session)

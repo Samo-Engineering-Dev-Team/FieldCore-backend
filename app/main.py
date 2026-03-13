@@ -54,8 +54,8 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         LOG.exception(f"Database connection failed: {e}")
         raise
-    # Database.init()
-    LOG.debug("Database init skipped")
+    Database.init()
+    LOG.debug("Database init complete")
     
     # Start SLA check background task
     # sla_task = asyncio.create_task(sla_check_background_task())
@@ -98,7 +98,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

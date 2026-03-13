@@ -5,7 +5,28 @@
       "Bash(C:/Python314/python.exe:*)",
       "Bash(py:*)",
       "Bash(py -c \"import pdfplumber; print\\(''pdfplumber ok''\\)\")",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(PYTHONPATH=. \".venv/Scripts/python.exe\" scripts/test_new_endpoints.py)",
+      "Bash(PYTHONPATH=. \".venv/Scripts/python.exe\" -c \":*)",
+      "Bash(curl -s http://127.0.0.1:8000/)",
+      "Bash(PYTHONPATH=. \".venv/Scripts/python.exe\" -c \"import requests; r = requests.get\\(''http://127.0.0.1:8000/'', timeout=3\\); print\\(''running, status:'', r.status_code\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''app/services/pdf.py''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''app/services/pdf.py'', encoding=''utf-8''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(echo \"Exit: $?\")",
+      "Read(//c/Users/BonganiNkomo/OneDrive - Samo Engineering/Desktop/Coding/Samo Dev Projects/**)",
+      "Bash(.venv/Scripts/python.exe -c \"from app.services.pdf import PDFService; p = PDFService\\(\\); print\\(''Import OK''\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \":*)",
+      "Bash(start \"\" \"C:\\\\Users\\\\BONGAN~1\\\\AppData\\\\Local\\\\Temp\\\\test_incident_redesign.pdf\")",
+      "Bash(python -c \"from app.services.pdf import PDFService; PDFService\\(\\); print\\(''OK''\\)\")",
+      "Bash(python -:*)",
+      "Bash(del \"c:\\\\Users\\\\BonganiNkomo\\\\OneDrive - Samo Engineering\\\\Desktop\\\\Coding\\\\Samo Dev Projects\\\\seacom-app-backend\\\\test_incident_ops_style.pdf\")",
+      "Bash(npx tsc -b)",
+      "Bash(pip install python-dotenv)",
+      "Bash(python seed_admin.py)",
+      "Bash(docker ps --format \"table {{.Names}}\\\\t{{.Status}}\")",
+      "Bash(docker exec samodevprojects-db-1 psql -U postgres -l)"
     ]
   }
 }

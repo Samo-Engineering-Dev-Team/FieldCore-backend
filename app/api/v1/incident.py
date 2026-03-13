@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, Query
 from typing import List
 from uuid import UUID
 
@@ -6,6 +6,7 @@ from app.models import IncidentCreate, IncidentUpdate, IncidentResponse
 from app.models.fault_update import FaultUpdateCreate, FaultUpdateResponse
 from app.services import IncidentService, CurrentUser
 from app.services.fault_update import _FaultUpdateService, get_fault_update_service
+from app.services.incident import _bg_notify_incident_created, _bg_notify_incident_started, _bg_notify_incident_resolved
 from app.database import Session
 from app.utils.enums import IncidentStatus
 
@@ -18,9 +19,19 @@ def create_incident(
     service: IncidentService,
     session: Session,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
-    return service.create_incident(payload, session, current_user)
+    response = service.create_incident(payload, session, current_user)
+    background_tasks.add_task(
+        _bg_notify_incident_created,
+        technician_id=response.technician_id,
+        site_name=response.site_name,
+        tech_name=response.technician_fullname,
+        description=payload.description,
+        assigning_user_id=current_user.user_id,
+    )
+    return response
 
 
 @router.get("/", response_model=List[IncidentResponse], status_code=200)
@@ -109,9 +120,16 @@ def start_incident(
     service: IncidentService,
     session: Session,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
-    return service.start_incident(incident_id, session)
+    response = service.start_incident(incident_id, session)
+    background_tasks.add_task(
+        _bg_notify_incident_started,
+        site_name=response.site_name,
+        tech_name=response.technician_fullname,
+    )
+    return response
 
 
 @router.patch("/{incident_id}/resolve", response_model=IncidentResponse, status_code=200)
@@ -120,9 +138,19 @@ def resolve_incident(
     service: IncidentService,
     session: Session,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
-    return service.resolve_incident(incident_id, session)
+    response = service.resolve_incident(incident_id, session)
+    background_tasks.add_task(
+        _bg_notify_incident_resolved,
+        site_name=response.site_name,
+        tech_name=response.technician_fullname,
+        ref_no=response.ref_no or response.seacom_ref,
+        severity=str(response.severity) if response.severity else "minor",
+        description=response.description or "",
+    )
+    return response
 
 
 # ── SLA Milestone endpoints ────────────────────────────────────────────────────
@@ -276,10 +304,10 @@ def send_help_alert(
 ) -> None:
     """
     Send an urgent help alert from a technician to all NOC operators and managers.
-    Uses the existing technician_escalation notification template.
+    Creates a dedicated alert notification entry for recipients.
     """
     from sqlmodel import select
-    from app.models import User, Technician
+    from app.models import User
     from app.utils.enums import UserRole
     from app.services.notification import _NotificationService, NotificationTemplates
 
@@ -301,7 +329,7 @@ def send_help_alert(
     notification_service = _NotificationService()
     notification_service.create_notifications_from_template(
         user_ids=(u.id for u in recipients),
-        template=NotificationTemplates.technician_escalation(
+        template=NotificationTemplates.technician_help_alert(
             technician_name=tech_name,
             priority=payload.priority,
             reason=payload.message,

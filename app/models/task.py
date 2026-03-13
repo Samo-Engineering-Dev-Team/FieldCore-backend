@@ -23,7 +23,7 @@ class BaseTask(SQLModel, ABC):
     end_time: datetime = Field(sa_type=DateTime(timezone=True), nullable=False) # type: ignore
     task_type: TaskType = Field(nullable=False)
     report_type: str | None = Field(default=None)
-    attachments: dict[str, str] | None = Field(default=None, sa_type=JSONB)
+    attachments: dict | None = Field(default=None, sa_type=JSONB)
     site_id: UUID = Field(foreign_key="sites.id")
     technician_id: UUID = Field(foreign_key="technicians.id")
     # Additional technicians for large/shared jobs (stored as list of UUID strings)
@@ -92,7 +92,7 @@ class TaskUpdate(SQLModel):
     end_time: datetime | None = Field(default=None, sa_type=DateTime(timezone=True), nullable=False) # type: ignore
     task_type: TaskType | None = Field(default=None, nullable=False)
     report_type: str | None = Field(default=None)
-    attachments: dict[str, str] | None = Field(default=None, sa_column=Column(JSONB))
+    attachments: dict | None = Field(default=None, sa_column=Column(JSONB))
     site_id: UUID | None = Field(default=None, foreign_key="sites.id")
     technician_id: UUID | None = Field(default=None, foreign_key="technicians.id")
     additional_technician_ids: list[str] | None = Field(default=None)

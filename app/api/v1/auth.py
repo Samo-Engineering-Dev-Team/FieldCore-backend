@@ -19,7 +19,14 @@ def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     ) -> Token:
     """Authenticate user and return JWT access token. Rate limited to 5 requests per minute."""
-    return service.authenticate(LoginForm(email=form.username, password=form.password), session)
+    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    ua = request.headers.get("User-Agent")
+    return service.authenticate(
+        LoginForm(email=form.username, password=form.password),
+        session,
+        ip_address=ip,
+        user_agent=ua,
+    )
 
 
 @router.post("/change-password", status_code=200)

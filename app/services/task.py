@@ -47,13 +47,18 @@ class _TaskService:
         task_data = task.model_dump()
         # Coerce None → "" for str fields that are computed or may be NULL for older rows
         task_data["assigned_by_name"] = task_data.get("assigned_by_name") or ""
+        # Strip extra fields not present in TaskResponse (e.g. client_id from old records)
+        task_data.pop("client_id", None)
         # Extract site GPS coordinates for map links (may be None if site has no location)
         coords = task.site.get_coordinates() if task.site else None
+        # Count attachments correctly: attachments is {"files": [...]} not a flat list
+        attachments_dict: dict = task.attachments or {}
+        num_attachments = len(attachments_dict.get("files", [])) if isinstance(attachments_dict, dict) else 0
         return TaskResponse(
             **task_data,
             site_name=task.site.name,
             technician_fullname=f"{user.name} {user.surname}",
-            num_attachments=len(task.attachments or []),
+            num_attachments=num_attachments,
             site_region=task.site.region,
             additional_technician_names=additional_names,
             site_latitude=coords[0] if coords else None,
@@ -171,14 +176,17 @@ class _TaskService:
             session.commit()
             session.refresh(task)
             
-            # Create notification for technician
+            # Notify the technician only when someone else assigned the task.
+            # Skip when the technician created the task themselves (e.g. via an access request).
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-            notification_service.create_notification_from_template(
-                user_id=technician.user_id,
-                template=NotificationTemplates.task_assigned(site.name, data.description),
-                session=session,
-            )
+            is_self_assigned = current_user and current_user.user_id == technician.user_id
+            if not is_self_assigned:
+                notification_service.create_notification_from_template(
+                    user_id=technician.user_id,
+                    template=NotificationTemplates.task_assigned(site.name, data.description),
+                    session=session,
+                )
             
             return self.task_to_response(task, session)
         except IntegrityError as e:
@@ -250,6 +258,19 @@ class _TaskService:
 
     def delete_task(self, task_id: UUID, session: Session) -> None:
         task = self._get_task(task_id, session)
+
+        # Notify the assigned technician before deleting so they don't travel to the site.
+        try:
+            from app.services.notification import _NotificationService, NotificationTemplates
+            site_name = task.site.name if task.site else "Unknown Site"
+            _NotificationService().create_notification_from_template(
+                user_id=task.technician.user_id,
+                template=NotificationTemplates.task_cancelled(site_name, task.seacom_ref),
+                session=session,
+            )
+        except Exception as exc:
+            LOG.warning("Could not send cancellation notification for task {}: {}", task_id, exc)
+
         task.soft_delete()
         session.commit()
     

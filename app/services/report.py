@@ -3,11 +3,12 @@ from io import BytesIO
 from fastapi import Depends
 from typing import List, Annotated, Any
 from sqlmodel import Session, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import and_
 from sqlalchemy.orm import object_session
 from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
+import time
 
 from app.utils.enums import ReportType, ReportStatus
 from app.models import Report, ReportCreate, ReportUpdate, ReportResponse, Task, Technician
@@ -21,6 +22,21 @@ from app.services.pdf import get_pdf_service
 
 
 class _ReportService:
+    @staticmethod
+    def _is_lock_or_timeout_error(error: Exception) -> bool:
+        error_text = str(error).lower()
+        return any(
+            marker in error_text
+            for marker in (
+                "lock timeout",
+                "locknotavailable",
+                "could not obtain lock",
+                "canceling statement due to statement timeout",
+                "querycanceled",
+                "deadlock detected",
+            )
+        )
+
     def _normalize_attachment_item(self, item: Any) -> dict[str, Any]:
         """Normalize a single attachment object to a frontend-friendly shape."""
         if isinstance(item, str):
@@ -207,92 +223,146 @@ class _ReportService:
         Note: The broken audit_report_changes trigger must be dropped in Supabase
         before this will work. Run the fix_trigger.sql script.
         """
-        try:
-            # Step 1: Fetch the report
-            report = self._get_report(report_id, session)
-            update_data = data.model_dump(
-                exclude_none=True, exclude_defaults=True, exclude_unset=True
-            )
-            
-            LOG.debug("Report update payload received for {}: {}", report_id, update_data)
+        max_lock_retries = 3
 
-            # Step 2: Validate state
-            if report.status in [ReportStatus.COMPLETED]:
-                raise ForbiddenException("Cannot update a completed report.")
-
-            # Step 3: Early exit if no data
-            if not update_data:
-                LOG.debug("No report update data provided for {}", report_id)
-                return self.report_to_response(report)
-
-            # Step 4: Filter allowed fields only
-            allowed_fields = {'data', 'attachments', 'status'}
-            filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
-            
-            if not filtered_data:
-                LOG.debug("No allowed report update fields provided for {}", report_id)
-                return self.report_to_response(report)
-
-            # Step 5: Apply updates and touch timestamp
-            if "attachments" in filtered_data:
-                filtered_data["attachments"] = self._normalize_attachments(filtered_data.get("attachments"))
-
-            for key, value in filtered_data.items():
-                LOG.debug("Updating report field '{}' for {}", key, report_id)
-                setattr(report, key, value)
-            
-            report.touch()
-            
-            # Step 6: Commit changes
-            session.add(report)
-            session.flush()
-            session.commit()
-            
-            # Step 7: Refresh and return
-            session.refresh(report)
-            LOG.info("Report {} updated successfully", report_id)
-            return self.report_to_response(report)
-            
-        except ForbiddenException:
-            raise
-        except NotFoundException:
-            raise
-        except IntegrityError as e:
-            session.rollback()
-            LOG.error(
-                "report_update_failed report_id={} operation=update reason=integrity_error detail={}",
-                report_id,
-                e.orig,
-            )
-            raise ConflictException(f"Failed to update report: {e.orig}")
-        except Exception as e:
-            session.rollback()
-            error_str = str(e)
-            error_lower = error_str.lower()
-            trigger_hints = (
-                "audit_report_changes",
-                "trg_audit_report_changes",
-                "trigger",
-                "plpgsql",
-            )
-            is_trigger_error = any(hint in error_lower for hint in trigger_hints)
-
-            LOG.exception(
-                "report_update_failed report_id={} operation=update trigger_hint={} error_type={} detail={}",
-                report_id,
-                is_trigger_error,
-                type(e).__name__,
-                e,
-            )
-
-            if is_trigger_error:
-                raise InternalServerErrorException(
-                    "Report update failed due to database trigger configuration. "
-                    "Run scripts/fix_trigger.sql on the database, then retry."
+        for attempt in range(max_lock_retries + 1):
+            try:
+                # Step 1: Fetch the report
+                report = self._get_report(report_id, session)
+                update_data = data.model_dump(
+                    exclude_none=True, exclude_defaults=True, exclude_unset=True
                 )
-            raise InternalServerErrorException(
-                "Report update failed due to an unexpected server-side database error."
-            )
+
+                LOG.debug(
+                    "Report update payload received for {}: {}",
+                    report_id,
+                    update_data,
+                )
+
+                # Step 2: Validate state
+                if report.status in [ReportStatus.COMPLETED]:
+                    raise ForbiddenException("Cannot update a completed report.")
+
+                # Step 3: Early exit if no data
+                if not update_data:
+                    LOG.debug("No report update data provided for {}", report_id)
+                    return self.report_to_response(report)
+
+                # Step 4: Filter allowed fields only
+                allowed_fields = {"data", "attachments", "status"}
+                filtered_data = {
+                    k: v for k, v in update_data.items() if k in allowed_fields
+                }
+
+                if not filtered_data:
+                    LOG.debug("No allowed report update fields provided for {}", report_id)
+                    return self.report_to_response(report)
+
+                # Step 5: Apply updates and touch timestamp
+                if "attachments" in filtered_data:
+                    filtered_data["attachments"] = self._normalize_attachments(
+                        filtered_data.get("attachments")
+                    )
+
+                has_changes = False
+                for key, value in filtered_data.items():
+                    current_value = getattr(report, key)
+                    if current_value != value:
+                        LOG.debug("Updating report field '{}' for {}", key, report_id)
+                        setattr(report, key, value)
+                        has_changes = True
+
+                if not has_changes:
+                    LOG.debug("No report changes detected for {}", report_id)
+                    return self.report_to_response(report)
+
+                report.touch()
+
+                # Step 6: Commit changes
+                session.add(report)
+                # Fail reasonably fast on contention, then retry a few times.
+                session.exec(text("SET LOCAL lock_timeout = '5s'"))
+                session.exec(text("SET LOCAL statement_timeout = '20s'"))
+                session.commit()
+
+                # Step 7: Refresh and return
+                session.refresh(report)
+                LOG.info("Report {} updated successfully", report_id)
+                return self.report_to_response(report)
+
+            except ForbiddenException:
+                raise
+            except NotFoundException:
+                raise
+            except IntegrityError as e:
+                session.rollback()
+                LOG.error(
+                    "report_update_failed report_id={} operation=update reason=integrity_error detail={}",
+                    report_id,
+                    e.orig,
+                )
+                raise ConflictException(f"Failed to update report: {e.orig}")
+            except OperationalError as e:
+                session.rollback()
+                lock_or_timeout = self._is_lock_or_timeout_error(e)
+                if lock_or_timeout and attempt < max_lock_retries:
+                    backoff_seconds = 0.5 * (attempt + 1)
+                    LOG.warning(
+                        "report_update_retry report_id={} attempt={}/{} backoff_seconds={} detail={}",
+                        report_id,
+                        attempt + 1,
+                        max_lock_retries,
+                        backoff_seconds,
+                        e,
+                    )
+                    time.sleep(backoff_seconds)
+                    continue
+
+                LOG.error(
+                    "report_update_failed report_id={} operation=update reason=operational_error lock_or_timeout={} detail={}",
+                    report_id,
+                    lock_or_timeout,
+                    e,
+                )
+                if lock_or_timeout:
+                    raise ConflictException(
+                        "Report is currently being updated by another request. Please retry."
+                    )
+                raise InternalServerErrorException(
+                    "Report update failed due to a transient database connection issue."
+                )
+            except Exception as e:
+                session.rollback()
+                error_str = str(e)
+                error_lower = error_str.lower()
+                trigger_hints = (
+                    "audit_report_changes",
+                    "trg_audit_report_changes",
+                    "trigger",
+                    "plpgsql",
+                )
+                is_trigger_error = any(hint in error_lower for hint in trigger_hints)
+
+                LOG.exception(
+                    "report_update_failed report_id={} operation=update trigger_hint={} error_type={} detail={}",
+                    report_id,
+                    is_trigger_error,
+                    type(e).__name__,
+                    e,
+                )
+
+                if is_trigger_error:
+                    raise InternalServerErrorException(
+                        "Report update failed due to database trigger configuration. "
+                        "Run scripts/fix_trigger.sql on the database, then retry."
+                    )
+                raise InternalServerErrorException(
+                    "Report update failed due to an unexpected server-side database error."
+                )
+
+        raise ConflictException(
+            "Report is currently being updated by another request. Please retry."
+        )
 
     def delete_report(self, report_id: UUID, session: Session) -> None:
         report = self._get_report(report_id, session)

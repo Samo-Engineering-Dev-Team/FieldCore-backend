@@ -296,6 +296,61 @@ class _IncidentReportService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error deleting report: {e}")
 
+    # ─────────────────────────────────────── Photo upload ────────────────────
+
+    def upload_report_photo(
+        self,
+        report_id: UUID,
+        file_content: bytes,
+        filename: str,
+        content_type: str,
+        session: Session,
+        current_user: TokenData,
+    ) -> IncidentReportResponse:
+        report = self._get_report(report_id, session)
+
+        if current_user.role == UserRole.NOC:
+            raise ForbiddenException("NOC operators cannot upload photos to incident reports")
+        if current_user.role == UserRole.TECHNICIAN:
+            tech = self._get_technician_by_user(current_user.user_id, session)
+            if report.technician_id != tech.id:
+                raise ForbiddenException("Technicians can only upload photos to their own reports")
+
+        from app.services.file import FileService
+
+        unique_filename = f"{report_id}_{utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
+        file_service = FileService()
+        upload_result = file_service.upload_file_sync(
+            file_content=file_content,
+            filename=unique_filename,
+            content_type=content_type,
+            folder="incident-report-photos",
+        )
+
+        photo_entry = {
+            "original_name": filename,
+            "path": upload_result.get("file_path"),
+            "url": upload_result.get("public_url"),
+            "content_type": content_type,
+            "uploaded_at": utcnow().isoformat(),
+        }
+
+        current_attachments: dict = report.attachments or {}
+        photos: list = list(current_attachments.get("photos", []))
+        if len(photos) >= 15:
+            raise ForbiddenException("Maximum of 15 photos allowed per report")
+        photos.append(photo_entry)
+        report.attachments = {**current_attachments, "photos": photos}
+        report.touch()
+
+        try:
+            session.commit()
+            session.refresh(report)
+            return self._to_response(report)
+        except Exception as e:
+            session.rollback()
+            raise InternalServerErrorException(f"Unexpected error uploading photo: {e}")
+
     # ─────────────────────────────────────── PDF export ───────────────────────
 
     def export_report_pdf(
@@ -304,11 +359,13 @@ class _IncidentReportService:
         session: Session,
         current_user: TokenData,
     ) -> tuple[BytesIO, str]:
-        # Technicians cannot export
-        if current_user.role == UserRole.TECHNICIAN:
-            raise ForbiddenException("Technicians cannot export incident reports to PDF")
-
         report = self._get_report(report_id, session)
+
+        # Technicians may only export their own report
+        if current_user.role == UserRole.TECHNICIAN:
+            tech = self._get_technician_by_user(current_user.user_id, session)
+            if report.technician_id != tech.id:
+                raise ForbiddenException("Technicians can only export their own incident reports")
 
         from app.services.pdf import get_pdf_service
 

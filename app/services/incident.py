@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 from sqlalchemy.orm import selectinload
+from loguru import logger as LOG
 
 from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
@@ -15,6 +16,110 @@ from app.exceptions.http import (
     InternalServerErrorException,
     NotFoundException,
 )
+
+
+# ── Background notification helpers ───────────────────────────────────────────
+# These run AFTER the HTTP response is sent (via FastAPI BackgroundTasks) so
+# slow DB round-trips never block or time-out the client.
+
+def _bg_notify_incident_created(
+    technician_id: UUID,
+    site_name: str,
+    tech_name: str,
+    description: str,
+    assigning_user_id: UUID | None,
+) -> None:
+    """Background task: notify technician + NOC when a new incident is assigned."""
+    try:
+        from app.database import Database
+        from app.services.notification import _NotificationService, NotificationTemplates
+        with Database.session() as session:
+            technician = session.get(Technician, technician_id)
+            if not technician:
+                return
+            notification_service = _NotificationService()
+            is_self_assigned = assigning_user_id == technician.user_id if assigning_user_id else False
+            if not is_self_assigned:
+                notification_service.create_notification_from_template(
+                    user_id=technician.user_id,
+                    template=NotificationTemplates.incident_assigned_to_technician(
+                        site_name=site_name,
+                        description=description,
+                    ),
+                    session=session,
+                )
+            noc_users = session.exec(
+                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+            ).all()
+            notification_service.create_notifications_from_template(
+                user_ids=[u.id for u in noc_users],
+                template=NotificationTemplates.incident_created_for_noc(
+                    site_name=site_name,
+                    technician_name=tech_name,
+                    description=description,
+                ),
+                session=session,
+            )
+    except Exception as e:
+        LOG.warning("Background incident-created notifications failed: {}", e)
+
+
+def _bg_notify_incident_started(site_name: str, tech_name: str) -> None:
+    """Background task: notify NOC when a technician starts working on an incident."""
+    try:
+        from app.database import Database
+        from app.services.notification import _NotificationService, NotificationTemplates
+        with Database.session() as session:
+            notification_service = _NotificationService()
+            noc_users = session.exec(
+                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+            ).all()
+            notification_service.create_notifications_from_template(
+                user_ids=[u.id for u in noc_users],
+                template=NotificationTemplates.incident_in_progress(tech_name, site_name),
+                session=session,
+            )
+    except Exception as e:
+        LOG.warning("Background incident-started notifications failed: {}", e)
+
+
+def _bg_notify_incident_resolved(
+    site_name: str,
+    tech_name: str,
+    ref_no: str | None,
+    severity: str,
+    description: str,
+) -> None:
+    """Background task: notify NOC + send email when an incident is resolved."""
+    try:
+        from app.database import Database
+        from app.services.notification import _NotificationService, NotificationTemplates
+        with Database.session() as session:
+            notification_service = _NotificationService()
+            noc_users = session.exec(
+                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+            ).all()
+            notification_service.create_notifications_from_template(
+                user_ids=[u.id for u in noc_users],
+                template=NotificationTemplates.incident_resolved(tech_name, site_name, ref_no=ref_no),
+                session=session,
+            )
+    except Exception as e:
+        LOG.warning("Background incident-resolved notifications failed: {}", e)
+
+    try:
+        from app.services.email import EmailService
+        from app.utils.funcs import utcnow as _utcnow
+        EmailService.send_incident_resolved(
+            ref_no=ref_no or "N/A",
+            site_name=site_name,
+            technician_name=tech_name,
+            severity=severity,
+            resolved_at=_utcnow().strftime("%d %b %Y %H:%M UTC"),
+            description=description,
+        )
+    except Exception as e:
+        LOG.warning("Background incident-resolved email failed: {}", e)
 
 
 class _IncidentService:
@@ -72,6 +177,10 @@ class _IncidentService:
         if not incident_data.get("start_time"):
             incident_data["start_time"] = utcnow()
 
+        # Capture names before commit while relationships are loaded in the current transaction
+        tech_name = f"{technician.user.name} {technician.user.surname}"
+        site_name = site.name
+
         incident: Incident = Incident(
             **incident_data,
             site=site,
@@ -83,41 +192,6 @@ class _IncidentService:
             session.add(incident)
             session.commit()
             session.refresh(incident)
-            
-            # Create notifications
-            from app.services.notification import _NotificationService, NotificationTemplates
-            notification_service = _NotificationService()
-            
-            # Notify the assigned technician about the incident
-            notification_service.create_notification_from_template(
-                user_id=technician.user_id,
-                template=NotificationTemplates.incident_assigned_to_technician(
-                    site_name=site.name,
-                    description=data.description,
-                ),
-                session=session,
-            )
-            
-            # Notify all NOC operators about new incident
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.incident_created_for_noc(
-                    site_name=site.name,
-                    technician_name=f"{technician.user.name} {technician.user.surname}",
-                    description=data.description,
-                ),
-                session=session,
-            )
-            
             return self.incident_to_response(incident)
         except IntegrityError as e:
             session.rollback()
@@ -193,84 +267,24 @@ class _IncidentService:
         session.commit()
     
     def start_incident(self, incident_id: UUID, session: Session) -> IncidentResponse:
-        """Start working on an incident and notify NOC operators."""
+        """Start working on an incident."""
         incident = self._get_incident(incident_id, session)
         incident.start()
         try:
             session.commit()
             session.refresh(incident)
-            
-            # Notify NOC operators that incident work has started
-            from app.services.notification import _NotificationService, NotificationTemplates
-            notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
-            site_name = incident.site.name if incident.site else "Unknown Site"
-            tech_name = f"{incident.technician.user.name} {incident.technician.user.surname}" if incident.technician else "Unknown"
-            
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.incident_in_progress(tech_name, site_name),
-                session=session,
-            )
-            
             return self.incident_to_response(incident)
         except Exception as e:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error starting incident: {e}")
     
     def resolve_incident(self, incident_id: UUID, session: Session) -> IncidentResponse:
-        """Resolve an incident and notify NOC operators."""
+        """Resolve an incident."""
         incident = self._get_incident(incident_id, session)
         incident.resolve()
         try:
             session.commit()
             session.refresh(incident)
-            
-            # Notify NOC operators that incident is resolved
-            from app.services.notification import _NotificationService, NotificationTemplates
-            notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
-            site_name = incident.site.name if incident.site else "Unknown Site"
-            tech_name = f"{incident.technician.user.name} {incident.technician.user.surname}" if incident.technician else "Unknown"
-            
-            ref_no = incident.ref_no or incident.seacom_ref or None
-            severity = str(incident.severity) if incident.severity else "minor"
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.incident_resolved(tech_name, site_name, ref_no=ref_no),
-                session=session,
-            )
-
-            # Email NOC distribution list
-            from app.services.email import EmailService
-            from app.utils.funcs import utcnow
-            EmailService.send_incident_resolved(
-                ref_no=ref_no or "N/A",
-                site_name=site_name,
-                technician_name=tech_name,
-                severity=severity,
-                resolved_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
-                description=incident.description or "",
-            )
-
             return self.incident_to_response(incident)
         except Exception as e:
             session.rollback()

@@ -502,6 +502,272 @@ def get_sla_alerts(
 
 
 # ============================================================
+# System Alerts (platform-level, not SLA breach alerts)
+# ============================================================
+@router.get("/system-alerts")
+def get_system_alerts(
+    current_user: ManagerOrAdminUser,
+) -> dict:
+    """
+    Generate real-time platform-level alerts:
+    - Unusual incident spike
+    - Bulk stale technician locations
+    - No NOC operators online
+    - High SLA breach rate
+    - Technician overload
+    - Maintenance mode active
+    - Repeated failed logins (brute-force indicator)
+    """
+    alerts = []
+    try:
+        with Database.session() as session:
+
+            # 1. SLA breach rate
+            try:
+                sla_row = session.execute(
+                    text("SELECT breached_count, total_items, compliance_percentage FROM v_executive_sla_overview LIMIT 1")
+                ).fetchone()
+                if sla_row:
+                    breached = int(sla_row._mapping.get("breached_count") or 0)
+                    total = int(sla_row._mapping.get("total_items") or 0)
+                    compliance = float(sla_row._mapping.get("compliance_percentage") or 100)
+                    if compliance < 80 and total > 0:
+                        alerts.append({
+                            "id": "sla_breach_high",
+                            "severity": "critical",
+                            "category": "SLA",
+                            "title": "High SLA Breach Rate",
+                            "message": f"Overall compliance is at {compliance:.1f}% — {breached} items breached. Immediate attention required.",
+                            "action": "Review breached incidents and tasks",
+                        })
+                    elif compliance < 90 and total > 0:
+                        alerts.append({
+                            "id": "sla_below_target",
+                            "severity": "warning",
+                            "category": "SLA",
+                            "title": "SLA Below 90% Target",
+                            "message": f"Compliance at {compliance:.1f}% is below the contractual 90% target.",
+                            "action": "Review at-risk items before they breach",
+                        })
+            except Exception:
+                pass
+
+            # 2. Incident spike — today vs 30-day daily average
+            try:
+                spike_row = session.execute(text("""
+                    SELECT
+                        COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) AS today_count,
+                        ROUND(COUNT(*) / NULLIF(EXTRACT(DAY FROM (NOW() - MIN(created_at))), 0), 1) AS daily_avg
+                    FROM incidents
+                    WHERE deleted_at IS NULL
+                      AND created_at >= NOW() - INTERVAL '30 days'
+                """)).fetchone()
+                if spike_row:
+                    today = int(spike_row._mapping.get("today_count") or 0)
+                    avg = float(spike_row._mapping.get("daily_avg") or 0)
+                    if avg > 0 and today > avg * 2.5 and today >= 3:
+                        alerts.append({
+                            "id": "incident_spike",
+                            "severity": "warning",
+                            "category": "Operations",
+                            "title": "Unusual Incident Spike",
+                            "message": f"{today} incidents created today vs daily average of {avg:.1f}. Possible network event or DDoS.",
+                            "action": "Investigate root cause — check NOC queue",
+                        })
+            except Exception:
+                pass
+
+            # 3. Bulk stale locations (>40% of technicians)
+            try:
+                loc_row = session.execute(text("""
+                    SELECT
+                        COUNT(*) AS total,
+                        COUNT(*) FILTER (
+                            WHERE last_location_update < NOW() - INTERVAL '24 hours'
+                              OR last_location_update IS NULL
+                        ) AS stale
+                    FROM technicians
+                    WHERE deleted_at IS NULL
+                """)).fetchone()
+                if loc_row:
+                    total_tech = int(loc_row._mapping.get("total") or 0)
+                    stale_tech = int(loc_row._mapping.get("stale") or 0)
+                    if total_tech > 0 and stale_tech / total_tech >= 0.4:
+                        alerts.append({
+                            "id": "bulk_stale_locations",
+                            "severity": "warning",
+                            "category": "Tracking",
+                            "title": "Bulk Stale GPS Data",
+                            "message": f"{stale_tech} of {total_tech} technicians ({round(stale_tech/total_tech*100)}%) have not updated their location in 24h.",
+                            "action": "Contact technicians to re-enable location sharing",
+                        })
+            except Exception:
+                pass
+
+            # 4. No NOC operators online in the last 30 minutes
+            try:
+                from app.services.presence import PresenceService
+                noc_online = PresenceService.list_active_noc_operators(cutoff_minutes=30)
+                if len(noc_online) == 0:
+                    alerts.append({
+                        "id": "no_noc_online",
+                        "severity": "critical",
+                        "category": "Staffing",
+                        "title": "No NOC Operators Online",
+                        "message": "No NOC operators have been active in the last 30 minutes. Incidents may go unassigned.",
+                        "action": "Contact on-call NOC operator immediately",
+                    })
+            except Exception:
+                pass
+
+            # 5. Technician overload (any technician with > 8 active items)
+            try:
+                overload_row = session.execute(text("""
+                    SELECT COUNT(*) AS overloaded
+                    FROM (
+                        SELECT t.id,
+                            COUNT(DISTINCT i.id) FILTER (WHERE LOWER(i.status::text) <> 'resolved') +
+                            COUNT(DISTINCT tsk.id) FILTER (WHERE LOWER(tsk.status::text) <> 'completed') AS active
+                        FROM technicians t
+                        LEFT JOIN incidents i ON i.technician_id = t.id AND i.deleted_at IS NULL
+                        LEFT JOIN tasks tsk ON tsk.technician_id = t.id AND tsk.deleted_at IS NULL
+                        WHERE t.deleted_at IS NULL
+                        GROUP BY t.id
+                    ) sub WHERE active > 8
+                """)).scalar() or 0
+                if int(overload_row) > 0:
+                    alerts.append({
+                        "id": "technician_overload",
+                        "severity": "warning",
+                        "category": "Operations",
+                        "title": "Technician Overload Detected",
+                        "message": f"{int(overload_row)} technician(s) have more than 8 active items. SLA risk is elevated.",
+                        "action": "Redistribute workload via Live Tracking → Dispatch",
+                    })
+            except Exception:
+                pass
+
+            # 6. Repeated failed logins in last hour (brute-force indicator)
+            try:
+                failed_row = session.execute(text("""
+                    SELECT
+                        email,
+                        COUNT(*) AS attempts
+                    FROM login_audit
+                    WHERE success = false
+                      AND created_at >= NOW() - INTERVAL '1 hour'
+                    GROUP BY email
+                    HAVING COUNT(*) >= 5
+                    ORDER BY attempts DESC
+                    LIMIT 5
+                """)).fetchall()
+                if failed_row:
+                    targets = ", ".join(r._mapping["email"] for r in failed_row[:3])
+                    total_suspicious = len(failed_row)
+                    alerts.append({
+                        "id": "brute_force_attempts",
+                        "severity": "critical",
+                        "category": "Security",
+                        "title": "Repeated Failed Login Attempts",
+                        "message": f"{total_suspicious} account(s) have 5+ failed logins in the last hour: {targets}.",
+                        "action": "Review Login Activity — consider disabling affected accounts",
+                    })
+            except Exception:
+                pass
+
+            # 7. Maintenance mode active
+            try:
+                maint_row = session.execute(text(
+                    "SELECT value FROM system_settings WHERE key = 'maintenance_mode' LIMIT 1"
+                )).fetchone()
+                if maint_row and str(maint_row._mapping.get("value", "")).lower() in ("true", "1", "yes"):
+                    alerts.append({
+                        "id": "maintenance_mode",
+                        "severity": "info",
+                        "category": "System",
+                        "title": "Maintenance Mode Active",
+                        "message": "The system is currently in maintenance mode. Some features may be unavailable to users.",
+                        "action": "Disable maintenance mode in Settings when ready",
+                    })
+            except Exception:
+                pass
+
+        severity_order = {"critical": 0, "warning": 1, "info": 2}
+        alerts.sort(key=lambda a: severity_order.get(a["severity"], 3))
+        return {"data": alerts, "total": len(alerts)}
+
+    except Exception as e:
+        LOG.exception("System alerts endpoint error: {}", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ============================================================
+# Login Audit (admin-only)
+# ============================================================
+@router.get("/login-audit")
+def get_login_audit(
+    current_user: ManagerOrAdminUser,
+    success: Optional[bool] = Query(None),
+    email: Optional[str] = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+) -> dict:
+    """Get login audit records for security monitoring (admin only)."""
+    try:
+        with Database.session() as session:
+            where_clauses = ["1=1"]
+            params: dict = {}
+
+            if success is not None:
+                where_clauses.append("la.success = :success")
+                params["success"] = success
+
+            if email:
+                where_clauses.append("la.email ILIKE :email")
+                params["email"] = f"%{email}%"
+
+            where_sql = " AND ".join(where_clauses)
+
+            count_result = session.execute(
+                text(f"SELECT COUNT(*) FROM login_audit la WHERE {where_sql}"), params
+            )
+            total = count_result.scalar() or 0
+
+            params["limit"] = limit
+            params["offset"] = offset
+            result = session.execute(
+                text(f"""
+                    SELECT
+                        la.id,
+                        la.email,
+                        la.success,
+                        la.failure_reason,
+                        la.role,
+                        la.ip_address,
+                        la.user_agent,
+                        la.created_at,
+                        u.name || ' ' || u.surname AS full_name
+                    FROM login_audit la
+                    LEFT JOIN users u ON u.id = la.user_id
+                    WHERE {where_sql}
+                    ORDER BY la.created_at DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                params,
+            )
+            records = [dict(row._mapping) for row in result]
+            # Convert datetimes to ISO strings for JSON serialisation
+            for r in records:
+                if r.get("created_at"):
+                    r["created_at"] = r["created_at"].isoformat()
+
+            return {"data": records, "total": total}
+    except Exception as e:
+        LOG.exception("Login audit endpoint error: {}", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ============================================================
 # Health Check
 # ============================================================
 @router.get("/health")
@@ -656,10 +922,10 @@ def get_technician_workload(
                         t.id::text AS technician_id,
                         u.name || ' ' || u.surname AS technician_name,
                         COUNT(DISTINCT inc.id) FILTER (
-                            WHERE inc.status <> 'resolved'
+                            WHERE LOWER(inc.status::text) <> 'resolved'
                         ) AS active_incidents,
                         COUNT(DISTINCT tsk.id) FILTER (
-                            WHERE tsk.status <> 'completed'
+                            WHERE LOWER(tsk.status::text) <> 'completed'
                         ) AS active_tasks,
                         COUNT(DISTINCT inc.id) FILTER (
                             WHERE inc.created_at >= NOW() - INTERVAL '30 days'
@@ -677,10 +943,10 @@ def get_technician_workload(
                     GROUP BY t.id, u.name, u.surname
                     ORDER BY (
                         COUNT(DISTINCT inc.id) FILTER (
-                            WHERE inc.status <> 'resolved'
+                            WHERE LOWER(inc.status::text) <> 'resolved'
                         ) +
                         COUNT(DISTINCT tsk.id) FILTER (
-                            WHERE tsk.status <> 'completed'
+                            WHERE LOWER(tsk.status::text) <> 'completed'
                         )
                     ) DESC
                 """),

@@ -1,7 +1,7 @@
 from typing import List
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.models.incident_report import (
@@ -86,6 +86,26 @@ def delete_incident_report(
 ) -> None:
     """"""
     service.delete_incident_report(report_id, session, current_user)
+
+
+@router.post("/{report_id}/photos", response_model=IncidentReportResponse, status_code=200)
+def upload_report_photo(
+    report_id: UUID,
+    service: IncidentReportService,
+    session: Session,
+    current_user: CurrentUser,
+    file: UploadFile = File(...),
+) -> IncidentReportResponse:
+    """"""
+    file_content = file.file.read()
+    return service.upload_report_photo(
+        report_id=report_id,
+        file_content=file_content,
+        filename=file.filename or "photo.jpg",
+        content_type=file.content_type or "image/jpeg",
+        session=session,
+        current_user=current_user,
+    )
 
 
 @router.post("/{report_id}/export-pdf", status_code=200)
