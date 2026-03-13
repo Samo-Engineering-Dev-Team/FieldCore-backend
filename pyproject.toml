@@ -34,6 +34,9 @@ dev = [
     "pytest>=8.4.2",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
