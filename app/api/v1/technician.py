@@ -1,11 +1,17 @@
 from fastapi import APIRouter, Query
 from typing import List
 from uuid import UUID
+from pydantic import BaseModel
 
-from app.models import TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate
+from app.models import TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate, Site, SiteResponse, TechnicianSite
 from app.services import TechnicianService
 from app.services.auth import CurrentUser
 from app.database import Session
+from sqlmodel import select
+
+
+class TechnicianSitesPayload(BaseModel):
+    site_ids: List[UUID]
 
 router = APIRouter(prefix="/technicians", tags=["Technicians"])
 
@@ -106,6 +112,16 @@ def get_stale_locations(
 
 # ==================== STANDARD CRUD ====================
 
+@router.get("/me", response_model=TechnicianResponse, status_code=200)
+def read_my_technician_profile(
+    service: TechnicianService,
+    session: Session,
+    current_user: CurrentUser,
+) -> TechnicianResponse:
+    """Get the technician profile for the currently authenticated user."""
+    return service.read_me(current_user.user_id, session)
+
+
 @router.get("/{technician_id}", response_model=TechnicianResponse, status_code=200)
 def read_technician(
     technician_id: UUID,
@@ -161,6 +177,64 @@ def escalate_technician_issue(
         escalated_by=current_user.user_id,
         session=session
     )
+
+
+@router.get("/{technician_id}/sites", response_model=List[SiteResponse], status_code=200)
+def get_technician_assigned_sites(
+    technician_id: UUID,
+    session: Session,
+    current_user: CurrentUser,
+) -> List[SiteResponse]:
+    """Get all sites assigned to a technician as their primary routes."""
+    rows = session.exec(
+        select(TechnicianSite).where(TechnicianSite.technician_id == technician_id)
+    ).all()
+    site_ids = [r.site_id for r in rows]
+    if not site_ids:
+        return []
+    sites = session.exec(
+        select(Site).where(Site.id.in_(site_ids), Site.deleted_at.is_(None))  # type: ignore
+    ).all()
+    responses = []
+    for site in sites:
+        coords = site.get_coordinates()
+        responses.append(SiteResponse(
+            id=site.id,
+            created_at=site.created_at,
+            updated_at=site.updated_at,
+            deleted_at=site.deleted_at,
+            name=site.name,
+            region=site.region,
+            address=site.address,
+            latitude=coords[0] if coords else None,
+            longitude=coords[1] if coords else None,
+            geofence_radius=site.geofence_radius,
+            num_tasks=0,
+            num_incidents=0,
+            num_reports=0,
+        ))
+    return responses
+
+
+@router.put("/{technician_id}/sites", status_code=204)
+def set_technician_assigned_sites(
+    technician_id: UUID,
+    payload: TechnicianSitesPayload,
+    session: Session,
+    current_user: CurrentUser,
+) -> None:
+    """Replace the full list of sites assigned to a technician (idempotent PUT)."""
+    # Remove all existing assignments for this technician
+    existing = session.exec(
+        select(TechnicianSite).where(TechnicianSite.technician_id == technician_id)
+    ).all()
+    for row in existing:
+        session.delete(row)
+    session.flush()
+    # Insert new assignments
+    for site_id in payload.site_ids:
+        session.add(TechnicianSite(technician_id=technician_id, site_id=site_id))
+    session.commit()
 
 
 @router.delete("/{technician_id}", status_code=204)

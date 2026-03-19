@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response as FastAPIResponse
 from fastapi.responses import StreamingResponse, Response
 from typing import List
 from uuid import UUID
@@ -16,7 +16,8 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 def create_report(
     payload: ReportCreate,
     service: ReportService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
     return service.create_report(payload, session)
@@ -26,6 +27,8 @@ def create_report(
 def read_reports(
     service: ReportService,
     session: Session,
+    current_user: CurrentUser,
+    response: FastAPIResponse,
     report_type: ReportType | None = Query(None),
     status: ReportStatus | None = Query(None),
     technician_id: UUID | None = Query(None),
@@ -33,6 +36,7 @@ def read_reports(
     limit: int = Query(default=100, le=1000)
 ) -> List[ReportResponse]:
     """"""
+    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
     return service.read_reports(session, report_type, status, technician_id, offset, limit)
 
 
@@ -40,9 +44,12 @@ def read_reports(
 def read_report(
     report_id: UUID,
     service: ReportService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
+    response: FastAPIResponse,
 ) -> ReportResponse:
     """"""
+    response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
     return service.read_report(report_id, session)
 
 
@@ -52,6 +59,7 @@ def update_report(
     payload: ReportUpdate,
     service: ReportService,
     session: Session,
+    current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
     return service.update_report(report_id, payload, session)
@@ -61,7 +69,8 @@ def update_report(
 def delete_report(
     report_id: UUID,
     service: ReportService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> None:
     """"""
     service.delete_report(report_id, session)
@@ -71,7 +80,8 @@ def delete_report(
 def start_report(
     report_id: UUID,
     service: ReportService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
     return service.start_report(report_id, session)
@@ -81,7 +91,8 @@ def start_report(
 def complete_report(
     report_id: UUID,
     service: ReportService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
     return service.complete_report(report_id, session)

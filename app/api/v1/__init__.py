@@ -16,6 +16,10 @@ from .file import router as file_router
 from .client import router as client_router
 from .webhook import router as webhook_router
 from .presence import router as sessions_router
+from .system_settings import router as system_settings_router
+from .incident_report import router as incident_report_router
+from .maintenance_schedule import router as maintenance_schedule_router
+from .route_patrol import router as route_patrol_router
 from os import getenv
 _allow_dev = getenv("ALLOW_DEV_ENDPOINTS", "false").lower() == "true"
 if _allow_dev:
@@ -39,5 +43,9 @@ router.include_router(file_router)
 router.include_router(client_router)
 router.include_router(webhook_router)
 router.include_router(sessions_router)
+router.include_router(system_settings_router)
+router.include_router(incident_report_router)
+router.include_router(maintenance_schedule_router)
+router.include_router(route_patrol_router)
 if _allow_dev:
 	router.include_router(dev_client_router)

@@ -1,17 +1,17 @@
 version: '3.8'
 
 services:
-  postgres-experimental:
+  postgres:
     image: postgis/postgis:16-3.4
-    container_name: seacom_experimental_db
+    container_name: seacom_db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: experimental123
       POSTGRES_DB: seacom_experimental_db
     ports:
-      - "5433:5432"  # Using 5433 to avoid conflict with existing PostgreSQL
+      - "5433:5432"
     volumes:
-      - seacom_experimental_data:/var/lib/postgresql/data
+      - seacom_db_data:/var/lib/postgresql/data
       - ./scripts/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d seacom_experimental_db"]
@@ -29,8 +29,37 @@ services:
     volumes:
       - seacom_redis_data:/data
 
+  backend:
+    build: .
+    container_name: seacom_backend
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: experimental123
+      DB_NAME: seacom_experimental_db
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build: ../seacom-app-frontend
+    container_name: seacom_frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
 volumes:
-  seacom_experimental_data:
+  seacom_db_data:
     driver: local
   seacom_redis_data:
     driver: local

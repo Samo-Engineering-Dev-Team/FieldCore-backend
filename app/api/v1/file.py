@@ -3,6 +3,7 @@ from typing import List
 from pydantic import BaseModel
 
 from app.services.file import FileService
+from app.services import CurrentUser
 
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -25,6 +26,8 @@ class FileUploadResponse(BaseModel):
     """Response model for file upload."""
     file_path: str
     public_url: str
+    signed_url: str | None = None
+    url: str | None = None
     original_name: str
     content_type: str
     size: int
@@ -38,8 +41,9 @@ class MultiFileUploadResponse(BaseModel):
 
 @router.post("/upload", response_model=FileUploadResponse, status_code=201)
 async def upload_file(
+    current_user: CurrentUser,
     file: UploadFile = File(...),
-    folder: str = Query(default="incidents", description="Folder to store the file in")
+    folder: str = Query(default="incidents", description="Folder to store the file in"),
 ) -> FileUploadResponse:
     """
     Upload a single file to storage.
@@ -75,8 +79,9 @@ async def upload_file(
 
 @router.post("/upload-multiple", response_model=MultiFileUploadResponse, status_code=201)
 async def upload_multiple_files(
+    current_user: CurrentUser,
     files: List[UploadFile] = File(...),
-    folder: str = Query(default="incidents", description="Folder to store the files in")
+    folder: str = Query(default="incidents", description="Folder to store the files in"),
 ) -> MultiFileUploadResponse:
     """
     Upload multiple files to storage.
@@ -123,7 +128,7 @@ async def upload_multiple_files(
 
 
 @router.delete("/{file_path:path}", status_code=204)
-async def delete_file(file_path: str) -> None:
+async def delete_file(file_path: str, current_user: CurrentUser) -> None:
     """Delete a file from storage."""
     file_service = FileService()
     deleted = await file_service.delete_file(file_path)
@@ -138,7 +143,8 @@ async def delete_file(file_path: str) -> None:
 @router.get("/signed-url/{file_path:path}")
 async def get_signed_url(
     file_path: str,
-    expires_in: int = Query(default=3600, ge=60, le=86400, description="URL expiration in seconds")
+    current_user: CurrentUser,
+    expires_in: int = Query(default=3600, ge=60, le=86400, description="URL expiration in seconds"),
 ) -> dict:
     """
     Get a signed URL for a file.

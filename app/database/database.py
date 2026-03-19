@@ -70,7 +70,7 @@ class Database:
             LOG.error(message)
 
     @classmethod
-    def get_session(cls) -> Generator[_Session]:
+    def get_session(cls) -> Generator[_Session, None, None]:
         """Get a database session for request handling."""
         if not cls.connection:
             LOG.critical("Cannot get session. Database is not connected.")

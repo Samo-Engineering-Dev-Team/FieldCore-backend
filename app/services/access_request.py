@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 
-from app.utils.enums import AccessRequestStatus, NotificationPriority, UserRole
+from app.utils.enums import AccessRequestStatus, UserRole
 from app.models import (
     AccessRequest,
     AccessRequestCreate,
@@ -54,7 +54,7 @@ class _AccessRequestService:
             session.refresh(access_request)
             
             # Notify all NOC operators about new access request
-            from app.services.notification import _NotificationService
+            from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
             
             noc_users = session.exec(
@@ -67,16 +67,15 @@ class _AccessRequestService:
             ).all()
             
             tech_name = f"{technician.user.name} {technician.user.surname}"
-            description_preview = data.description[:60] if data.description else "No description"
-            
-            for noc_user in noc_users:
-                notification_service.create_notification_for_user(
-                    user_id=noc_user.id,
-                    title=f"Access Request: {site.name}",
-                    message=f"{tech_name} is requesting access to {site.name}. Description: {description_preview}{'...' if len(data.description or '') > 60 else ''}",
-                    priority=NotificationPriority.HIGH,
-                    session=session
-                )
+            notification_service.create_notifications_from_template(
+                user_ids=(noc_user.id for noc_user in noc_users),
+                template=NotificationTemplates.access_request_created(
+                    site_name=site.name,
+                    technician_name=tech_name,
+                    description=data.description,
+                ),
+                session=session,
+            )
             
             return self.access_request_to_response(access_request)
         except IntegrityError as e:
@@ -163,17 +162,15 @@ class _AccessRequestService:
                     session.refresh(task)
             
             # Notify the technician that their access request was approved
-            from app.services.notification import _NotificationService
+            from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
             
             site_name = access_request.site.name if access_request.site else "Unknown Site"
             
-            notification_service.create_notification_for_user(
+            notification_service.create_notification_from_template(
                 user_id=access_request.technician.user_id,
-                title=f"Access Approved: {site_name}",
-                message=f"Your access request for {site_name} has been approved. SEACOM Ref No.: {seacom_ref}",
-                priority=NotificationPriority.HIGH,
-                session=session
+                template=NotificationTemplates.access_request_approved(site_name, seacom_ref),
+                session=session,
             )
             
             return self.access_request_to_response(access_request)
@@ -190,17 +187,15 @@ class _AccessRequestService:
             session.refresh(access_request)
             
             # Notify the technician that their access request was rejected
-            from app.services.notification import _NotificationService
+            from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
             
             site_name = access_request.site.name if access_request.site else "Unknown Site"
             
-            notification_service.create_notification_for_user(
+            notification_service.create_notification_from_template(
                 user_id=access_request.technician.user_id,
-                title=f"Access Rejected: {site_name}",
-                message=f"Your access request for {site_name} has been rejected. Please contact NOC for more information.",
-                priority=NotificationPriority.NORMAL,
-                session=session
+                template=NotificationTemplates.access_request_rejected(site_name),
+                session=session,
             )
             
             return self.access_request_to_response(access_request)

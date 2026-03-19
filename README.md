@@ -1,50 +1,68 @@
-# Seacom-App
+# Seacom App Backend
 
-An application to allow technicians to submit their reports and noc oporators to assign tasks to technicians.
+Backend API for the Seacom operations platform (FastAPI + PostgreSQL/PostGIS + optional Redis presence backend).
 
-## 1. Installation / Setup
+## Documentation Index
+- `README.md`: setup and day-to-day commands.
+- `SEACOM_APP_DOCUMENTATION.md`: product and operations overview.
+- `SEACOM_DEVELOPER_DOCUMENTATION.md`: architecture and engineering workflow.
+- `SEACOM_USER_TRAINING_GUIDE.md`: role-based user training.
+- `SEACOM_USER_GUIDE_TRAINING_MANUAL.md`: trainer facilitation checklist.
+- `scripts/README.md`: script catalog and migration execution order.
 
-1. Clone the repository into a folder
+## Requirements
+- Python 3.11+
+- `uv`
+- PostgreSQL/PostGIS
+- Optional: Redis (for `PRESENCE_BACKEND=redis`)
 
-    ```bash
-    git clone https://github.com/Caff-Core/seacom-app-backend.git
-    ```
+## Local Setup
+1. Install dependencies:
 
-2. Install uv if you don't have it in your system [UV installation](https://docs.astral.sh/uv/getting-started/installation/)
+```bash
+uv sync
+```
 
-3. Move into the project folder and run the following command:
+2. Create environment file:
 
-    ```bash
-    uv pip install -r pyproject.toml
-    ```
+```bash
+cp .env.example .env
+```
 
-## 2. Database setup
+3. Start infrastructure (recommended for local):
 
-1. Install Postgresql 18 in your system [Postgresql Download](https://docs.astral.sh/uv/getting-started/installation/)
+```bash
+docker compose up -d postgres-experimental redis
+```
 
-2. Install pgAdmin4 in your system [PgAdmin Download](https://www.pgadmin.org/download/)
+4. Apply SQL scripts (baseline + migrations):
 
-3. After setting up your user password add the following file inside the project folder: `.env`
+```bash
+# Enable PostGIS helpers (safe to re-run)
+psql -h localhost -p 5433 -U postgres -d seacom_experimental_db -f scripts/02_enable_postgis.sql
 
-4. Inside the `.env` file add the following:
+# Run numbered migrations
+powershell -Command "Get-ChildItem scripts\\00*.sql | Sort-Object Name | ForEach-Object { psql -h localhost -p 5433 -U postgres -d seacom_experimental_db -f $_.FullName }"
+```
 
-    ```bash
-    # Database
-    DB_HOST="localhost"
-    DB_USER="postgres"
-    DB_PASSWORD="use the password you set here"
-    DB_PORT="5432"
-    DB_NAME="seacom_app_db"
-
-    # Security
-    JWT_TOKEN_EXPIRE_MINUTES=30
-    JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
-    JWT_SECRET_KEY=""
-    JWT_ALGORITH="HS256"
-    ```
-
-## 3. Run the application
+5. Start the API:
 
 ```bash
 uv run uvicorn app.main:app --reload
 ```
+
+## Useful Endpoints
+- API root/docs redirect: `http://localhost:8000/`
+- OpenAPI docs: `http://localhost:8000/docs`
+- OpenAPI JSON: `http://localhost:8000/openapi.json`
+
+## Testing
+Run the backend test suite:
+
+```bash
+uv run pytest -q
+```
+
+## Notes
+- `scripts/fix_trigger.sql` and `scripts/0011_enforce_single_active_report_per_task.sql` are still critical for report update reliability in older environments.
+- Keep script cleanup non-destructive: move historical/deprecated scripts to `scripts/archive/` instead of hard-deleting.

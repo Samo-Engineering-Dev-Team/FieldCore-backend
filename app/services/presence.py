@@ -4,39 +4,66 @@ When `app_settings.PRESENCE_BACKEND == 'redis'` and `REDIS_URL` is set, presence
 uses Redis sorted-sets + hashes for low-latency heartbeats and pub/sub for events.
 Otherwise the code falls back to the persisted SQLModel implementation.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 import json
 import time
 
 from sqlmodel import select
+from sqlalchemy import and_
 
 from app.database.database import Database
 from app.models.user_session import UserSession
 from app.models.user import User
 from app.utils.enums import UserRole
 from app.core.settings import app_settings
+from loguru import logger as LOG
 
 
 # lazy import to keep redis optional
 _redis_client = None
+_redis_retry_after_ts = 0.0
 
 def _get_redis():
-    global _redis_client
+    global _redis_client, _redis_retry_after_ts
     if _redis_client:
         return _redis_client
+    now_ts = time.time()
+    if now_ts < _redis_retry_after_ts:
+        return None
     url = app_settings.REDIS_URL
     if not url:
+        LOG.warning("REDIS_URL is not set, falling back to DB presence")
         return None
-    try:
-        import redis
-        _redis_client = redis.Redis.from_url(url, decode_responses=True)
-        # smoke check (non-fatal)
-        _redis_client.ping()
-        return _redis_client
-    except Exception:
-        _redis_client = None
-        return None
+    import redis
+    # Try configured URL first; if non-TLS Redis URL is configured, retry with TLS.
+    candidate_urls = [url]
+    if url.startswith("redis://"):
+        candidate_urls.append("rediss://" + url[len("redis://"):])
+
+    for idx, candidate in enumerate(candidate_urls):
+        try:
+            if idx == 0:
+                LOG.info(f"Connecting to Redis at {candidate.split('@')[-1]}...")
+            else:
+                LOG.info(f"Retrying Redis with TLS at {candidate.split('@')[-1]}...")
+            _redis_client = redis.Redis.from_url(
+                candidate,
+                decode_responses=True,
+                socket_connect_timeout=app_settings.PRESENCE_REDIS_CONNECT_TIMEOUT_SECONDS,
+                socket_timeout=app_settings.PRESENCE_REDIS_SOCKET_TIMEOUT_SECONDS,
+                retry_on_timeout=True,
+                health_check_interval=30,
+            )
+            _redis_client.ping()
+            LOG.info("Redis connection successful")
+            return _redis_client
+        except Exception as e:
+            LOG.error(f"Redis connection failed: {e}")
+            _redis_client = None
+            _redis_retry_after_ts = time.time() + app_settings.PRESENCE_REDIS_RETRY_COOLDOWN_SECONDS
+
+    return None
 
 
 class PresenceService:
@@ -48,7 +75,11 @@ class PresenceService:
 
     @classmethod
     def _use_redis(cls) -> bool:
-        return app_settings.PRESENCE_BACKEND.lower() == "redis" and bool(app_settings.REDIS_URL)
+        return (
+            app_settings.PRESENCE_BACKEND.lower() == "redis"
+            and bool(app_settings.REDIS_URL)
+            and _get_redis() is not None
+        )
 
     # -------------------- Redis-backed implementations --------------------
     @classmethod
@@ -250,10 +281,12 @@ class PresenceService:
     def _db_list_active_noc_operators(cls, cutoff_minutes: int = 10) -> List[dict]:
         cutoff = datetime.utcnow() - timedelta(minutes=cutoff_minutes)
         with Database.session() as s:
-            # Fetch active sessions for NOC users, then filter by cutoff in Python
             q = select(UserSession, User).join(User, User.id == UserSession.user_id).where(
-                User.role == UserRole.NOC,
-                UserSession.is_active == True,
+                and_(
+                    User.role == UserRole.NOC,
+                    UserSession.is_active == True,
+                    UserSession.last_seen.is_not(None),
+                )
             )
             rows = s.exec(q).all()
             results = []
@@ -264,9 +297,15 @@ class PresenceService:
                     try:
                         from datetime import datetime as _dt
 
-                        last_seen_val = _dt.fromisoformat(last_seen_val)
+                        normalized_raw = last_seen_val.strip()
+                        if normalized_raw.endswith("Z"):
+                            normalized_raw = f"{normalized_raw[:-1]}+00:00"
+                        last_seen_val = _dt.fromisoformat(normalized_raw)
                     except Exception:
                         last_seen_val = None
+                if isinstance(last_seen_val, datetime) and last_seen_val.tzinfo is not None:
+                    # Compare as naive UTC timestamps for consistent cutoff behavior.
+                    last_seen_val = last_seen_val.astimezone(timezone.utc).replace(tzinfo=None)
 
                 if not last_seen_val or last_seen_val < cutoff:
                     continue
@@ -285,23 +324,39 @@ class PresenceService:
     @classmethod
     def upsert_session(cls, user_id, role: str, session_id: str, expires_at: Optional[datetime] = None) -> dict:
         if cls._use_redis():
-            return cls._redis_upsert(user_id, role, session_id, expires_at)
+            try:
+                return cls._redis_upsert(user_id, role, session_id, expires_at)
+            except Exception as e:
+                LOG.warning("Redis presence upsert failed, falling back to DB: {}", e)
         return cls._db_upsert(user_id, role, session_id, expires_at)
 
     @classmethod
     def heartbeat(cls, user_id, role: str, session_id: Optional[str] = None) -> dict:
         if cls._use_redis():
-            return cls._redis_heartbeat(user_id, role, session_id)
+            try:
+                return cls._redis_heartbeat(user_id, role, session_id)
+            except Exception as e:
+                LOG.warning("Redis presence heartbeat failed, falling back to DB: {}", e)
         return cls._db_heartbeat(user_id, role, session_id)
 
     @classmethod
     def deactivate_session(cls, user_id=None, session_id: Optional[str] = None) -> None:
         if cls._use_redis():
-            return cls._redis_deactivate(user_id=user_id, session_id=session_id)
+            try:
+                return cls._redis_deactivate(user_id=user_id, session_id=session_id)
+            except Exception as e:
+                LOG.warning("Redis presence deactivate failed, falling back to DB: {}", e)
         return cls._db_deactivate(user_id=user_id, session_id=session_id)
 
     @classmethod
     def list_active_noc_operators(cls, cutoff_minutes: int = 10) -> List[dict]:
         if cls._use_redis():
-            return cls._redis_list_active_noc(cutoff_minutes=cutoff_minutes)
-        return cls._db_list_active_noc_operators(cutoff_minutes=cutoff_minutes)
+            try:
+                return cls._redis_list_active_noc(cutoff_minutes=cutoff_minutes)
+            except Exception as e:
+                LOG.warning("Redis presence list failed, falling back to DB: {}", e)
+        try:
+            return cls._db_list_active_noc_operators(cutoff_minutes=cutoff_minutes)
+        except Exception as e:
+            LOG.warning("DB presence list failed, returning empty list: {}", e)
+            return []

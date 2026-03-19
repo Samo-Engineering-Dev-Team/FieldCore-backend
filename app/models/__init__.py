@@ -1,5 +1,5 @@
 from .base import BaseDB
-from .auth import Token, TokenData, LoginForm
+from .auth import Token, TokenData, LoginForm, PasswordChange
 from .user import User, UserCreate, UserUpdate, UserStatusUpdate, UserRoleUpdate, UserResponse
 from .technician import TechnicianCreate, Technician, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate
 from .site import Site, SiteCreate, SiteUpdate, SiteResponse
@@ -12,7 +12,21 @@ from .routine_check import RoutineCheck, RoutineCheckCreate, RoutineCheckRespons
 from .routine_issues import RoutineIssue, RoutineIssueCreate, RoutineIssueResponse, RoutineIssueUpdate
 from .routine_inspection import RoutineInspection, RoutineInspectionCreate, RoutineInspectionUpdate, RoutineInspectionResponse
 from .client import Client, ClientCreate, ClientUpdate, ClientResponse
+from .incident_report import IncidentReport, IncidentReportCreate, IncidentReportUpdate, IncidentReportResponse
+from .fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
+from .maintenance_schedule import MaintenanceSchedule, MaintenanceScheduleCreate, MaintenanceScheduleUpdate, MaintenanceScheduleResponse
+from .route_patrol import RoutePatrol, RoutePatrolCreate, RoutePatrolUpdate, RoutePatrolResponse
+from .technician_site import TechnicianSite
 from .webhook import Webhook
+from .system_settings import (
+    SystemSetting,
+    SystemSettingCreate,
+    SystemSettingUpdate,
+    SystemSettingResponse,
+    SystemSettingsResponse,
+    SystemSettingsBulkUpdate,
+    DebugConfig,
+)
 
 __all__ = [
     "BaseDB",
@@ -68,5 +82,28 @@ __all__ = [
     "ClientCreate",
     "ClientUpdate",
     "ClientResponse",
+    "IncidentReport",
+    "IncidentReportCreate",
+    "IncidentReportUpdate",
+    "IncidentReportResponse",
+    "FaultUpdate",
+    "FaultUpdateCreate",
+    "FaultUpdateResponse",
+    "MaintenanceSchedule",
+    "MaintenanceScheduleCreate",
+    "MaintenanceScheduleUpdate",
+    "MaintenanceScheduleResponse",
+    "RoutePatrol",
+    "RoutePatrolCreate",
+    "RoutePatrolUpdate",
+    "RoutePatrolResponse",
+    "TechnicianSite",
     "Webhook",
+    "SystemSetting",
+    "SystemSettingCreate",
+    "SystemSettingUpdate",
+    "SystemSettingResponse",
+    "SystemSettingsResponse",
+    "SystemSettingsBulkUpdate",
+    "DebugConfig",
 ]

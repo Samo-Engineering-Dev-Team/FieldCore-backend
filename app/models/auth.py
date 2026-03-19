@@ -82,3 +82,25 @@ class LoginForm(BaseModel):
 
     email: EmailStr = Field(examples=["moses@samotelecoms.co.za"])
     password: str = Field(examples=["Password123"])
+
+
+class PasswordChange(BaseModel):
+    """Schema for changing user password."""
+    
+    current_password: str = Field(
+        min_length=1,
+        description="The user's current password",
+        examples=["OldPassword123"]
+    )
+    new_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="The new password (8-16 characters)",
+        examples=["NewPassword456"]
+    )
+    confirm_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="Confirm the new password",
+        examples=["NewPassword456"]
+    )

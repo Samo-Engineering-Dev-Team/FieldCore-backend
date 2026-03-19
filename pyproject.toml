@@ -1,9 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "seacom-app-backend"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.128.0",
     "loguru>=0.7.3",
@@ -19,4 +23,20 @@ dependencies = [
     "httpx>=0.27.0",
     "strawberry-graphql[fastapi]>=0.235.0",
     "redis>=4.5.0",
+    "tzdata>=2024.1",
+    "aiosmtplib>=3.0.0",
+    "gunicorn>=22.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pdfplumber>=0.11.9",
+    "pytest>=8.4.2",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

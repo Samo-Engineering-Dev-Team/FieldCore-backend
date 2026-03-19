@@ -17,3 +17,5 @@ venv/
 .envrc
 __pypackages__/
 .cache/
+scripts/archive/
+scripts/*.py

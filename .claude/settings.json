@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \":*)",
+      "Read(//c/Users/BonganiNkomo/OneDrive - Samo Engineering/Desktop/Coding/Samo Dev Projects/seacom-app-frontend/src/pages/dashboards/technician/**)",
+      "Bash(python -c \":*)",
+      "Bash(curl -s \"http://localhost:8000/api/v1/maintenance-schedules/?technician_id=f24c50e2-ecc8-45eb-85a2-2d638d6b19c6\")",
+      "Bash(curl -s \"http://localhost:8000/api/v1/maintenance-schedules/?technician_id=f24c50e2-ecc8-45eb-85a2-2d638d6b19c6\" -H \"Authorization: Bearer test\")",
+      "Bash(curl -s http://localhost:8000/api/v1/auth/login -X POST -H \"Content-Type: application/x-www-form-urlencoded\" --data-urlencode \"username=obakeng@samoeng.co.za\" --data-urlencode \"password=password\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''access_token'',''''\\)[:50] if ''access_token'' in d else str\\(d\\)[:200]\\)\")",
+      "Bash(curl -s http://localhost:8000/api/v1/auth/login -X POST -H \"Content-Type: application/x-www-form-urlencoded\" --data-urlencode \"username=admin@samoeng.co.za\" --data-urlencode \"password=password\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''access_token'',''N/A''\\)[:80] if ''access_token'' in d else str\\(d\\)[:300]\\)\")",
+      "Bash(curl -s http://localhost:8000/api/v1/)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(p\\) for p in list\\(d.get\\(''paths'',{}\\).keys\\(\\)\\)[:30]]\")",
+      "Bash(ls scripts/*.py)"
+    ]
+  }
+}

@@ -5,7 +5,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 from fastapi import Depends
 
-from app.utils.enums import NotificationPriority
 from app.models import RoutineInspection, RoutineInspectionCreate, RoutineInspectionUpdate, RoutineInspectionResponse, Task, Technician, Site
 from app.exceptions.http import (
     ConflictException,
@@ -45,7 +44,7 @@ class _RoutineInspectionService:
             
             if task and technician:
                 # Create notification for NOC operators about new inspection
-                from app.services.notification import _NotificationService
+                from app.services.notification import _NotificationService, NotificationTemplates
                 from app.models import User
                 from app.utils.enums import UserRole
                 
@@ -65,14 +64,11 @@ class _RoutineInspectionService:
                 site_name = task.site.name if task.site else "Unknown Site"
                 technician_name = technician.user.name if technician.user else "Unknown Technician"
                 
-                for noc_user in noc_users:
-                    notification_service.create_notification_for_user(
-                        user_id=noc_user.id,
-                        title="Generator Routine Inspection Started: " + site_name,
-                        message=f"Technician: {technician_name}\nSite: {site_name}",
-                        priority=NotificationPriority.NORMAL,
-                        session=session
-                    )
+                notification_service.create_notifications_from_template(
+                    user_ids=(noc_user.id for noc_user in noc_users),
+                    template=NotificationTemplates.inspection_started(site_name, technician_name),
+                    session=session,
+                )
             
             return self.inspection_to_response(inspection)
         except IntegrityError as e:
@@ -158,7 +154,7 @@ class _RoutineInspectionService:
             session.refresh(inspection)
             
             # Create notification for NOC operators about completion
-            from app.services.notification import _NotificationService
+            from app.services.notification import _NotificationService, NotificationTemplates
             from app.models import User
             from app.utils.enums import UserRole
             
@@ -176,14 +172,11 @@ class _RoutineInspectionService:
                 )
             ).all()
             
-            for noc_user in noc_users:
-                notification_service.create_notification_for_user(
-                    user_id=noc_user.id,
-                    title="Generator Routine Inspection Completed: " + site_name,
-                    message=f"Site: {site_name}\nThe routine inspection has been submitted.",
-                    priority=NotificationPriority.NORMAL,
-                    session=session
-                )
+            notification_service.create_notifications_from_template(
+                user_ids=(noc_user.id for noc_user in noc_users),
+                template=NotificationTemplates.inspection_completed(site_name),
+                session=session,
+            )
             
             return self.inspection_to_response(inspection)
         except IntegrityError as e:

@@ -32,6 +32,16 @@ def read_clients(
     return service.read_clients(session, active_only, offset, limit)
 
 
+@router.get("/search/inactive", response_model=ClientResponse | None, status_code=200, dependencies=[Depends(require_admin)])
+def find_inactive_client(
+    name: str = Query(..., description="Client name to search for"),
+    service: ClientServiceDep = None,
+    session: Session = None
+) -> ClientResponse | None:
+    """Find an inactive client by name (for reactivation). Admin only."""
+    return service.find_inactive_client_by_name(name, session)
+
+
 @router.get("/{client_id}", response_model=ClientResponse, status_code=200)
 def read_client(
     client_id: UUID,
@@ -61,3 +71,13 @@ def delete_client(
 ) -> None:
     """Delete (deactivate) a client. Admin only."""
     service.delete_client(client_id, session)
+
+
+@router.post("/{client_id}/reactivate", response_model=ClientResponse, status_code=200, dependencies=[Depends(require_admin)])
+def reactivate_client(
+    client_id: UUID,
+    service: ClientServiceDep,
+    session: Session
+) -> ClientResponse:
+    """Reactivate a previously deactivated client. Admin only."""
+    return service.reactivate_client(client_id, session)

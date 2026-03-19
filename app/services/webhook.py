@@ -2,8 +2,9 @@ import httpx
 import json
 import hmac
 import hashlib
+import asyncio
 from typing import Dict, Any, List
-from sqlmodel import Session, select
+from sqlmodel import select
 from app.database import Database
 from app.models import Webhook
 from loguru import logger as LOG
@@ -14,7 +15,7 @@ class WebhookService:
     async def send_webhook(event_type: str, payload: Dict[str, Any]) -> None:
         """Send webhook notifications for a specific event type."""
         try:
-            with Session(Database.connection) as session:
+            with Database.session() as session:
                 webhooks = session.exec(
                     select(Webhook).where(
                         Webhook.event_type == event_type,
@@ -22,14 +23,26 @@ class WebhookService:
                     )
                 ).all()
 
-                for webhook in webhooks:
-                    await WebhookService._send_to_webhook(webhook, payload)
+            if not webhooks:
+                return
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                results = await asyncio.gather(
+                    *(
+                        WebhookService._send_to_webhook(webhook, payload, client)
+                        for webhook in webhooks
+                    ),
+                    return_exceptions=True,
+                )
+                for webhook, result in zip(webhooks, results):
+                    if isinstance(result, Exception):
+                        LOG.error(f"Webhook delivery error for {webhook.url}: {result}")
 
         except Exception as e:
             LOG.error(f"Error sending webhooks for {event_type}: {e}")
 
     @staticmethod
-    async def _send_to_webhook(webhook: Webhook, payload: Dict[str, Any]) -> None:
+    async def _send_to_webhook(webhook: Webhook, payload: Dict[str, Any], client: httpx.AsyncClient) -> None:
         """Send payload to a specific webhook URL."""
         try:
             headers = {"Content-Type": "application/json"}
@@ -44,17 +57,16 @@ class WebhookService:
                 ).hexdigest()
                 headers["X-Webhook-Signature"] = f"sha256={signature}"
 
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(
-                    webhook.url,
-                    json=payload,
-                    headers=headers
-                )
+            response = await client.post(
+                webhook.url,
+                json=payload,
+                headers=headers
+            )
 
-                if response.status_code >= 400:
-                    LOG.warning(f"Webhook failed: {webhook.url} - {response.status_code}: {response.text}")
-                else:
-                    LOG.info(f"Webhook sent successfully: {webhook.url}")
+            if response.status_code >= 400:
+                LOG.warning(f"Webhook failed: {webhook.url} - {response.status_code}: {response.text}")
+            else:
+                LOG.info(f"Webhook sent successfully: {webhook.url}")
 
         except Exception as e:
             LOG.error(f"Error sending webhook to {webhook.url}: {e}")

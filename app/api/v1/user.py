@@ -11,6 +11,7 @@ from app.exceptions.http import UnauthorizedException
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
+@router.post("", response_model=UserResponse, status_code=201, include_in_schema=False)
 @router.post("/", response_model=UserResponse, status_code=201)
 def create_user(
     payload: UserCreate,
@@ -24,6 +25,7 @@ def create_user(
     return service.create_user(payload, session)
 
 
+@router.get("", response_model=List[UserResponse], status_code=200, include_in_schema=False)
 @router.get("/", response_model=List[UserResponse], status_code=200)
 def read_users(
     service: UserService,

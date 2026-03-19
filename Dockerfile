@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set workdir
 WORKDIR /app
@@ -24,5 +24,6 @@ RUN python -m pip install --upgrade pip setuptools wheel \
 EXPOSE 8000
 
 ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'

@@ -3,12 +3,12 @@ from fastapi import Depends
 from typing import List, Annotated, Tuple
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
-from geoalchemy2.shape import from_shape
 from shapely.geometry import Point
 
 from app.utils.enums import Region
-from app.models import Site, SiteCreate, SiteUpdate, SiteResponse
+from app.models import Site, SiteCreate, SiteUpdate, SiteResponse, Task, Incident
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -17,7 +17,13 @@ from app.exceptions.http import (
 
 
 class _SiteService:
-    def site_to_response(self, site: Site) -> SiteResponse:
+    def site_to_response(
+        self,
+        site: Site,
+        *,
+        num_tasks: int = 0,
+        num_incidents: int = 0,
+    ) -> SiteResponse:
         coords = site.get_coordinates()
         return SiteResponse(
             id=site.id,
@@ -30,10 +36,57 @@ class _SiteService:
             latitude=coords[0] if coords else None,
             longitude=coords[1] if coords else None,
             geofence_radius=site.geofence_radius,
-            num_tasks=len(site.tasks) if site.tasks else 0,
-            num_incidents=len(site.incidents) if site.incidents else 0,
+            num_tasks=num_tasks,
+            num_incidents=num_incidents,
             num_reports=0,  # TODO: Add reports relationship if needed
         )
+
+    def _get_related_counts(
+        self,
+        session: Session,
+        site_ids: List[UUID],
+    ) -> Tuple[dict[UUID, int], dict[UUID, int]]:
+        if not site_ids:
+            return {}, {}
+
+        task_rows = session.exec(
+            select(Task.site_id, func.count(Task.id))
+            .where(Task.deleted_at.is_(None), Task.site_id.in_(site_ids))  # type: ignore
+            .group_by(Task.site_id)
+        ).all()
+        task_counts: dict[UUID, int] = {
+            site_id: int(count) for site_id, count in task_rows
+        }
+
+        incident_rows = session.exec(
+            select(Incident.site_id, func.count(Incident.id))
+            .where(Incident.deleted_at.is_(None), Incident.site_id.in_(site_ids))  # type: ignore
+            .group_by(Incident.site_id)
+        ).all()
+        incident_counts: dict[UUID, int] = {
+            site_id: int(count) for site_id, count in incident_rows
+        }
+
+        return task_counts, incident_counts
+
+    def _build_site_responses(
+        self,
+        sites: List[Site],
+        session: Session,
+    ) -> List[SiteResponse]:
+        if not sites:
+            return []
+
+        site_ids = [site.id for site in sites]
+        task_counts, incident_counts = self._get_related_counts(session, site_ids)
+        return [
+            self.site_to_response(
+                site,
+                num_tasks=task_counts.get(site.id, 0),
+                num_incidents=incident_counts.get(site.id, 0),
+            )
+            for site in sites
+        ]
 
     def create_site(self, data: SiteCreate, session: Session) -> SiteResponse:
         # Extract lat/lon before creating site
@@ -48,7 +101,7 @@ class _SiteService:
             session.add(site)
             session.commit()
             session.refresh(site)
-            return self.site_to_response(site)
+            return self.site_to_response(site, num_tasks=0, num_incidents=0)
         except IntegrityError as e:
             session.rollback()
             raise ConflictException(f"Error creating site: {e.orig}")
@@ -58,7 +111,8 @@ class _SiteService:
 
     def read_site(self, site_id: UUID, session: Session) -> SiteResponse:
         site = self._get_site(site_id, session)
-        return self.site_to_response(site)
+        responses = self._build_site_responses([site], session)
+        return responses[0]
 
     def read_sites(
         self,
@@ -74,7 +128,7 @@ class _SiteService:
 
         statement = statement.offset(offset).limit(limit)
         sites = session.exec(statement).all()
-        return [self.site_to_response(site) for site in sites]
+        return self._build_site_responses(sites, session)
 
     def update_site(
         self, site_id: UUID, data: SiteUpdate, session: Session
@@ -85,7 +139,8 @@ class _SiteService:
         )
 
         if not update_data:
-            return self.site_to_response(site)
+            responses = self._build_site_responses([site], session)
+            return responses[0]
 
         # Handle location update separately
         lat = update_data.pop("latitude", None)
@@ -102,7 +157,8 @@ class _SiteService:
         try:
             session.commit()
             session.refresh(site)
-            return self.site_to_response(site)
+            responses = self._build_site_responses([site], session)
+            return responses[0]
         except IntegrityError as e:
             session.rollback()
             raise ConflictException(f"Error updating site: {e.orig}")
@@ -143,7 +199,7 @@ class _SiteService:
         )
         
         sites = session.exec(statement).all()
-        return [self.site_to_response(site) for site in sites]
+        return self._build_site_responses(sites, session)
 
     def is_within_geofence(
         self,

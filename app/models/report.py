@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class BaseReport(SQLModel):
     report_type: ReportType = Field(nullable=False, description="")
     data: dict[str, Any] = Field(nullable=False, sa_type=JSONB)
-    attachments: dict[str, str] | None = Field(default=None, sa_type=JSONB)
+    attachments: dict[str, Any] | None = Field(default=None, sa_type=JSONB)
     service_provider: str = Field(max_length=100, nullable=False)
     seacom_ref: str | None = Field(default=None, max_length=100)
     technician_id: UUID = Field(foreign_key="technicians.id")
@@ -47,10 +47,11 @@ class ReportCreate(BaseReport): ...
 
 class ReportUpdate(SQLModel):
     data: dict[str, Any] | None = Field(default=None)
-    attachments: dict[str, str] | None = Field(default=None)
+    attachments: dict[str, Any] | None = Field(default=None)
     status: ReportStatus | None = Field(default=None)
 
 
 class ReportResponse(BaseDB, BaseReport):
     status: ReportStatus = Field()
     technician_fullname: str = Field(default="")
+    num_attachments: int = Field(default=0, ge=0)
