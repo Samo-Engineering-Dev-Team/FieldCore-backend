@@ -1,0 +1,14 @@
+meta {
+  name: Get Incident
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/incidents/{{incident_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

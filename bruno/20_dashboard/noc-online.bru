@@ -1,0 +1,18 @@
+meta {
+  name: NOC Online
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/dashboard/noc-online
+  body: none
+  auth: bearer
+}
+params:query {
+  cutoff_minutes: 15
+}
+
+auth:bearer {
+  token: {{token}}
+}

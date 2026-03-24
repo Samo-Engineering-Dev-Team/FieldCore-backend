@@ -1,0 +1,14 @@
+meta {
+  name: Due Status
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{base_url}}/incidents/{{incident_id}}/updates/due-status
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,20 @@
+meta {
+  name: Update Setting
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/settings/{{setting_key}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "value": 3600
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,14 @@
+meta {
+  name: Get Schedule
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/maintenance-schedules/{{schedule_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

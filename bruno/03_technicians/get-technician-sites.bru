@@ -1,0 +1,14 @@
+meta {
+  name: Get Technician Sites
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/technicians/{{technician_id}}/sites
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

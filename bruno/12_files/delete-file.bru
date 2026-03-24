@@ -1,0 +1,14 @@
+meta {
+  name: Delete File
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{base_url}}/files/{{file_path}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,22 @@
+meta {
+  name: Create Webhook
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/webhooks/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "url": "https://your-webhook-endpoint.com/hook",
+    "event_type": "incident.created",
+    "secret": "your-webhook-secret"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

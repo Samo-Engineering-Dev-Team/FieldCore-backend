@@ -1,0 +1,14 @@
+meta {
+  name: Get Routine Inspection
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/routine-inspections/{{inspection_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

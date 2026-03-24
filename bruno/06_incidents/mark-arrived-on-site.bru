@@ -1,0 +1,14 @@
+meta {
+  name: Mark Arrived On Site
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/incidents/{{incident_id}}/arrive
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

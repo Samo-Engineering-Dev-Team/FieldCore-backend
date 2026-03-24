@@ -1,0 +1,14 @@
+meta {
+  name: Incident SLA Detail
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/dashboard/incident-sla-monitoring/{{incident_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

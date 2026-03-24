@@ -1,0 +1,14 @@
+meta {
+  name: Delete Routine Issue
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{base_url}}/routine-issues/{{routine_issue_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

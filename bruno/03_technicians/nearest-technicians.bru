@@ -1,0 +1,22 @@
+meta {
+  name: Nearest Technicians
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/technicians/dispatch/nearest
+  body: none
+  auth: bearer
+}
+params:query {
+  latitude: -26.2041
+  longitude: 28.0473
+  limit: 5
+  available_only: true
+  ~max_distance_km: 
+}
+
+auth:bearer {
+  token: {{token}}
+}

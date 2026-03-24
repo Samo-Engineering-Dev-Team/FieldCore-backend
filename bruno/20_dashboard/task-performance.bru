@@ -1,0 +1,22 @@
+meta {
+  name: Task Performance
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/dashboard/task-performance
+  body: none
+  auth: bearer
+}
+params:query {
+  ~task_type: 
+  ~region: 
+  ~status: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

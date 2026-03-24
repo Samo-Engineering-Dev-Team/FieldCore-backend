@@ -1,0 +1,22 @@
+meta {
+  name: List Incidents
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/incidents/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~technician_id: 
+  ~status: 
+  ~client_id: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

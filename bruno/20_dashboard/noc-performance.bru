@@ -1,0 +1,18 @@
+meta {
+  name: NOC Performance
+  type: http
+  seq: 17
+}
+
+get {
+  url: {{base_url}}/dashboard/noc-performance
+  body: none
+  auth: bearer
+}
+params:query {
+  days: 30
+}
+
+auth:bearer {
+  token: {{token}}
+}

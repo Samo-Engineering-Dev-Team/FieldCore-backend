@@ -1,0 +1,14 @@
+meta {
+  name: Delete Technician
+  type: http
+  seq: 14
+}
+
+delete {
+  url: {{base_url}}/technicians/{{technician_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

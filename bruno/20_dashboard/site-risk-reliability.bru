@@ -1,0 +1,21 @@
+meta {
+  name: Site Risk Reliability
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/dashboard/site-risk-reliability
+  body: none
+  auth: bearer
+}
+params:query {
+  ~region: 
+  ~risk_level: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

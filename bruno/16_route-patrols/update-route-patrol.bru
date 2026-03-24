@@ -1,0 +1,20 @@
+meta {
+  name: Update Route Patrol
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/route-patrols/{{patrol_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "observations": "Updated observations"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

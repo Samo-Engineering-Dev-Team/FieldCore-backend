@@ -1,0 +1,14 @@
+meta {
+  name: Start Incident
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/incidents/{{incident_id}}/start
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

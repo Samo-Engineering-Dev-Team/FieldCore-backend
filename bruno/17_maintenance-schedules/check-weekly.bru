@@ -1,0 +1,14 @@
+meta {
+  name: Check Weekly
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{base_url}}/maintenance-schedules/check-weekly
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,22 @@
+meta {
+  name: List Tasks
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/tasks/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~technician_id: 
+  ~task_type: 
+  ~status: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

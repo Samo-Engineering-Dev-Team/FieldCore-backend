@@ -1,0 +1,20 @@
+meta {
+  name: Task Feedback
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/tasks/{{task_id}}/feedback
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "feedback": "Work completed successfully."
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

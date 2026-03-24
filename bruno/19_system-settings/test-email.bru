@@ -1,0 +1,14 @@
+meta {
+  name: Test Email
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{base_url}}/settings/email/test
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

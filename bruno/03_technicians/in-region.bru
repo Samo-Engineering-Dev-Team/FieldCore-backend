@@ -1,0 +1,21 @@
+meta {
+  name: In Region
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/technicians/dispatch/in-region
+  body: none
+  auth: bearer
+}
+params:query {
+  latitude: -26.2041
+  longitude: 28.0473
+  radius_km: 50
+  available_only: true
+}
+
+auth:bearer {
+  token: {{token}}
+}

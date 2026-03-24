@@ -1,0 +1,18 @@
+meta {
+  name: Search Inactive
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/clients/search/inactive
+  body: none
+  auth: bearer
+}
+params:query {
+  name: SEACOM
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,21 @@
+meta {
+  name: Access Request SLA
+  type: http
+  seq: 11
+}
+
+get {
+  url: {{base_url}}/dashboard/access-request-sla
+  body: none
+  auth: bearer
+}
+params:query {
+  ~region: 
+  ~status: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

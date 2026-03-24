@@ -1,0 +1,26 @@
+meta {
+  name: Create Incident
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/incidents/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "description": "Fibre cut on main trunk line",
+    "severity": "major",
+    "site_id": "{{site_id}}",
+    "technician_id": "{{technician_id}}",
+    "client_id": "{{client_id}}",
+    "ref_no": "INC-2026-001",
+    "start_time": "2026-03-24T20:00:00Z"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,21 @@
+meta {
+  name: Help Alert
+  type: http
+  seq: 17
+}
+
+post {
+  url: {{base_url}}/incidents/help-alert
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "incident_id": "{{incident_id}}",
+    "message": "Need immediate backup"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

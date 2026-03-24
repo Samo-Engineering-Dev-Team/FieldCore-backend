@@ -1,0 +1,14 @@
+meta {
+  name: List Updates
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/incidents/{{incident_id}}/updates
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

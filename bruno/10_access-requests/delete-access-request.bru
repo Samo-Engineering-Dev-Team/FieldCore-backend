@@ -1,0 +1,14 @@
+meta {
+  name: Delete Access Request
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{base_url}}/access-requests/{{access_request_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

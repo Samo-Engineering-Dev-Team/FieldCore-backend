@@ -1,0 +1,20 @@
+meta {
+  name: Create Update
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{base_url}}/incidents/{{incident_id}}/updates
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "message": "Technician has arrived on site and is assessing the damage."
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

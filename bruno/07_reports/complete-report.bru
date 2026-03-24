@@ -1,0 +1,14 @@
+meta {
+  name: Complete Report
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/reports/{{report_id}}/complete
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

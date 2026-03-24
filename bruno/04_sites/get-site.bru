@@ -1,0 +1,14 @@
+meta {
+  name: Get Site
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/sites/{{site_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

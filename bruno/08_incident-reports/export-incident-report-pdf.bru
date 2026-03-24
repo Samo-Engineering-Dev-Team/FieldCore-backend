@@ -1,0 +1,14 @@
+meta {
+  name: Export Incident Report PDF
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/incident-reports/{{incident_report_id}}/export-pdf
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

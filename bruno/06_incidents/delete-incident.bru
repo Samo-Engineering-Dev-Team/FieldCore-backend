@@ -1,0 +1,14 @@
+meta {
+  name: Delete Incident
+  type: http
+  seq: 18
+}
+
+delete {
+  url: {{base_url}}/incidents/{{incident_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

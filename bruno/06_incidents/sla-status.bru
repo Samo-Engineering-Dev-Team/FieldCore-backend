@@ -1,0 +1,14 @@
+meta {
+  name: SLA Status
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{base_url}}/incidents/{{incident_id}}/sla-status
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

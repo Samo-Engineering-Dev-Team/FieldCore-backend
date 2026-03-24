@@ -1,0 +1,18 @@
+meta {
+  name: Approve Access Request
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/access-requests/{{access_request_id}}/approve
+  body: json
+  auth: bearer
+}
+body:json {
+  "SEACOM-2026-001"
+}
+
+auth:bearer {
+  token: {{token}}
+}

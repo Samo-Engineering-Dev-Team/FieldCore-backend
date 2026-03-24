@@ -1,0 +1,14 @@
+meta {
+  name: Resolve Incident
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{base_url}}/incidents/{{incident_id}}/resolve
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

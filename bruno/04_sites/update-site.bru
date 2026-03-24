@@ -1,0 +1,21 @@
+meta {
+  name: Update Site
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/sites/{{site_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "name": "Updated Site Name",
+    "address": "456 New Street"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

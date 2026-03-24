@@ -1,0 +1,20 @@
+meta {
+  name: SLA Trend Analysis
+  type: http
+  seq: 13
+}
+
+get {
+  url: {{base_url}}/dashboard/sla-trend-analysis
+  body: none
+  auth: bearer
+}
+params:query {
+  ~metric_type: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,21 @@
+meta {
+  name: List Route Patrols
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/route-patrols/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~technician_id: 
+  ~site_id: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

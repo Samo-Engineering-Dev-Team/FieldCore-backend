@@ -1,0 +1,23 @@
+meta {
+  name: Create Routine Inspection
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/routine-inspections/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "technician_id": "{{technician_id}}",
+    "site_id": "{{site_id}}",
+    "task_id": "{{task_id}}",
+    "notes": "Quarterly site inspection"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

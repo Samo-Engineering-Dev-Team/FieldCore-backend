@@ -1,0 +1,14 @@
+meta {
+  name: Get Access Request
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/access-requests/{{access_request_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

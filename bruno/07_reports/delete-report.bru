@@ -1,0 +1,14 @@
+meta {
+  name: Delete Report
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{base_url}}/reports/{{report_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

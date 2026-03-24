@@ -1,0 +1,14 @@
+meta {
+  name: Fail Task
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{base_url}}/tasks/{{task_id}}/fail
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

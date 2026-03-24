@@ -1,0 +1,14 @@
+meta {
+  name: Get Debug Config
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{base_url}}/settings/debug
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,14 @@
+meta {
+  name: Penalty Summary
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/incidents/penalty-summary
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

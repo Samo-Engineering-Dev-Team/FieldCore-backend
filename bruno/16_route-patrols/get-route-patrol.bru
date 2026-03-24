@@ -1,0 +1,14 @@
+meta {
+  name: Get Route Patrol
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/route-patrols/{{patrol_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}
