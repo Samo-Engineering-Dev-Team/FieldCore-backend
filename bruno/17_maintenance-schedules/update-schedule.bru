@@ -1,0 +1,21 @@
+meta {
+  name: Update Schedule
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/maintenance-schedules/{{schedule_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "notes": "Updated notes",
+    "is_active": true
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,20 @@
+meta {
+  name: Update Incident Report
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/incident-reports/{{incident_report_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "conclusion": "Updated conclusion text."
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

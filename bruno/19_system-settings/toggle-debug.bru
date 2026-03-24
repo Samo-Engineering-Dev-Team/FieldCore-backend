@@ -1,0 +1,14 @@
+meta {
+  name: Toggle Debug
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/settings/debug/toggle
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

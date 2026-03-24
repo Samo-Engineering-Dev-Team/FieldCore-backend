@@ -1,0 +1,14 @@
+meta {
+  name: Deactivate User
+  type: http
+  seq: 7
+}
+
+patch {
+  url: {{base_url}}/users/{{user_id}}/status/deactivate
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

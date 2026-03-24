@@ -1,0 +1,14 @@
+meta {
+  name: Mark Perm Restored
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{base_url}}/incidents/{{incident_id}}/perm-restore
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

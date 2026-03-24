@@ -1,0 +1,14 @@
+meta {
+  name: Dashboard Health
+  type: http
+  seq: 18
+}
+
+get {
+  url: {{base_url}}/dashboard/health
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

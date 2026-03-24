@@ -1,0 +1,18 @@
+meta {
+  name: Get Signed URL
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/files/signed-url/{{file_path}}
+  body: none
+  auth: bearer
+}
+params:query {
+  expires_in: 3600
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,19 @@
+meta {
+  name: Nearest To Site
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{base_url}}/technicians/dispatch/nearest-to-site/{{site_id}}
+  body: none
+  auth: bearer
+}
+params:query {
+  limit: 5
+  available_only: true
+}
+
+auth:bearer {
+  token: {{token}}
+}

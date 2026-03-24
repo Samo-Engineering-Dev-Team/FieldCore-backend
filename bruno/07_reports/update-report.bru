@@ -1,0 +1,20 @@
+meta {
+  name: Update Report
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/reports/{{report_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "data": {"site_condition": "fair"}
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

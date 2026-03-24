@@ -1,0 +1,18 @@
+meta {
+  name: Stale Locations
+  type: http
+  seq: 12
+}
+
+get {
+  url: {{base_url}}/technicians/monitoring/stale-locations
+  body: none
+  auth: bearer
+}
+params:query {
+  stale_minutes: 30
+}
+
+auth:bearer {
+  token: {{token}}
+}

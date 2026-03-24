@@ -1,0 +1,14 @@
+meta {
+  name: Submit Inspection
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/routine-inspections/{{inspection_id}}/submit
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

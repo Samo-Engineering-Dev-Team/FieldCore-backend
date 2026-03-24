@@ -1,0 +1,21 @@
+meta {
+  name: Create Client
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/clients/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "name": "SEACOM",
+    "is_active": true
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

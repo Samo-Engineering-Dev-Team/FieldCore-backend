@@ -1,0 +1,14 @@
+meta {
+  name: Mark Temp Restored
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{base_url}}/incidents/{{incident_id}}/temp-restore
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

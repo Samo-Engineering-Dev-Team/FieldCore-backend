@@ -1,0 +1,14 @@
+meta {
+  name: Delete Client
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{base_url}}/clients/{{client_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

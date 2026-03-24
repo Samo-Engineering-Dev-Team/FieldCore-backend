@@ -1,0 +1,20 @@
+meta {
+  name: Update Routine Issue
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/routine-issues/{{routine_issue_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "description": "Updated issue description"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

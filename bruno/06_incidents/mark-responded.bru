@@ -1,0 +1,14 @@
+meta {
+  name: Mark Responded
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{base_url}}/incidents/{{incident_id}}/respond
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

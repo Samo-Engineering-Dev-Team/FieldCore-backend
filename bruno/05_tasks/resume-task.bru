@@ -1,0 +1,14 @@
+meta {
+  name: Resume Task
+  type: http
+  seq: 9
+}
+
+patch {
+  url: {{base_url}}/tasks/{{task_id}}/resume
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

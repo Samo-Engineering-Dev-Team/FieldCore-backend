@@ -1,0 +1,18 @@
+meta {
+  name: List Due Schedules
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/maintenance-schedules/due
+  body: none
+  auth: bearer
+}
+params:query {
+  ~technician_id: 
+}
+
+auth:bearer {
+  token: {{token}}
+}

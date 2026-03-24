@@ -1,0 +1,21 @@
+meta {
+  name: Update Location
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/technicians/{{technician_id}}/location
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "latitude": -26.2041,
+    "longitude": 28.0473
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

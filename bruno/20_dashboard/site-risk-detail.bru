@@ -1,0 +1,14 @@
+meta {
+  name: Site Risk Detail
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/dashboard/site-risk-reliability/{{site_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

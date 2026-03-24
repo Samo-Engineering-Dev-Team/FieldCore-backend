@@ -1,0 +1,14 @@
+meta {
+  name: Export Report PDF
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/reports/{{report_id}}/export/pdf
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,25 @@
+meta {
+  name: Create Schedule
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/maintenance-schedules/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "site_id": "{{site_id}}",
+    "schedule_type": "repeater_site_visit",
+    "frequency": "monthly",
+    "assigned_technician_id": "{{technician_id}}",
+    "next_due_at": "2026-04-01T08:00:00Z",
+    "notes": "Monthly repeater inspection"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

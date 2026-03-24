@@ -1,0 +1,20 @@
+meta {
+  name: Update Routine Check
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/routine-checks/{{routine_check_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "notes": "Updated notes"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

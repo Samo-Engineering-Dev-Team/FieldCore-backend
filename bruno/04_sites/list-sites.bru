@@ -1,0 +1,20 @@
+meta {
+  name: List Sites
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/sites/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~region: 
+  offset: 0
+  limit: 100
+}
+
+auth:bearer {
+  token: {{token}}
+}

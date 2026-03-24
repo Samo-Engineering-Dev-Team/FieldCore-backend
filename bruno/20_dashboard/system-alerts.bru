@@ -1,0 +1,14 @@
+meta {
+  name: System Alerts
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{base_url}}/dashboard/system-alerts
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

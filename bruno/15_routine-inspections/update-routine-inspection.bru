@@ -1,0 +1,20 @@
+meta {
+  name: Update Routine Inspection
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/routine-inspections/{{inspection_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "notes": "Updated notes"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

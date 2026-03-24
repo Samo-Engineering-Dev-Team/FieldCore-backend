@@ -1,0 +1,14 @@
+meta {
+  name: Delete Routine Inspection
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/routine-inspections/{{inspection_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

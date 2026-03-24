@@ -1,0 +1,21 @@
+meta {
+  name: SLA Alerts
+  type: http
+  seq: 14
+}
+
+get {
+  url: {{base_url}}/dashboard/sla-alerts
+  body: none
+  auth: bearer
+}
+params:query {
+  ~alert_level: 
+  ~item_type: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

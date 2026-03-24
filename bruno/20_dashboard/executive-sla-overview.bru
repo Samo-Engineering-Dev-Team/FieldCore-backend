@@ -1,0 +1,14 @@
+meta {
+  name: Executive SLA Overview
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/dashboard/executive-sla-overview
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

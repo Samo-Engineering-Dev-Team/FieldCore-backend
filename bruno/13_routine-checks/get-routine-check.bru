@@ -1,0 +1,14 @@
+meta {
+  name: Get Routine Check
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/routine-checks/{{routine_check_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,21 @@
+meta {
+  name: Update Technician
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/technicians/{{technician_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "phone": "0821234567",
+    "is_available": true
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

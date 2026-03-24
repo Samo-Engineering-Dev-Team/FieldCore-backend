@@ -1,0 +1,14 @@
+meta {
+  name: Delete Route Patrol
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{base_url}}/route-patrols/{{patrol_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

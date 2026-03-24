@@ -1,0 +1,14 @@
+meta {
+  name: Get All Settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/settings/
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

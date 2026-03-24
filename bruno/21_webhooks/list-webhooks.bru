@@ -1,0 +1,18 @@
+meta {
+  name: List Webhooks
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/webhooks/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~event_type: 
+}
+
+auth:bearer {
+  token: {{token}}
+}

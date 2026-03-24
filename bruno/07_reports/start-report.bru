@@ -1,0 +1,14 @@
+meta {
+  name: Start Report
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/reports/{{report_id}}/start
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,20 @@
+meta {
+  name: Update Technician Sites
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{base_url}}/technicians/{{technician_id}}/sites
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "site_ids": ["{{site_id}}"]
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

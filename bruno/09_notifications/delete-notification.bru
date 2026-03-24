@@ -1,0 +1,14 @@
+meta {
+  name: Delete Notification
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{base_url}}/notifications/{{notification_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Create Report
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/reports/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "report_type": "repeater",
+    "service_provider": "SAMO Telecoms",
+    "technician_id": "{{technician_id}}",
+    "task_id": "{{task_id}}",
+    "data": {
+      "site_condition": "good",
+      "battery_voltage": 13.2,
+      "signal_strength": -65
+    }
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Create Task
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/tasks/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "description": "Routine repeater inspection at JHB Hub",
+    "start_time": "2026-03-25T08:00:00Z",
+    "end_time": "2026-03-25T12:00:00Z",
+    "task_type": "repeater",
+    "report_type": "repeater",
+    "site_id": "{{site_id}}",
+    "technician_id": "{{technician_id}}"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

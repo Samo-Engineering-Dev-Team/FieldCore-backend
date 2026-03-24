@@ -1,0 +1,21 @@
+meta {
+  name: Update Client
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{base_url}}/clients/{{client_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "name": "SEACOM Updated",
+    "is_active": true
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

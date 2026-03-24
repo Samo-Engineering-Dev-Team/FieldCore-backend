@@ -1,0 +1,28 @@
+meta {
+  name: Create Incident Report
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/incident-reports/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "incident_id": "{{incident_id}}",
+    "site_name": "Johannesburg Hub",
+    "technician_name": "John Doe",
+    "introduction": "This report documents the fibre cut incident on 24 March 2026.",
+    "problem_statement": "Main trunk fibre was cut at the 12km mark.",
+    "findings": "Physical damage caused by construction works in the area.",
+    "actions_taken": "Spliced and restored the fibre cable.",
+    "root_cause_analysis": "Excavation by a third-party contractor without prior notification.",
+    "conclusion": "Service restored. Recommend physical markers at cable route."
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

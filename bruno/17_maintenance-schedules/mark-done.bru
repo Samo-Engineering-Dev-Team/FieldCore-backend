@@ -1,0 +1,14 @@
+meta {
+  name: Mark Done
+  type: http
+  seq: 6
+}
+
+patch {
+  url: {{base_url}}/maintenance-schedules/{{schedule_id}}/mark-done
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

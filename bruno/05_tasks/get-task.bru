@@ -1,0 +1,14 @@
+meta {
+  name: Get Task
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/tasks/{{task_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

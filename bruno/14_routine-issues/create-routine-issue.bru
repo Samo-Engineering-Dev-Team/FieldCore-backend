@@ -1,0 +1,23 @@
+meta {
+  name: Create Routine Issue
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/routine-issues/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "report_id": "{{report_id}}",
+    "description": "Corroded connector on port 2",
+    "severity": "minor",
+    "region": "gauteng"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,14 @@
+meta {
+  name: Heartbeat
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/sessions/heartbeat
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

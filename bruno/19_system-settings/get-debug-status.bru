@@ -1,0 +1,14 @@
+meta {
+  name: Get Debug Status
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/settings/debug/status
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

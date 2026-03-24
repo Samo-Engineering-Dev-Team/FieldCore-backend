@@ -1,0 +1,19 @@
+meta {
+  name: List Schedules
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/maintenance-schedules/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~site_id: 
+  ~technician_id: 
+}
+
+auth:bearer {
+  token: {{token}}
+}

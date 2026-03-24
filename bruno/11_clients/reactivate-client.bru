@@ -1,0 +1,14 @@
+meta {
+  name: Reactivate Client
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{base_url}}/clients/{{client_id}}/reactivate
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

@@ -1,0 +1,14 @@
+meta {
+  name: Get Client
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{base_url}}/clients/{{client_id}}
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}

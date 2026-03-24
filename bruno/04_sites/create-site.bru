@@ -1,0 +1,25 @@
+meta {
+  name: Create Site
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/sites/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "name": "Johannesburg Hub",
+    "region": "gauteng",
+    "address": "123 Main Street, Johannesburg",
+    "latitude": -26.2041,
+    "longitude": 28.0473,
+    "geofence_radius": 200
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

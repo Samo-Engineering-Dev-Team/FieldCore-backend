@@ -1,0 +1,22 @@
+meta {
+  name: List Routine Inspections
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{base_url}}/routine-inspections/
+  body: none
+  auth: bearer
+}
+params:query {
+  ~status: 
+  ~technician_id: 
+  ~site_id: 
+  offset: 0
+  limit: 50
+}
+
+auth:bearer {
+  token: {{token}}
+}

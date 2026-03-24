@@ -1,0 +1,19 @@
+meta {
+  name: Escalate Technician
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{base_url}}/technicians/{{technician_id}}/escalate
+  body: none
+  auth: bearer
+}
+params:query {
+  reason: Not responding
+  priority: high
+}
+
+auth:bearer {
+  token: {{token}}
+}

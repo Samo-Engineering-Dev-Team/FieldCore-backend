@@ -1,0 +1,23 @@
+meta {
+  name: Upload File
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/files/upload
+  body: multipart-form
+  auth: bearer
+}
+
+body:multipart-form {
+  file: @file(/path/to/your/file.jpg)
+}
+
+params:query {
+  ~folder: incident-photos
+}
+
+auth:bearer {
+  token: {{token}}
+}

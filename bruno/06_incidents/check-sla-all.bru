@@ -1,0 +1,14 @@
+meta {
+  name: Check SLA All
+  type: http
+  seq: 16
+}
+
+post {
+  url: {{base_url}}/incidents/check-sla
+  body: none
+  auth: bearer
+}
+auth:bearer {
+  token: {{token}}
+}
