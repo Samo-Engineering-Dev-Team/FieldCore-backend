@@ -15,6 +15,7 @@ from sqlmodel import Session, select, and_
 
 from app.models.fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from app.models import Incident
+from app.utils.enums import IncidentStatus
 from app.utils.funcs import utcnow
 from app.utils.sla_utils import calculate_sla_deadlines
 from app.database import get_session
@@ -71,6 +72,10 @@ class _FaultUpdateService:
         if not incident or incident.deleted_at:
             from app.exceptions.http import NotFoundException
             raise NotFoundException("incident not found")
+
+        if incident.status == IncidentStatus.RESOLVED:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="Cannot add remarks to a resolved incident")
 
         is_overdue = _is_update_overdue(incident, session)
 
