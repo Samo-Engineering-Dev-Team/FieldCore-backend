@@ -122,7 +122,7 @@ def export_report_pdf(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(len(pdf_bytes))
         }
     )

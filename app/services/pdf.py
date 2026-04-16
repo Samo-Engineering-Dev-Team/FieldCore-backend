@@ -1,4 +1,5 @@
 import urllib.request
+import re
 from urllib.parse import urlparse, unquote
 from io import BytesIO
 from datetime import datetime
@@ -374,6 +375,201 @@ class PDFService:
 
     # ── Field reports ────────────────────────────────────────────────────────
 
+    def _build_clean_field_cover_page(
+        self,
+        title: str,
+        subtitle: str,
+        details: list[list[str]],
+        cover_key: str | None = None,
+    ) -> list:
+        """Build clean first page for field report exports."""
+        elements: list[Any] = []
+        primary_color, accent_color = self._cover_palette(cover_key)
+        detail_map = {
+            str(row[0]).strip().lower(): str(row[1]).strip()
+            for row in details
+            if len(row) >= 2
+        }
+
+        site_name = detail_map.get("site", "")
+        service_provider = detail_map.get("service provider", "")
+        generated_label = detail_map.get(
+            "generated",
+            datetime.now().strftime("%d %B %Y %H:%M UTC"),
+        )
+        report_type = detail_map.get("report type", title.replace(" Report", ""))
+
+        samo_logo = seacom_logo = None
+        try:
+            p = self.assets_path / "samo-logo.png"
+            if p.exists():
+                samo_logo = Image(str(p), width=32 * mm, height=12 * mm)
+        except Exception:
+            pass
+        try:
+            p = self.assets_path / "seacom-logo.png"
+            if p.exists():
+                seacom_logo = Image(str(p), width=34 * mm, height=12 * mm)
+        except Exception:
+            pass
+
+        eyebrow_style = ParagraphStyle(
+            "CleanCoverEyebrow",
+            parent=self.styles["Normal"],
+            fontSize=8.5,
+            leading=10,
+            textColor=colors.HexColor(accent_color),
+            fontName="Helvetica-Bold",
+            alignment=TA_LEFT,
+        )
+        brand_style = ParagraphStyle(
+            "CleanCoverBrand",
+            parent=self.styles["Normal"],
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor(primary_color),
+            fontName="Helvetica-Bold",
+            alignment=TA_LEFT,
+        )
+        title_style = ParagraphStyle(
+            "CleanCoverTitle",
+            parent=self.styles["Normal"],
+            fontSize=26,
+            leading=30,
+            textColor=colors.HexColor("#0f172a"),
+            fontName="Helvetica-Bold",
+            alignment=TA_LEFT,
+            spaceAfter=4,
+        )
+        site_style = ParagraphStyle(
+            "CleanCoverSite",
+            parent=self.styles["Normal"],
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor(primary_color),
+            fontName="Helvetica-Bold",
+            alignment=TA_LEFT,
+            spaceAfter=4,
+        )
+        body_style = ParagraphStyle(
+            "CleanCoverBody",
+            parent=self.styles["Normal"],
+            fontSize=10.5,
+            leading=15,
+            textColor=colors.HexColor("#475569"),
+            fontName="Helvetica",
+            alignment=TA_LEFT,
+        )
+        footer_style = ParagraphStyle(
+            "CleanCoverFooter",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            leading=12,
+            textColor=colors.HexColor("#64748b"),
+            fontName="Helvetica",
+            alignment=TA_CENTER,
+        )
+
+        logo_lockup = Table(
+            [[
+                samo_logo or Paragraph("<b>SAMO</b>", self.styles["FieldLabel"]),
+                seacom_logo or Paragraph("<b>SEACOM</b>", self.styles["FieldLabel"]),
+            ]],
+            colWidths=[38 * mm, 38 * mm],
+        )
+        logo_lockup.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        top_band = Table(
+            [[
+                [
+                    Paragraph("FIELD OPERATIONS REPORT", eyebrow_style),
+                    Spacer(1, 2),
+                    Paragraph("SAMO TELECOMS  x  SEACOM", brand_style),
+                ],
+                logo_lockup,
+            ]],
+            colWidths=[86 * mm, 84 * mm],
+        )
+        top_band.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d8e1ec")),
+            ("LINEBELOW", (0, 0), (-1, 0), 3, colors.HexColor(accent_color)),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ]))
+        elements.append(top_band)
+        elements.append(Spacer(1, 14 * mm))
+
+        intro_copy = (
+            f"Prepared for {service_provider}. Structured field document for operational review, archive, "
+            "and audit traceability."
+            if service_provider
+            else "Structured field document for operational review, archive, and audit traceability."
+        )
+
+        hero_block = Table(
+            [[
+                [
+                    Paragraph(report_type.upper(), eyebrow_style),
+                    Spacer(1, 5),
+                    Paragraph(title, title_style),
+                    Paragraph(site_name or "Field Service Record", site_style),
+                    Paragraph(subtitle, body_style),
+                    Spacer(1, 6),
+                    Paragraph(intro_copy, body_style),
+                ]
+            ]],
+            colWidths=[170 * mm],
+        )
+        hero_block.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(hero_block)
+        elements.append(Spacer(1, 7 * mm))
+        elements.append(self._create_divider(color_hex=accent_color))
+        elements.append(Spacer(1, 8 * mm))
+
+        if details:
+            cover_items = [(str(row[0]), str(row[1])) for row in details if len(row) >= 2]
+            elements.extend(self._build_metadata_cards(cover_items, primary_color))
+
+        footer_box = Table(
+            [[
+                Paragraph("CONFIDENTIAL DOCUMENT - FOR SAMO TELECOMS AND SEACOM USE ONLY", footer_style),
+                Paragraph(f"Generated {generated_label}", footer_style),
+            ]],
+            colWidths=[110 * mm, 60 * mm],
+        )
+        footer_box.setStyle(TableStyle([
+            ("LINEABOVE", (0, 0), (-1, -1), 0.8, colors.HexColor("#d8e1ec")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (0, 0), (0, 0), "LEFT"),
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(Spacer(1, 16 * mm))
+        elements.append(footer_box)
+        elements.append(PageBreak())
+        return elements
+
     def generate_report_pdf(self, report: Report) -> BytesIO:
         """
         Generate a professional PDF document for a completed report with logos and rounded design elements.
@@ -425,7 +621,7 @@ class PDFService:
             cover_details.append(["Generated", self._format_datetime(report.created_at)])
             report_cover_key = report.report_type.value if getattr(report, "report_type", None) else "base"
             primary_hex, accent_hex = self._cover_palette(report_cover_key)
-            story.extend(self._build_cover_page(
+            story.extend(self._build_clean_field_cover_page(
                 title=f"{report_type_display} Report",
                 subtitle="Field Report - SAMO TELECOMS x SEACOM",
                 details=cover_details,
@@ -441,65 +637,57 @@ class PDFService:
             ))
 
             # ── Metadata cards ────────────────────────────────────────────────
-            meta_items: list[tuple[str, str]] = [
-                ("Report Type", report_type_display),
+            meta_summary_items: list[tuple[str, str]] = [
                 ("Status", report.status.value.upper()),
                 ("Service Provider", report.service_provider or "N/A"),
-                ("Created", self._format_datetime(report.created_at)),
+            ]
+            meta_detail_rows: list[list[str]] = [
+                ["Report Type", report_type_display],
+                ["Created", self._format_datetime(report.created_at)],
             ]
             try:
                 if report.technician and report.technician.user:
                     u = report.technician.user
-                    meta_items.append(("Technician", f"{u.name} {u.surname}"))
-                    meta_items.append(("Phone", report.technician.phone or "N/A"))
+                    meta_summary_items.append(("Technician", f"{u.name} {u.surname}"))
+                    meta_detail_rows.append(["Phone", report.technician.phone or "N/A"])
             except Exception:
                 pass
             try:
                 if report.task:
                     if report.task.seacom_ref:
-                        meta_items.append(("Reference", report.task.seacom_ref))
+                        meta_detail_rows.append(["Reference", report.task.seacom_ref])
                     if report.task.site:
-                        meta_items.append(("Site", report.task.site.name))
-                        meta_items.append(("Region", report.task.site.region.value.replace("-", " ").title()))
+                        meta_summary_items.append(("Site", report.task.site.name))
+                        meta_detail_rows.append(["Region", report.task.site.region.value.replace("-", " ").title()])
             except Exception:
                 pass
-            story.extend(self._build_metadata_cards(meta_items, primary_hex))
+            story.extend(
+                self._build_field_summary_cards(
+                    meta_summary_items,
+                    primary_hex=primary_hex,
+                    accent_hex=accent_hex,
+                    columns=min(4, max(1, len(meta_summary_items))),
+                )
+            )
+            if meta_detail_rows:
+                story.append(self._build_field_kv_table(meta_detail_rows))
+                story.append(Spacer(1, 6 * mm))
 
             # Report Data Section
             if report.data:
                 if report.report_type == ReportType.REPEATER:
                     self._render_repeater_body(report, story, primary_hex, accent_hex)
+                elif report.report_type == ReportType.DIESEL:
+                    self._render_diesel_body(report, story, primary_hex, accent_hex)
+                elif report.report_type == ReportType.ROUTINE_DRIVE:
+                    self._render_routine_drive_body(report, story, primary_hex, accent_hex)
                 else:
                     story.extend(self._repeater_section_header("Report Details", primary_hex, accent_hex))
                     story.extend(self._render_report_data(report.data))
 
             # Attachments Section
             if report.attachments:
-                story.append(Spacer(1, 16))
-                story.extend(self._repeater_section_header("Attachments", primary_hex, accent_hex))
-
-                attachment_data = [["Field Name", "Value"]]
-                for key, value in report.attachments.items():
-                    attachment_data.append([key, str(value)[:60]])
-
-                if len(attachment_data) > 1:
-                    att_table = Table(attachment_data, colWidths=[140, 330])
-                    att_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a365d')),
-                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-                        ('FONTNAME', (1, 1), (-1, -1), 'Helvetica'),
-                        ('FONTSIZE', (0, 0), (-1, -1), 9),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#ffffff')),
-                        ('TEXTCOLOR', (1, 1), (-1, -1), colors.HexColor('#4a5568')),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                        ('TOPPADDING', (0, 0), (-1, -1), 6),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e0')),
-                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ffffff'), colors.HexColor('#f7fafc')]),
-                    ]))
-                    story.append(att_table)
+                self._render_attachment_section(report, story, primary_hex, accent_hex)
 
             # Footer
             story.append(Spacer(1, 24))
@@ -512,11 +700,7 @@ class PDFService:
             ))
 
             # Build PDF
-            self._configure_first_page_background(report_cover_key, primary_hex, accent_hex)
-            try:
-                doc.build(story, onFirstPage=self._draw_first_page_background)
-            finally:
-                self._clear_first_page_background()
+            doc.build(story)
 
         except Exception as e:
             raise
@@ -1179,12 +1363,12 @@ class PDFService:
 
         photo_buffers: list[tuple[str, BytesIO]] = []
         for photo in photos_raw:
-            url = photo.get("url") or photo.get("public_url")
+            url = self._get_media_source(photo)
             if not url:
                 continue
             buf = self._fetch_image_bytes(url)
             if buf:
-                photo_buffers.append((photo.get("original_name") or "Photo", buf))
+                photo_buffers.append((self._get_media_name(photo), buf))
 
         if photo_buffers:
             # Photo section heading — same bordered-box style as narrative sections
@@ -1245,7 +1429,7 @@ class PDFService:
                 for name, buf in row_items:
                     try:
                         buf.seek(0)
-                        img = Image(ImageReader(buf), width=PHOTO_W, height=PHOTO_H)
+                        img = Image(buf, width=PHOTO_W, height=PHOTO_H)
                         img.hAlign = "CENTER"
                         img_row.append(img)
                         cap_row.append(Paragraph(name[:35], caption_s))
@@ -1565,71 +1749,82 @@ class PDFService:
         primary_hex: str = "#0b2265",
         accent_hex: str = "#1a365d",
     ) -> list:
-        """
-        Build a full-width dark banner for the top of every content page.
-        Mirrors the .content-header style from the client HTML report:
-        [ samo logo | title + subtitle | seacom logo ]
-        """
+        """Build a clean content-page header with lighter document styling."""
         samo_logo = seacom_logo = None
         try:
             p = self.assets_path / "samo-logo.png"
             if p.exists():
-                samo_logo = Image(str(p), width=46 * mm, height=16 * mm)
+                samo_logo = Image(str(p), width=28 * mm, height=10 * mm)
         except Exception:
             pass
         try:
             p = self.assets_path / "seacom-logo.png"
             if p.exists():
-                seacom_logo = Image(str(p), width=46 * mm, height=16 * mm)
+                seacom_logo = Image(str(p), width=30 * mm, height=10 * mm)
         except Exception:
             pass
 
         title_s = ParagraphStyle(
             "BnrTitle",
             parent=self.styles["Normal"],
-            fontSize=17,
+            fontSize=15,
             fontName="Helvetica-Bold",
-            textColor=colors.white,
-            leading=22,
+            textColor=colors.HexColor("#0f172a"),
+            leading=19,
             spaceAfter=2,
         )
         sub_s = ParagraphStyle(
             "BnrSub",
             parent=self.styles["Normal"],
-            fontSize=8,
+            fontSize=8.5,
             fontName="Helvetica",
-            textColor=colors.HexColor("#a0aec0"),
+            textColor=colors.HexColor("#64748b"),
         )
         fallback_s = ParagraphStyle(
             "BnrFb",
             parent=self.styles["Normal"],
-            fontSize=10,
+            fontSize=9,
             fontName="Helvetica-Bold",
-            textColor=colors.white,
+            textColor=colors.HexColor(primary_hex),
             alignment=TA_CENTER,
         )
 
-        banner = Table(
+        logo_lockup = Table(
             [[
                 samo_logo or Paragraph("<b>SAMO</b>", fallback_s),
-                [Paragraph(title, title_s), Spacer(1, 2), Paragraph(subtitle, sub_s)],
                 seacom_logo or Paragraph("<b>SEACOM</b>", fallback_s),
             ]],
-            colWidths=[46 * mm, 78 * mm, 46 * mm],
+            colWidths=[34 * mm, 34 * mm],
+        )
+        logo_lockup.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        banner = Table(
+            [[
+                [Paragraph(title, title_s), Spacer(1, 2), Paragraph(subtitle, sub_s)],
+                logo_lockup,
+            ]],
+            colWidths=[100 * mm, 70 * mm],
         )
         banner.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(primary_hex)),
-            ("ALIGN", (0, 0), (0, 0), "CENTER"),
-            ("ALIGN", (1, 0), (1, 0), "LEFT"),
-            ("ALIGN", (2, 0), (2, 0), "CENTER"),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d8e1ec")),
+            ("LINEBELOW", (0, 0), (-1, 0), 2, colors.HexColor(accent_hex)),
+            ("ALIGN", (0, 0), (0, 0), "LEFT"),
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 10),
             ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-            ("TOPPADDING", (0, 0), (-1, -1), 11),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
-            ("LINEBELOW", (0, 0), (-1, 0), 4, colors.HexColor(accent_hex)),
+            ("TOPPADDING", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
         ]))
-        return [banner, Spacer(1, 7 * mm)]
+        return [banner, Spacer(1, 5 * mm)]
 
     def _build_metadata_cards(
         self,
@@ -1700,6 +1895,530 @@ class PDFService:
         tbl = Table(table_data, colWidths=[85 * mm, 85 * mm])
         tbl.setStyle(TableStyle(style_cmds))
         return [tbl, Spacer(1, 6 * mm)]
+
+    def _build_field_summary_cards(
+        self,
+        items: list[tuple[str, str]],
+        primary_hex: str = "#0b2265",
+        accent_hex: str = "#1a365d",
+        columns: int = 4,
+    ) -> list:
+        """Build compact stat cards for field-report summaries."""
+        if not items:
+            return []
+
+        label_s = ParagraphStyle(
+            "FldStatLabel",
+            parent=self.styles["Normal"],
+            fontSize=7.5,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#64748b"),
+            alignment=TA_LEFT,
+        )
+        value_s = ParagraphStyle(
+            "FldStatValue",
+            parent=self.styles["Normal"],
+            fontSize=16,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#0f172a"),
+            leading=19,
+            alignment=TA_LEFT,
+        )
+
+        cols = max(1, columns)
+        total_width = 170 * mm
+        col_width = total_width / cols
+        rows: list[list[Any]] = []
+        for index in range(0, len(items), cols):
+            row_items = items[index:index + cols]
+            row: list[Any] = []
+            for label, value in row_items:
+                row.append([
+                    Paragraph(str(label).upper(), label_s),
+                    Spacer(1, 2),
+                    Paragraph(str(value or "N/A"), value_s),
+                ])
+            while len(row) < cols:
+                row.append("")
+            rows.append(row)
+
+        style_cmds: list[tuple[Any, ...]] = [
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]
+        for row_i, row in enumerate(rows):
+            for col_i, cell in enumerate(row):
+                if cell == "":
+                    continue
+                style_cmds.extend([
+                    ("BACKGROUND", (col_i, row_i), (col_i, row_i), colors.white),
+                    ("BOX", (col_i, row_i), (col_i, row_i), 0.6, colors.HexColor("#d8e1ec")),
+                    ("LINEABOVE", (col_i, row_i), (col_i, row_i), 2, colors.HexColor(accent_hex)),
+                ])
+
+        tbl = Table(rows, colWidths=[col_width] * cols)
+        tbl.setStyle(TableStyle(style_cmds))
+        return [tbl, Spacer(1, 5 * mm)]
+
+    def _build_field_kv_table(
+        self,
+        rows: list[list[str]],
+        label_width: float = 58 * mm,
+        value_width: float = 112 * mm,
+    ) -> Table:
+        """Build a clean two-column key/value table."""
+        def _safe(value: Any) -> str:
+            return (
+                str(value if value is not None else "N/A")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+
+        label_s = ParagraphStyle(
+            "FldKvLabel",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#475569"),
+            leading=12,
+        )
+        value_s = ParagraphStyle(
+            "FldKvValue",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#1f2937"),
+            leading=13,
+        )
+        table_rows = [
+            [Paragraph(_safe(label), label_s), Paragraph(_safe(value), value_s)]
+            for label, value in rows
+        ]
+
+        tbl = Table(table_rows, colWidths=[label_width, value_width])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f8fafc")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d8e1ec")),
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#fbfdff")]),
+        ]))
+        return tbl
+
+    def _build_field_data_table(
+        self,
+        headers: list[str],
+        rows: list[list[str]],
+        col_widths: list[float],
+        primary_hex: str = "#0b2265",
+        alignments: list[str] | None = None,
+    ) -> Table:
+        """Build a structured content table for field reports."""
+        def _safe(value: Any) -> str:
+            return (
+                str(value if value is not None else "")
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+            )
+
+        header_s = ParagraphStyle(
+            "FldTblHeader",
+            parent=self.styles["Normal"],
+            fontSize=8.8,
+            fontName="Helvetica-Bold",
+            textColor=colors.white,
+            leading=11,
+        )
+        cell_s = ParagraphStyle(
+            "FldTblCell",
+            parent=self.styles["Normal"],
+            fontSize=8.8,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#1f2937"),
+            leading=12,
+        )
+        table_data = [
+            [Paragraph(_safe(header), header_s) for header in headers],
+            *[[Paragraph(_safe(cell), cell_s) for cell in row] for row in rows],
+        ]
+        tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
+        style_cmds: list[tuple[Any, ...]] = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(primary_hex)),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d8e1ec")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fbfdff")]),
+        ]
+        if alignments:
+            for col_i, alignment in enumerate(alignments):
+                style_cmds.append(("ALIGN", (col_i, 0), (col_i, -1), alignment))
+
+        tbl.setStyle(TableStyle(style_cmds))
+        return tbl
+
+    def _build_note_box(
+        self,
+        title: str,
+        body: str,
+        accent_hex: str = "#1a365d",
+    ) -> Table:
+        """Build a light note box for narrative text."""
+        safe_title = (
+            str(title or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        safe_body = (
+            str(body or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+        )
+        title_s = ParagraphStyle(
+            "FldNoteTitle",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(accent_hex),
+        )
+        body_s = ParagraphStyle(
+            "FldNoteBody",
+            parent=self.styles["Normal"],
+            fontSize=9.5,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#334155"),
+            leading=15,
+        )
+        tbl = Table(
+            [[
+                [Paragraph(safe_title, title_s), Spacer(1, 3), Paragraph(safe_body, body_s)],
+            ]],
+            colWidths=[170 * mm],
+        )
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d8e1ec")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]))
+        return tbl
+
+    def _format_field_label(self, key: Any) -> str:
+        """Convert API-style keys into reader-friendly labels."""
+        text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", str(key or ""))
+        text = text.replace("_", " ").replace("-", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return "Field"
+
+        acronym_map = {
+            "ac": "AC",
+            "dc": "DC",
+            "gps": "GPS",
+            "id": "ID",
+            "km": "KM",
+            "noc": "NOC",
+            "odf": "ODF",
+            "pdf": "PDF",
+            "ppe": "PPE",
+            "rhs": "RHS",
+            "samo": "SAMO",
+            "seacom": "SEACOM",
+            "sla": "SLA",
+            "url": "URL",
+        }
+        words: list[str] = []
+        for word in text.split():
+            lowered = word.lower()
+            if lowered in acronym_map:
+                words.append(acronym_map[lowered])
+            elif word.isupper() and len(word) <= 4:
+                words.append(word)
+            else:
+                words.append(word.capitalize())
+        return " ".join(words)
+
+    def _format_tabular_value(self, value: Any) -> str:
+        """Format values consistently for reader-friendly tables."""
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        if value is None:
+            return "N/A"
+        if isinstance(value, datetime):
+            return self._format_datetime(value)
+        if isinstance(value, (int, float)):
+            return f"{value:g}"
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return "N/A"
+            if "T" in text or ":" in text:
+                try:
+                    return self._format_datetime(datetime.fromisoformat(text.replace("Z", "+00:00")))
+                except Exception:
+                    pass
+            return text
+        if isinstance(value, dict):
+            scalar_parts: list[str] = []
+            for key, item in value.items():
+                if isinstance(item, (dict, list)):
+                    continue
+                scalar_parts.append(f"{self._format_field_label(key)}: {self._format_tabular_value(item)}")
+                if len(scalar_parts) == 3:
+                    break
+            if scalar_parts:
+                suffix = " ..." if len(value) > len(scalar_parts) else ""
+                return "; ".join(scalar_parts) + suffix
+            return f"{len(value)} field(s)"
+        if isinstance(value, list):
+            if not value:
+                return "None recorded"
+            if all(not isinstance(item, (dict, list)) for item in value):
+                parts = [self._format_tabular_value(item) for item in value[:4]]
+                suffix = " ..." if len(value) > len(parts) else ""
+                return ", ".join(parts) + suffix
+            return f"{len(value)} item(s)"
+        return str(value)
+
+    def _get_media_source(self, item: Any) -> str:
+        """Extract best media source from stored item."""
+        if isinstance(item, str):
+            return item.strip()
+        if isinstance(item, dict):
+            return str(
+                item.get("signed_url")
+                or item.get("url")
+                or item.get("public_url")
+                or item.get("file_path")
+                or item.get("path")
+                or ""
+            ).strip()
+        return ""
+
+    def _get_media_name(self, item: Any, default: str = "Photo") -> str:
+        """Extract display name from stored item."""
+        if isinstance(item, str):
+            candidate = item.strip().rsplit("/", 1)[-1]
+            return candidate or default
+        if isinstance(item, dict):
+            return str(
+                item.get("original_name")
+                or item.get("name")
+                or item.get("filename")
+                or item.get("file_name")
+                or default
+            )
+        return default
+
+    def _is_renderable_image_item(self, item: Any) -> bool:
+        """Return True when attachment should render as image thumbnail."""
+        if isinstance(item, dict):
+            content_type = str(item.get("content_type") or item.get("mime_type") or "").lower()
+            if content_type.startswith("image/"):
+                return True
+
+        candidate = " ".join(
+            value
+            for value in (
+                self._get_media_source(item),
+                self._get_media_name(item, ""),
+            )
+            if value
+        ).lower()
+        return candidate.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"))
+
+    def _looks_like_media_item(self, item: Any) -> bool:
+        """Detect a stored photo/file reference."""
+        return bool(self._get_media_source(item))
+
+    def _extract_media_items(self, value: Any) -> list[Any]:
+        """Extract photo/file items from a list or nested container."""
+        if isinstance(value, list) and value and all(self._looks_like_media_item(item) for item in value):
+            return value
+        if isinstance(value, dict):
+            for candidate_key in ("photos", "images", "files", "attachments", "evidence", "pictures"):
+                candidate = value.get(candidate_key)
+                if isinstance(candidate, list) and candidate and all(self._looks_like_media_item(item) for item in candidate):
+                    return candidate
+        return []
+
+    def _collect_tabular_sections(
+        self,
+        payload: dict[str, Any],
+        prefix: str = "",
+    ) -> tuple[list[list[str]], list[tuple[str, list[Any]]], list[tuple[str, list[Any]]]]:
+        """Flatten nested report answers into tabular rows plus repeated/media sections."""
+        scalar_rows: list[list[str]] = []
+        list_sections: list[tuple[str, list[Any]]] = []
+        media_sections: list[tuple[str, list[Any]]] = []
+
+        for key, value in payload.items():
+            label = self._format_field_label(key)
+            full_label = f"{prefix} - {label}" if prefix else label
+
+            media_items = self._extract_media_items(value)
+            if media_items:
+                media_sections.append((full_label, media_items))
+                continue
+
+            if isinstance(value, dict):
+                child_rows, child_lists, child_media = self._collect_tabular_sections(value, full_label)
+                if child_rows or child_lists or child_media:
+                    scalar_rows.extend(child_rows)
+                    list_sections.extend(child_lists)
+                    media_sections.extend(child_media)
+                else:
+                    scalar_rows.append([full_label, self._format_tabular_value(value)])
+                continue
+
+            if isinstance(value, list):
+                if not value:
+                    scalar_rows.append([full_label, "None recorded"])
+                elif all(not isinstance(item, (dict, list)) for item in value):
+                    scalar_rows.append([full_label, self._format_tabular_value(value)])
+                else:
+                    list_sections.append((full_label, value))
+                continue
+
+            scalar_rows.append([full_label, self._format_tabular_value(value)])
+
+        return scalar_rows, list_sections, media_sections
+
+    def _render_routine_drive_list_section(
+        self,
+        title: str,
+        items: list[Any],
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render repeated Routine Drive answers as a structured table."""
+        story.extend(self._repeater_section_header(title, primary_hex, accent_hex))
+        if not items:
+            story.append(
+                self._build_note_box(
+                    "No repeated answers recorded",
+                    "No row-based data was captured for this section.",
+                    accent_hex,
+                )
+            )
+            return
+
+        if all(isinstance(item, dict) for item in items):
+            columns: list[str] = []
+            for item in items:
+                for key in item.keys():
+                    if key not in columns:
+                        columns.append(key)
+
+            if not columns:
+                story.append(
+                    self._build_note_box(
+                        "No repeated answers recorded",
+                        "Entries were present but did not contain any readable fields.",
+                        accent_hex,
+                    )
+                )
+                return
+
+            headers = ["#"] + [self._format_field_label(column) for column in columns]
+            row_width = 158 * mm
+            col_widths = [12 * mm] + ([row_width / len(columns)] * len(columns))
+            rows = [
+                [str(index)] + [self._format_tabular_value(item.get(column)) for column in columns]
+                for index, item in enumerate(items, start=1)
+            ]
+            story.append(
+                self._build_field_data_table(
+                    headers=headers,
+                    rows=rows,
+                    col_widths=col_widths,
+                    primary_hex=primary_hex,
+                    alignments=["CENTER", *(["LEFT"] * len(columns))],
+                )
+            )
+            return
+
+        rows = [[str(index), self._format_tabular_value(item)] for index, item in enumerate(items, start=1)]
+        story.append(
+            self._build_field_data_table(
+                headers=["#", "Recorded Value"],
+                rows=rows,
+                col_widths=[12 * mm, 158 * mm],
+                primary_hex=primary_hex,
+                alignments=["CENTER", "LEFT"],
+            )
+        )
+
+    def _render_routine_drive_body(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render Routine Drive data in question/answer tables instead of raw paragraphs."""
+        data = report.data if isinstance(report.data, dict) else {}
+        scalar_rows, list_sections, media_sections = self._collect_tabular_sections(data)
+
+        story.extend(self._repeater_section_header("1. Recorded Answers", primary_hex, accent_hex))
+        if scalar_rows:
+            story.append(
+                self._build_field_data_table(
+                    headers=["Question", "Answer"],
+                    rows=scalar_rows,
+                    col_widths=[76 * mm, 94 * mm],
+                    primary_hex=primary_hex,
+                    alignments=["LEFT", "LEFT"],
+                )
+            )
+        else:
+            story.append(
+                self._build_note_box(
+                    "No direct answers recorded",
+                    "This Routine Drive report did not include any direct question-and-answer fields.",
+                    accent_hex,
+                )
+            )
+
+        section_number = 2
+        for title, items in list_sections:
+            story.append(Spacer(1, 6 * mm))
+            self._render_routine_drive_list_section(
+                f"{section_number}. {title}",
+                items,
+                story,
+                primary_hex,
+                accent_hex,
+            )
+            section_number += 1
+
+        for title, items in media_sections:
+            story.append(Spacer(1, 6 * mm))
+            story.extend(self._repeater_section_header(f"{section_number}. {title}", primary_hex, accent_hex))
+            story.append(
+                self._build_note_box(
+                    "Supporting media recorded",
+                    f"{len(items)} supporting media item(s) captured for this Routine Drive report.",
+                    accent_hex,
+                )
+            )
+            self._render_photo_grid(items, story, cols=3)
+            section_number += 1
 
     def _create_divider(self, color_hex: str = "#1a365d"):
         """Create a divider line as a table."""
@@ -1788,16 +2507,18 @@ class PDFService:
             parent=self.styles["Normal"],
             fontSize=11,
             fontName="Helvetica-Bold",
-            textColor=colors.white,
+            textColor=colors.HexColor("#0f172a"),
         )
         header = Table([[Paragraph(title, badge_style)]], colWidths=[170 * mm])
         header.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(primary_hex)),
-            ("LINEBELOW", (0, 0), (-1, -1), 2, colors.HexColor(accent_hex)),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d8e1ec")),
+            ("LINEBEFORE", (0, 0), (0, 0), 4, colors.HexColor(accent_hex)),
+            ("LINEBELOW", (0, 0), (-1, -1), 1, colors.HexColor("#e2e8f0")),
             ("LEFTPADDING", (0, 0), (-1, -1), 10),
             ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 7),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         return [header, Spacer(1, 3 * mm)]
 
@@ -2051,16 +2772,10 @@ class PDFService:
         photo_buffers: list[tuple[str, BytesIO | None]] = []
         for photo in photos:
             if isinstance(photo, str):
-                url, name = photo, "Photo"
+                url, name = self._get_media_source(photo), self._get_media_name(photo)
             elif isinstance(photo, dict):
-                url = (
-                    photo.get("signed_url")
-                    or photo.get("url")
-                    or photo.get("public_url")
-                    or photo.get("file_path")
-                    or ""
-                )
-                name = photo.get("original_name") or photo.get("name") or "Photo"
+                url = self._get_media_source(photo)
+                name = self._get_media_name(photo)
             else:
                 continue
             buf = self._fetch_image_bytes(url) if url else None
@@ -2074,7 +2789,7 @@ class PDFService:
                 if buf:
                     try:
                         buf.seek(0)
-                        img = Image(ImageReader(buf), width=PHOTO_W, height=PHOTO_H)
+                        img = Image(buf, width=PHOTO_W, height=PHOTO_H)
                         img.hAlign = "CENTER"
                         img_row.append(img)
                     except Exception:
@@ -2107,6 +2822,280 @@ class PDFService:
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ]))
             story.append(cap_tbl)
+
+    def _render_attachment_section(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render non-repeater attachments in a cleaner evidence section."""
+        attachments = report.attachments if isinstance(report.attachments, dict) else {}
+        if not attachments:
+            return
+
+        attachment_files = attachments.get("files") if isinstance(attachments.get("files"), list) else []
+        metadata_rows: list[list[str]] = []
+        for key, value in attachments.items():
+            if key == "files":
+                continue
+            if isinstance(value, list):
+                display = f"{len(value)} item(s)"
+            elif isinstance(value, dict):
+                display = f"{len(value)} field(s)"
+            else:
+                display = str(value) if value is not None else "N/A"
+            metadata_rows.append([key.replace("_", " ").title(), display])
+
+        if report.report_type == ReportType.REPEATER and not metadata_rows:
+            return
+
+        if not attachment_files and not metadata_rows:
+            return
+
+        story.append(Spacer(1, 6 * mm))
+        story.extend(self._repeater_section_header("Attachments", primary_hex, accent_hex))
+
+        if metadata_rows:
+            story.append(self._build_field_kv_table(metadata_rows))
+            story.append(Spacer(1, 4 * mm))
+
+        if attachment_files and report.report_type != ReportType.REPEATER:
+            photo_title_style = ParagraphStyle(
+                "AttachPhotoTitle",
+                parent=self.styles["Normal"],
+                fontSize=10,
+                fontName="Helvetica-Bold",
+                textColor=colors.HexColor(primary_hex),
+                spaceAfter=3,
+            )
+            body_style = ParagraphStyle(
+                "AttachPhotoBody",
+                parent=self.styles["Normal"],
+                fontSize=9,
+                fontName="Helvetica",
+                textColor=colors.HexColor("#475569"),
+                leading=13,
+            )
+
+            image_files = [item for item in attachment_files if self._is_renderable_image_item(item)]
+            other_files = [item for item in attachment_files if item not in image_files]
+
+            if image_files:
+                story.append(Paragraph("Uploaded Photos", photo_title_style))
+                self._render_photo_grid(image_files, story, cols=3)
+                story.append(Spacer(1, 3 * mm))
+            else:
+                story.append(Paragraph("Uploaded Evidence", photo_title_style))
+                story.append(
+                    self._build_note_box(
+                        "Evidence files recorded",
+                        f"{len(attachment_files)} file(s) attached to this report.",
+                        accent_hex,
+                    )
+                )
+
+            file_rows: list[list[str]] = []
+            for index, file_item in enumerate(other_files[:8], start=1):
+                if isinstance(file_item, dict):
+                    file_name = (
+                        file_item.get("original_name")
+                        or file_item.get("name")
+                        or file_item.get("file_name")
+                        or f"Attachment {index}"
+                    )
+                    file_kind = (
+                        file_item.get("content_type")
+                        or file_item.get("mime_type")
+                        or file_item.get("type")
+                        or "File"
+                    )
+                elif isinstance(file_item, str):
+                    file_name = file_item.rsplit("/", 1)[-1] or f"Attachment {index}"
+                    file_kind = "File"
+                else:
+                    file_name = f"Attachment {index}"
+                    file_kind = "File"
+                file_rows.append([str(index), str(file_name), str(file_kind)])
+
+            if file_rows:
+                story.append(Paragraph("Other Attachments", photo_title_style))
+                story.append(
+                    self._build_field_data_table(
+                        headers=["#", "File Name", "Type"],
+                        rows=file_rows,
+                        col_widths=[12 * mm, 118 * mm, 40 * mm],
+                        primary_hex=primary_hex,
+                        alignments=["CENTER", "LEFT", "LEFT"],
+                    )
+                )
+
+            if len(other_files) > len(file_rows):
+                story.append(Spacer(1, 3 * mm))
+                story.append(
+                    Paragraph(
+                        f"{len(other_files) - len(file_rows)} more attachment(s) omitted from summary table.",
+                        body_style,
+                    )
+                )
+
+    def _parse_runtime_minutes(self, value: Any) -> int | None:
+        """Parse legacy numeric hours or `2345H23M`-style runtime strings into minutes."""
+        if isinstance(value, (int, float)):
+            if value <= 0:
+                return None
+            total_minutes = int(round(float(value) * 60))
+            return total_minutes if total_minutes > 0 else None
+
+        if not isinstance(value, str):
+            return None
+
+        normalized = value.strip().upper().replace(" ", "")
+        if not normalized:
+            return None
+
+        match = re.fullmatch(r"(?:(\d+)H(?:(\d{1,2})M)?|(\d+)M)", normalized)
+        if not match:
+            return None
+
+        hours = int(match.group(1) or 0)
+        minutes = int(match.group(2) or match.group(3) or 0)
+        if minutes >= 60:
+            return None
+
+        total_minutes = hours * 60 + minutes
+        return total_minutes if total_minutes > 0 else None
+
+    def _format_runtime_from_minutes(self, total_minutes: int) -> str:
+        """Format runtime minutes as `H`/`M` label."""
+        hours, minutes = divmod(int(total_minutes), 60)
+        if hours > 0 and minutes > 0:
+            return f"{hours}H{minutes:02d}M"
+        if hours > 0:
+            return f"{hours}H"
+        return f"{minutes}M"
+
+    def _format_runtime_label(self, value: Any) -> str:
+        """Render runtime values consistently for diesel exports."""
+        total_minutes = self._parse_runtime_minutes(value)
+        if total_minutes is not None:
+            return self._format_runtime_from_minutes(total_minutes)
+        return str(value).strip() if value not in (None, "") else "N/A"
+
+    def _render_diesel_body(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render diesel report data as a polished summary and entry table."""
+        data = report.data if isinstance(report.data, dict) else {}
+        diesel_fillups = data.get("diesel_fillups") if isinstance(data.get("diesel_fillups"), list) else []
+
+        if not diesel_fillups:
+            story.extend(self._repeater_section_header("1. Diesel Summary", primary_hex, accent_hex))
+            story.append(
+                self._build_note_box(
+                    "No diesel data recorded",
+                    "No diesel fill-up entries were captured for this report.",
+                    accent_hex,
+                )
+            )
+            return
+
+        task_site = None
+        try:
+            task_site = report.task.site.name if report.task and report.task.site else None
+        except Exception:
+            task_site = None
+
+        total_liters = sum(float(entry.get("liters_filled") or 0) for entry in diesel_fillups if isinstance(entry, dict))
+        runtime_values = [
+            parsed_runtime
+            for entry in diesel_fillups
+            if isinstance(entry, dict)
+            for parsed_runtime in [self._parse_runtime_minutes(entry.get("gen_runtime_hours"))]
+            if parsed_runtime is not None
+        ]
+        generators = sorted(
+            {
+                int(entry.get("gen_no"))
+                for entry in diesel_fillups
+                if isinstance(entry, dict) and entry.get("gen_no") in (1, 2)
+            }
+        )
+        reasons = [
+            str(entry.get("fill_reason")).strip()
+            for entry in diesel_fillups
+            if isinstance(entry, dict) and str(entry.get("fill_reason") or "").strip()
+        ]
+        unique_reasons = list(dict.fromkeys(reasons))
+
+        story.extend(self._repeater_section_header("1. Diesel Summary", primary_hex, accent_hex))
+        story.extend(
+            self._build_field_summary_cards(
+                [
+                    ("Fill Entries", str(len(diesel_fillups))),
+                    ("Total Liters", f"{total_liters:.2f} L"),
+                    ("Generators", str(len(generators)) or "0"),
+                    ("Runtime Records", str(len(runtime_values))),
+                ],
+                primary_hex=primary_hex,
+                accent_hex=accent_hex,
+                columns=4,
+            )
+        )
+
+        summary_rows = [
+            ["Primary Site", task_site or "Recorded per entry"],
+            ["Serviced Generators", ", ".join(f"Gen {gen}" for gen in generators) or "N/A"],
+            ["Highest Runtime", self._format_runtime_from_minutes(max(runtime_values)) if runtime_values else "N/A"],
+            ["Fill Reasons", ", ".join(unique_reasons) if unique_reasons else "Not specified"],
+        ]
+        story.append(self._build_field_kv_table(summary_rows))
+        story.append(Spacer(1, 6 * mm))
+
+        story.extend(self._repeater_section_header("2. Fill-up Entries", primary_hex, accent_hex))
+        table_rows: list[list[str]] = []
+        for index, entry in enumerate(diesel_fillups, start=1):
+            if not isinstance(entry, dict):
+                continue
+            site_value = task_site or str(entry.get("site_id") or "N/A")
+            liters = float(entry.get("liters_filled") or 0)
+            runtime = entry.get("gen_runtime_hours")
+            table_rows.append([
+                str(index),
+                site_value,
+                f"Gen {entry.get('gen_no') or 'N/A'}",
+                f"{liters:.2f}",
+                self._format_runtime_label(runtime),
+                str(entry.get("fill_reason") or "Not specified"),
+            ])
+
+        story.append(
+            self._build_field_data_table(
+                headers=["#", "Site", "Generator", "Liters", "Runtime", "Fill Reason"],
+                rows=table_rows,
+                col_widths=[12 * mm, 40 * mm, 20 * mm, 24 * mm, 28 * mm, 46 * mm],
+                primary_hex=primary_hex,
+                alignments=["CENTER", "LEFT", "CENTER", "RIGHT", "RIGHT", "LEFT"],
+            )
+        )
+
+        extra_rows: list[list[str]] = []
+        for key, value in data.items():
+            if key == "diesel_fillups":
+                continue
+            if isinstance(value, (str, int, float, bool)) and value not in ("", None):
+                display = "Yes" if value is True else "No" if value is False else str(value)
+                extra_rows.append([key.replace("_", " ").title(), display])
+
+        if extra_rows:
+            story.append(Spacer(1, 6 * mm))
+            story.extend(self._repeater_section_header("3. Additional Recorded Data", primary_hex, accent_hex))
+            story.append(self._build_field_kv_table(extra_rows))
 
     def _render_repeater_body(
         self,
@@ -2171,7 +3160,7 @@ class PDFService:
 
         # ── 1. Routine Information ──────────────────────────────────────────
         story.extend(self._repeater_section_header("1. Routine Information", primary_hex, accent_hex))
-        story.append(_info_table([
+        story.append(self._build_field_kv_table([
             ["Date Routine Performed", data.get("dateRoutinePerformed") or "N/A"],
             ["NOC Routine Ticket Reference", data.get("nocRoutineTicketReference") or "N/A"],
         ]))
@@ -2220,7 +3209,7 @@ class PDFService:
                 rows.append(["Nearby Construction Work", "Yes" if nearby.get("passed") else "No"])
                 if (nearby.get("issueDescription") or "").strip():
                     rows.append(["Construction Work Notes", nearby.get("issueDescription") or ""])
-            story.append(_info_table(rows))
+            story.append(self._build_field_kv_table(rows))
         else:
             story.append(Paragraph("<i>No safety observations recorded.</i>", body_s))
         story.append(Spacer(1, 6 * mm))
@@ -2239,9 +3228,9 @@ class PDFService:
         story.extend(self._repeater_section_header("8. Site Concerns", primary_hex, accent_hex))
         concern_desc = (concerns.get("description") or "").strip()
         if concern_desc:
-            story.append(Paragraph(concern_desc, body_s))
+            story.append(self._build_note_box("Recorded concern", concern_desc, accent_hex))
         else:
-            story.append(Paragraph("<i>No site concerns recorded.</i>", body_s))
+            story.append(self._build_note_box("Recorded concern", "No site concerns recorded.", accent_hex))
         story.append(Spacer(1, 6 * mm))
 
         # ── 9. Report Pictures ────────────────────────────────────────────
@@ -2261,13 +3250,7 @@ class PDFService:
                     continue
 
                 if isinstance(item, dict):
-                    key = str(
-                        item.get("signed_url")
-                        or item.get("url")
-                        or item.get("public_url")
-                        or item.get("file_path")
-                        or ""
-                    ).strip()
+                    key = self._get_media_source(item)
                     if not key or key in seen:
                         continue
                     seen.add(key)

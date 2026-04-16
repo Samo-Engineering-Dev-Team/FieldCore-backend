@@ -1,5 +1,6 @@
 from uuid import UUID
 from io import BytesIO
+import re
 from fastapi import Depends
 from typing import List, Annotated, Any
 from sqlmodel import Session, select, text
@@ -22,6 +23,12 @@ from app.services.pdf import get_pdf_service
 
 
 class _ReportService:
+    _EXPORT_REPORT_NAME_MAP: dict[ReportType, str] = {
+        ReportType.REPEATER: "Repeater Site Visit",
+        ReportType.DIESEL: "Diesel Report",
+        ReportType.ROUTINE_DRIVE: "Routine Drive Report",
+    }
+
     @staticmethod
     def _is_lock_or_timeout_error(error: Exception) -> bool:
         error_text = str(error).lower()
@@ -36,6 +43,39 @@ class _ReportService:
                 "deadlock detected",
             )
         )
+
+    def _format_export_report_name(self, report_type: ReportType) -> str:
+        """Return a human-friendly report label for export filenames."""
+        return self._EXPORT_REPORT_NAME_MAP.get(
+            report_type,
+            report_type.value.replace("-", " ").title(),
+        )
+
+    def _sanitize_filename_part(self, value: str, fallback: str) -> str:
+        """Normalize a filename fragment so downloads stay readable and safe."""
+        normalized = re.sub(r'[\\/:*?"<>|]+', "-", value or "")
+        normalized = re.sub(r"\s+", "-", normalized)
+        normalized = re.sub(r"-{2,}", "-", normalized)
+        normalized = normalized.strip(" .-_")
+        return normalized or fallback
+
+    def _build_export_filename(self, report: Report) -> str:
+        """Build export filename as `<Report-Name>-<Reference>.pdf` when possible."""
+        report_name = self._sanitize_filename_part(
+            self._format_export_report_name(report.report_type),
+            fallback="Report",
+        )
+        reference_value = (
+            (report.seacom_ref or "").strip()
+            or ((report.task.seacom_ref or "").strip() if report.task else "")
+        )
+        if reference_value:
+            reference = self._sanitize_filename_part(reference_value, fallback="Reference")
+            return f"{report_name}-{reference}.pdf"
+
+        created_date = report.created_at.strftime("%Y%m%d") if report.created_at else "unknown"
+        short_id = str(report.id)[:8]
+        return f"{report_name}-{created_date}-{short_id}.pdf"
 
     def _normalize_attachment_item(self, item: Any) -> dict[str, Any]:
         """Normalize a single attachment object to a frontend-friendly shape."""
@@ -52,7 +92,7 @@ class _ReportService:
         if isinstance(item, dict):
             # Prefer stable public URL when available to avoid persisting expired signed URLs.
             url = item.get("public_url") or item.get("url") or item.get("signed_url")
-            file_path = item.get("file_path")
+            file_path = item.get("file_path") or item.get("path")
             if not url and isinstance(file_path, str):
                 from app.services.file import FileService
                 url = FileService().get_public_url(file_path)
@@ -62,7 +102,8 @@ class _ReportService:
                 "signed_url": item.get("signed_url"),
                 "public_url": item.get("public_url") or url,
                 "file_path": file_path,
-                "original_name": item.get("original_name") or item.get("name") or item.get("filename"),
+                "path": item.get("path") or file_path,
+                "original_name": item.get("original_name") or item.get("name") or item.get("filename") or item.get("file_name"),
                 "content_type": item.get("content_type"),
                 "size": item.get("size"),
             }
@@ -71,6 +112,7 @@ class _ReportService:
             "url": None,
             "public_url": None,
             "file_path": None,
+            "path": None,
             "original_name": None,
             "content_type": None,
             "size": None,
@@ -90,7 +132,7 @@ class _ReportService:
         elif isinstance(attachments, dict):
             if isinstance(attachments.get("files"), list):
                 files = [self._normalize_attachment_item(item) for item in attachments["files"]]
-            elif any(k in attachments for k in ("url", "public_url", "file_path", "filename", "name")):
+            elif any(k in attachments for k in ("url", "public_url", "file_path", "path", "filename", "name", "file_name")):
                 files = [self._normalize_attachment_item(attachments)]
             else:
                 # Legacy key/value attachment maps: {"before": "https://..."}
@@ -432,9 +474,7 @@ class _ReportService:
                 raise InternalServerErrorException("Failed to generate PDF: empty buffer")
             
             # Generate filename
-            report_type = report.report_type.value.replace("-", "_")
-            created_date = report.created_at.strftime("%Y%m%d") if report.created_at else "unknown"
-            filename = f"report_{report_type}_{created_date}_{str(report.id)[:8]}.pdf"
+            filename = self._build_export_filename(report)
 
             # Persist generated PDF to Supabase storage (best-effort, export still succeeds on storage failure).
             try:
