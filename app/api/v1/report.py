@@ -7,7 +7,7 @@ from app.models import ReportCreate, ReportUpdate, ReportResponse
 from app.services import ReportService, CurrentUser
 from app.database import Session
 from app.utils.enums import ReportStatus, ReportType, UserRole
-from app.exceptions.http import UnauthorizedException
+from app.exceptions.http import ForbiddenException
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -111,7 +111,7 @@ def export_report_pdf(
     """
     allowed_roles = [UserRole.NOC, UserRole.MANAGER, UserRole.ADMIN]
     if current_user.role not in allowed_roles:
-        raise UnauthorizedException("You do not have permission to export reports.")
+        raise ForbiddenException("You do not have permission to export reports.")
     
     pdf_buffer, filename = service.export_report_pdf(report_id, session)
     
