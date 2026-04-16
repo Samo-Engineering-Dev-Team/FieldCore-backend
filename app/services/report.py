@@ -4,7 +4,6 @@ from fastapi import Depends
 from typing import List, Annotated, Any
 from sqlmodel import Session, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy import and_
 from sqlalchemy.orm import object_session
 from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
@@ -19,6 +18,12 @@ from app.exceptions.http import (
     ForbiddenException
 )
 from app.services.pdf import get_pdf_service
+from app.services.report_support import (
+    create_noc_notifications,
+    normalize_attachment_item,
+    normalize_attachments,
+    upload_storage_file,
+)
 
 
 class _ReportService:
@@ -38,71 +43,12 @@ class _ReportService:
         )
 
     def _normalize_attachment_item(self, item: Any) -> dict[str, Any]:
-        """Normalize a single attachment object to a frontend-friendly shape."""
-        if isinstance(item, str):
-            return {
-                "url": item,
-                "public_url": item,
-                "file_path": None,
-                "original_name": None,
-                "content_type": None,
-                "size": None,
-            }
-
-        if isinstance(item, dict):
-            # Prefer stable public URL when available to avoid persisting expired signed URLs.
-            url = item.get("public_url") or item.get("url") or item.get("signed_url")
-            file_path = item.get("file_path")
-            if not url and isinstance(file_path, str):
-                from app.services.file import FileService
-                url = FileService().get_public_url(file_path)
-
-            return {
-                "url": url,
-                "signed_url": item.get("signed_url"),
-                "public_url": item.get("public_url") or url,
-                "file_path": file_path,
-                "original_name": item.get("original_name") or item.get("name") or item.get("filename"),
-                "content_type": item.get("content_type"),
-                "size": item.get("size"),
-            }
-
-        return {
-            "url": None,
-            "public_url": None,
-            "file_path": None,
-            "original_name": None,
-            "content_type": None,
-            "size": None,
-        }
+        """Normalize attachment item via shared report support helper."""
+        return normalize_attachment_item(item)
 
     def _normalize_attachments(self, attachments: Any) -> dict[str, Any] | None:
-        """Normalize attachments into canonical shape: {'files': [...]}."""
-        if attachments is None:
-            return None
-
-        files: list[dict[str, Any]] = []
-
-        if isinstance(attachments, list):
-            files = [self._normalize_attachment_item(item) for item in attachments]
-        elif isinstance(attachments, str):
-            files = [self._normalize_attachment_item(attachments)]
-        elif isinstance(attachments, dict):
-            if isinstance(attachments.get("files"), list):
-                files = [self._normalize_attachment_item(item) for item in attachments["files"]]
-            elif any(k in attachments for k in ("url", "public_url", "file_path", "filename", "name")):
-                files = [self._normalize_attachment_item(attachments)]
-            else:
-                # Legacy key/value attachment maps: {"before": "https://..."}
-                for key, value in attachments.items():
-                    normalized = self._normalize_attachment_item(value)
-                    normalized["label"] = key
-                    files.append(normalized)
-        else:
-            return None
-
-        cleaned_files = [f for f in files if f.get("url") or f.get("file_path")]
-        return {"files": cleaned_files}
+        """Normalize attachments into canonical shape via shared helper."""
+        return normalize_attachments(attachments)
 
     def report_to_response(self, report: Report) -> ReportResponse:
         technician_name = "Unknown Technician"
@@ -142,34 +88,19 @@ class _ReportService:
             
             if task and technician:
                 # Create notification for NOC operators about new report
-                from app.services.notification import _NotificationService, NotificationTemplates
-                from app.models import User
-                from app.utils.enums import UserRole
-                
-                notification_service = _NotificationService()
-                
-                # Notify all NOC operators
-                noc_users = session.exec(
-                    select(User).where(
-                        and_(
-                            User.role == UserRole.NOC,
-                            User.deleted_at.is_(None)
-                        )
-                    )
-                ).all()
+                from app.services.notification import NotificationTemplates
                 
                 # Get site name safely
                 site_name = task.site.name if task.site else "Unknown Site"
                 technician_name = technician.user.name if technician.user else "Unknown Technician"
                 
-                notification_service.create_notifications_from_template(
-                    user_ids=(noc_user.id for noc_user in noc_users),
+                create_noc_notifications(
+                    session=session,
                     template=NotificationTemplates.report_submitted(
                         technician_name=technician_name,
                         report_type=data.report_type,
                         site_name=site_name,
                     ),
-                    session=session,
                 )
             
             return self.report_to_response(report)
@@ -438,10 +369,7 @@ class _ReportService:
 
             # Persist generated PDF to Supabase storage (best-effort, export still succeeds on storage failure).
             try:
-                from app.services.file import FileService
-
-                file_service = FileService()
-                stored = file_service.upload_file_sync(
+                stored = upload_storage_file(
                     file_content=pdf_bytes,
                     filename=filename,
                     content_type="application/pdf",
