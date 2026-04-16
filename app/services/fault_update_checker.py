@@ -7,7 +7,7 @@ has not submitted a remark within the required 30-minute window.
 Call via POST /incidents/check-overdue-updates (cron every 30 minutes).
 """
 
-from sqlalchemy import and_
+from sqlalchemy import and_  
 from sqlmodel import Session, select
 
 from app.models import Incident, User

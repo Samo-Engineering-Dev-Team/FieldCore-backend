@@ -310,15 +310,15 @@ class HelpAlertRequest(BaseModel):
     message: str
 
 
-@router.post("/help-alert", status_code=204)
+@router.post("/help-alert", status_code=200)
 def send_help_alert(
     payload: HelpAlertRequest,
     session: Session,
     current_user: CurrentUser,
-) -> None:
+) -> dict:
     """
     Send an urgent help alert from a technician to all NOC operators and managers.
-    Creates a dedicated alert notification entry for recipients.
+    Sends a confirmation notification back to the technician.
     """
     from sqlmodel import select
     from app.models import User
@@ -341,7 +341,7 @@ def send_help_alert(
     ).all()
 
     notification_service = _NotificationService()
-    notification_service.create_notifications_from_template(
+    recipient_count = notification_service.create_notifications_from_template(
         user_ids=(u.id for u in recipients),
         template=NotificationTemplates.technician_help_alert(
             technician_name=tech_name,
@@ -350,3 +350,17 @@ def send_help_alert(
         ),
         session=session,
     )
+
+    # Confirm receipt back to the technician
+    notification_service.create_notification_for_user(
+        user_id=current_user.user_id,
+        title="Help request received",
+        message=(
+            f"Your help request has been received and sent to NOC and management. "
+            f"Someone will respond shortly. Priority: {payload.priority.upper()}."
+        ),
+        priority=NotificationTemplates._priority_from_text(payload.priority),
+        session=session,
+    )
+
+    return {"sent_to": recipient_count}
