@@ -240,6 +240,20 @@ def get_update_due_status(
 
 # ── SLA / checker endpoints ────────────────────────────────────────────────────
 
+@router.post("/check-overdue-updates", status_code=200)
+def check_overdue_updates_endpoint(
+    session: Session,
+    current_user: CurrentUser,
+) -> dict:
+    """
+    Scan all in-progress incidents and notify technicians + NOC/Managers when
+    no remark has been submitted within the last 30 minutes.
+    Intended to be called by a cron job every 30 minutes.
+    """
+    from app.services.fault_update_checker import check_overdue_incident_updates
+    return check_overdue_incident_updates(session)
+
+
 @router.post("/check-sla", status_code=200)
 def check_sla_breaches_endpoint(
     session: Session,

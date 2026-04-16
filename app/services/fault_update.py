@@ -1,9 +1,7 @@
 """
 FaultUpdate service — manages the mandatory incident communication log.
 
-Per Annexure H update intervals:
-  Critical : hourly by phone before restore; daily by email after
-  Major    : every 2 hours; twice-weekly after restore
+Update interval: 30 minutes for all severity levels.
 """
 
 from uuid import UUID
@@ -11,21 +9,21 @@ from typing import Annotated
 from datetime import timedelta
 
 from fastapi import Depends
-from sqlmodel import Session, select, and_
+from sqlmodel import Session, select
 
 from app.models.fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from app.models import Incident
-from app.utils.enums import IncidentStatus
+from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
-from app.utils.sla_utils import calculate_sla_deadlines
-from app.database import get_session
 
-# Maximum interval between updates before flagging as overdue (minutes)
+# All severity levels require an update every 30 minutes
+UPDATE_INTERVAL_MINUTES = 30
+
 UPDATE_INTERVALS: dict[str, int] = {
-    "critical": 60,    # hourly
-    "major":    120,   # every 2 hours
-    "minor":    1440,  # daily
-    "query":    1440,
+    "critical": UPDATE_INTERVAL_MINUTES,
+    "major":    UPDATE_INTERVAL_MINUTES,
+    "minor":    UPDATE_INTERVAL_MINUTES,
+    "query":    UPDATE_INTERVAL_MINUTES,
 }
 
 
@@ -90,6 +88,30 @@ class _FaultUpdateService:
         session.add(update)
         session.commit()
         session.refresh(update)
+
+        # Notify NOC and Managers that a remark was submitted
+        try:
+            from app.models import User
+            from app.services.notification import _NotificationService, NotificationTemplates
+            notification_service = _NotificationService()
+            site_name = incident.site.name if incident.site else "Unknown Site"
+            ref_no = incident.ref_no or getattr(incident, "seacom_ref", None)
+            recipients = session.exec(
+                select(User).where(
+                    User.role.in_([UserRole.NOC, UserRole.MANAGER]),  # type: ignore
+                    User.deleted_at.is_(None),
+                )
+            ).all()
+            notification_service.create_notifications_from_template(
+                user_ids=(u.id for u in recipients),
+                template=NotificationTemplates.incident_update_submitted(
+                    sent_by_name, site_name, data.message, ref_no
+                ),
+                session=session,
+            )
+        except Exception:
+            pass  # Never block the response due to notification failure
+
         return FaultUpdateResponse.model_validate(update)
 
     def list_updates(self, incident_id: UUID, session: Session) -> list[FaultUpdateResponse]:

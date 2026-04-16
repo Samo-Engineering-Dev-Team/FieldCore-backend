@@ -231,6 +231,56 @@ class NotificationTemplates:
         )
 
     @staticmethod
+    def incident_update_submitted(
+        technician_name: str,
+        site_name: str,
+        message: str | None,
+        ref_no: str | None = None,
+    ) -> NotificationTemplate:
+        ref = f" [{ref_no}]" if ref_no else ""
+        return NotificationTemplate(
+            title=f"Incident update{ref} — {site_name}",
+            message=(
+                f"{technician_name} logged an update on incident{ref} at {site_name}. "
+                f"{NotificationTemplates._preview(message)}"
+            ),
+            priority=NotificationPriority.NORMAL,
+        )
+
+    @staticmethod
+    def incident_update_overdue(
+        site_name: str,
+        technician_name: str,
+        minutes_overdue: int,
+        ref_no: str | None = None,
+    ) -> NotificationTemplate:
+        ref = f" [{ref_no}]" if ref_no else ""
+        return NotificationTemplate(
+            title=f"Overdue update{ref} — {site_name}",
+            message=(
+                f"{technician_name} has not submitted an incident update for {site_name}{ref}. "
+                f"Last update is {minutes_overdue} minute(s) overdue (required every 30 min)."
+            ),
+            priority=NotificationPriority.HIGH,
+        )
+
+    @staticmethod
+    def incident_update_overdue_tech(
+        site_name: str,
+        minutes_overdue: int,
+        ref_no: str | None = None,
+    ) -> NotificationTemplate:
+        ref = f" [{ref_no}]" if ref_no else ""
+        return NotificationTemplate(
+            title=f"Update required — {site_name}{ref}",
+            message=(
+                f"You have not submitted an incident update for {site_name}{ref} in the last 30 minutes "
+                f"({minutes_overdue} min overdue). Please log a remark now."
+            ),
+            priority=NotificationPriority.HIGH,
+        )
+
+    @staticmethod
     def incident_report_submitted(technician_name: str, site_name: str) -> NotificationTemplate:
         return NotificationTemplate(
             title="Incident report submitted",
