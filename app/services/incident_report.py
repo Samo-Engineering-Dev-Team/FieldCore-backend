@@ -5,7 +5,6 @@ from uuid import UUID
 
 from fastapi import Depends
 from loguru import logger as LOG
-from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -15,7 +14,7 @@ from app.exceptions.http import (
     InternalServerErrorException,
     NotFoundException,
 )
-from app.models import Incident, Technician, User
+from app.models import Incident, Technician
 from app.models.incident_report import (
     IncidentReport,
     IncidentReportCreate,
@@ -25,6 +24,12 @@ from app.models.incident_report import (
 from app.models.auth import TokenData
 from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
+from app.services.report_support import (
+    append_attachment_entry,
+    build_storage_attachment,
+    create_noc_notifications,
+    upload_storage_file,
+)
 
 
 class _IncidentReportService:
@@ -92,23 +97,16 @@ class _IncidentReportService:
         ref_no: str | None = None,
     ) -> None:
         try:
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import NotificationTemplates
             from app.services.email import EmailService
             from app.utils.funcs import utcnow
 
-            notification_service = _NotificationService()
-            noc_users = session.exec(
-                select(User).where(
-                    and_(User.role == UserRole.NOC, User.deleted_at.is_(None))  # type: ignore
-                )
-            ).all()
-            notification_service.create_notifications_from_template(
-                user_ids=(u.id for u in noc_users),
+            create_noc_notifications(
+                session=session,
                 template=NotificationTemplates.incident_report_submitted(
                     technician_name=technician_name,
                     site_name=site_name,
                 ),
-                session=session,
             )
             # Email NOC with report summary
             EmailService.send_incident_report_submitted(
@@ -316,31 +314,26 @@ class _IncidentReportService:
             if report.technician_id != tech.id:
                 raise ForbiddenException("Technicians can only upload photos to their own reports")
 
-        from app.services.file import FileService
-
         unique_filename = f"{report_id}_{utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
-        file_service = FileService()
-        upload_result = file_service.upload_file_sync(
+        upload_result = upload_storage_file(
             file_content=file_content,
             filename=unique_filename,
             content_type=content_type,
             folder="incident-report-photos",
         )
 
-        photo_entry = {
-            "original_name": filename,
-            "path": upload_result.get("file_path"),
-            "url": upload_result.get("public_url"),
-            "content_type": content_type,
-            "uploaded_at": utcnow().isoformat(),
-        }
+        photo_entry = build_storage_attachment(
+            upload_result=upload_result,
+            original_name=filename,
+            content_type=content_type,
+            size=len(file_content),
+        )
 
         current_attachments: dict = report.attachments or {}
         photos: list = list(current_attachments.get("photos", []))
         if len(photos) >= 15:
             raise ForbiddenException("Maximum of 15 photos allowed per report")
-        photos.append(photo_entry)
-        report.attachments = {**current_attachments, "photos": photos}
+        report.attachments = append_attachment_entry(current_attachments, "photos", photo_entry)
         report.touch()
 
         try:
@@ -370,40 +363,32 @@ class _IncidentReportService:
         from app.services.pdf import get_pdf_service
 
         pdf_service = get_pdf_service()
-        pdf_buffer = pdf_service.generate_incident_report_pdf(report)
+        incident = self._get_incident(report.incident_id, session)
+        pdf_buffer = pdf_service.generate_incident_report_pdf(report, incident=incident)
 
         date_str = (report.report_date or utcnow()).strftime("%Y%m%d")
         filename = f"Incident_Report_{date_str}_{str(report.id)[:8]}.pdf"
 
         # Best-effort: store the PDF in Supabase and update the report record
         try:
-            from app.services.file import FileService
-
-            file_service = FileService()
             pdf_buffer.seek(0)
             pdf_bytes = pdf_buffer.read()
-            upload_result = file_service.upload_file_sync(
+            upload_result = upload_storage_file(
                 file_content=pdf_bytes,
                 filename=filename,
                 content_type="application/pdf",
                 folder="incident-reports",
             )
+            pdf_entry = build_storage_attachment(
+                upload_result=upload_result,
+                original_name=filename,
+                content_type="application/pdf",
+                size=len(pdf_bytes),
+            )
 
-            report.pdf_path = upload_result.get("file_path")
-            report.pdf_url = upload_result.get("public_url")
-
-            # Append PDF entry to attachments.files
-            current_attachments: dict = report.attachments or {}
-            files: list = list(current_attachments.get("files", []))
-            files.append({
-                "original_name": filename,
-                "path": report.pdf_path,
-                "public_url": report.pdf_url,
-                "size": len(pdf_bytes),
-                "content_type": "application/pdf",
-                "uploaded_at": utcnow().isoformat(),
-            })
-            report.attachments = {**current_attachments, "files": files}
+            report.pdf_path = pdf_entry.get("file_path")
+            report.pdf_url = pdf_entry.get("public_url")
+            report.attachments = append_attachment_entry(report.attachments, "files", pdf_entry)
             report.touch()
             session.commit()
             session.refresh(report)
