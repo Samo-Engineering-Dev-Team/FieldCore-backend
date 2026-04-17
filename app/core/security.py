@@ -1,7 +1,7 @@
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from uuid import UUID
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.models import Token, TokenData
@@ -61,6 +61,7 @@ class SecurityUtils:
         role: UserRole,
         name: str,
         surname: str,
+        must_change_password: bool = False,
         exp: datetime | None = None,
     ) -> Token:
         """
@@ -87,6 +88,7 @@ class SecurityUtils:
             "role": role,
             "name": name,
             "surname": surname,
+            "must_change_password": must_change_password,
             "exp": expiration,
             "iat": utcnow(),
             "type": "access",
@@ -107,6 +109,7 @@ class SecurityUtils:
         role: UserRole,
         name: str,
         surname: str,
+        must_change_password: bool = False,
         exp: datetime | None = None,
     ) -> Token:
         """
@@ -133,6 +136,7 @@ class SecurityUtils:
             "role": role,
             "name": name,
             "surname": surname,
+            "must_change_password": must_change_password,
             "exp": expiration,
             "iat": utcnow(),
             "type": "refresh",
@@ -174,7 +178,9 @@ class SecurityUtils:
             role: str | None = decoded.get("role")
             name: str | None = decoded.get("name")
             surname: str | None = decoded.get("surname")
+            must_change_password: bool = bool(decoded.get("must_change_password", False))
             exp: int | None = decoded.get("exp")
+            iat: int | None = decoded.get("iat")
             token_type: str | None = decoded.get("type")
             
             if not user_id or not role:
@@ -187,15 +193,18 @@ class SecurityUtils:
                 )
             
             # Convert expiration timestamp to datetime
-            expiration = datetime.fromtimestamp(exp) if exp else None
+            expiration = datetime.fromtimestamp(exp, tz=timezone.utc) if exp else None
+            issued_at = datetime.fromtimestamp(iat, tz=timezone.utc) if iat else None
             
             return TokenData(
                 user_id=UUID(user_id),
                 role=UserRole(role),
                 name=name,
                 surname=surname,
+                must_change_password=must_change_password,
                 exp=expiration,
                 token_type=token_type,
+                iat=issued_at,
             )
             
         except JWTError as e:

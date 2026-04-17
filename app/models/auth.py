@@ -46,6 +46,11 @@ class TokenData(BaseModel):
         description="The last name of the authenticated user",
         examples=["Doe"]
     )
+    must_change_password: bool = Field(
+        default=False,
+        description="Whether user must set a new password before accessing the app",
+        examples=[False]
+    )
     exp: datetime | None = Field(
         default=None,
         description="Expiration datetime of the token in UTC",
@@ -70,6 +75,7 @@ class TokenData(BaseModel):
                 "role": "user",
                 "name": "John",
                 "surname": "Doe",
+                "must_change_password": False,
                 "exp": "2024-12-31T23:59:59",
                 "token_type": "access",
                 "iat": "2024-01-01T00:00:00"
@@ -103,4 +109,38 @@ class PasswordChange(BaseModel):
         max_length=16,
         description="Confirm the new password",
         examples=["NewPassword456"]
+    )
+
+
+class AdminPasswordReset(BaseModel):
+    """Schema for admin-initiated password reset."""
+
+    new_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="The replacement password (8-16 characters)",
+        examples=["ResetPassword456"]
+    )
+    confirm_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="Confirm the replacement password",
+        examples=["ResetPassword456"]
+    )
+
+
+class PasswordResetCompletion(BaseModel):
+    """Schema for user-completed password reset after temporary login."""
+
+    new_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="The user's final replacement password (8-16 characters)",
+        examples=["FinalPassword456"]
+    )
+    confirm_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="Confirm the user's final replacement password",
+        examples=["FinalPassword456"]
     )

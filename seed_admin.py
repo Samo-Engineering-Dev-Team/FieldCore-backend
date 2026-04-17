@@ -33,6 +33,7 @@ def run_migration(session: Session, path: str) -> None:
 
 def main():
     Database.connect(app_settings.database_url)
+    Database.init()
 
     with Session(Database.connection) as session:
         # Ensure login_audit table exists
@@ -53,6 +54,7 @@ def main():
             role=UserRole.ADMIN,
             status=UserStatus.ACTIVE,
             password_hash=SecurityUtils.hash_password(ADMIN_PASSWORD),
+            must_change_password=True,
         )
         session.add(admin)
         session.commit()
@@ -60,6 +62,7 @@ def main():
         print(f"Admin user created!")
         print(f"  Email:    {ADMIN_EMAIL}")
         print(f"  Password: {ADMIN_PASSWORD}")
+        print("  First login: password change required")
         print(f"  ID:       {admin.id}")
 
     Database.disconnect()

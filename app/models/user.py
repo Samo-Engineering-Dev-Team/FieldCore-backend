@@ -1,10 +1,14 @@
-from sqlmodel import SQLModel, Index, Field, Relationship
+from datetime import datetime
+
+from sqlmodel import SQLModel, Index, Field, Relationship, Column
 from abc import ABC
 from pydantic import EmailStr
 from typing import TYPE_CHECKING, List
+from sqlalchemy import DateTime, func
 
 from .base import BaseDB
 from app.utils.enums import UserRole, UserStatus
+from app.utils.funcs import utcnow
 
 if TYPE_CHECKING:
     from .notification import Notification
@@ -43,6 +47,15 @@ class User(BaseDB, BaseUser, table=True):
     )
 
     password_hash: str = Field(nullable=False)
+    credentials_updated_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(
+            DateTime(timezone=True),
+            nullable=False,
+            server_default=func.now(),
+        ),
+    )
+    must_change_password: bool = Field(default=False, nullable=False)
     status: UserStatus = Field(default=UserStatus.ACTIVE, nullable=False, index=True)
 
     notifications: List['Notification'] = Relationship(back_populates="user")
@@ -101,4 +114,5 @@ class UserStatusUpdate(SQLModel):
 class UserResponse(BaseDB, BaseUser):
     """"""
 
+    must_change_password: bool = False
     status: UserStatus

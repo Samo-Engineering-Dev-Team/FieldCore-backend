@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query
 from typing import List
 from uuid import UUID
 
-from app.models import UserCreate, UserUpdate, UserResponse, UserRoleUpdate
+from app.models import UserCreate, UserUpdate, UserResponse, UserRoleUpdate, AdminPasswordReset
 from app.services import UserService, CurrentUser
 from app.database import Session
 from app.utils.enums import UserRole, UserStatus
@@ -75,6 +75,20 @@ def set_user_role(
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to perform this action.")
     return service.set_user_role(user_id, payload.new_role, session)
+
+
+@router.post("/{user_id}/reset-password", status_code=200)
+def reset_user_password(
+    user_id: UUID,
+    payload: AdminPasswordReset,
+    service: UserService,
+    session: Session,
+    current_user: CurrentUser,
+) -> dict:
+    """Reset a user's password. Only accessible to admins."""
+    if current_user.role != UserRole.ADMIN:
+        raise UnauthorizedException("You do not have permission to reset passwords.")
+    return service.reset_password(user_id, payload, session)
 
 
 @router.patch("/{user_id}/status/activate", response_model=UserResponse, status_code=200)
