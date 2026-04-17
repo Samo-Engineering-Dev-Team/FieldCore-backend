@@ -28,7 +28,6 @@ from app.services.report_support import (
     append_attachment_entry,
     build_storage_attachment,
     create_noc_notifications,
-    upload_storage_file,
 )
 
 
@@ -54,8 +53,6 @@ class _IncidentReportService:
             "root_cause_analysis": report.root_cause_analysis,
             "conclusion": report.conclusion,
             "attachments": report.attachments,
-            "pdf_path": report.pdf_path,
-            "pdf_url": report.pdf_url,
         }
         return IncidentReportResponse(**data)
 
@@ -368,35 +365,6 @@ class _IncidentReportService:
 
         date_str = (report.report_date or utcnow()).strftime("%Y%m%d")
         filename = f"Incident_Report_{date_str}_{str(report.id)[:8]}.pdf"
-
-        # Best-effort: store the PDF in Supabase and update the report record
-        try:
-            pdf_buffer.seek(0)
-            pdf_bytes = pdf_buffer.read()
-            upload_result = upload_storage_file(
-                file_content=pdf_bytes,
-                filename=filename,
-                content_type="application/pdf",
-                folder="incident-reports",
-            )
-            pdf_entry = build_storage_attachment(
-                upload_result=upload_result,
-                original_name=filename,
-                content_type="application/pdf",
-                size=len(pdf_bytes),
-            )
-
-            report.pdf_path = pdf_entry.get("file_path")
-            report.pdf_url = pdf_entry.get("public_url")
-            report.attachments = append_attachment_entry(report.attachments, "files", pdf_entry)
-            report.touch()
-            session.commit()
-            session.refresh(report)
-
-            pdf_buffer = BytesIO(pdf_bytes)
-        except Exception as exc:
-            LOG.warning("PDF upload to storage failed (report still returned): {}", exc)
-            pdf_buffer.seek(0)
 
         pdf_buffer.seek(0)
         return pdf_buffer, filename

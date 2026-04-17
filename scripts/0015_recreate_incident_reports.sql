@@ -33,11 +33,7 @@ CREATE TABLE incident_reports (
     conclusion          TEXT,
 
     -- Evidence attachments
-    attachments JSONB,
-
-    -- Stored PDF metadata (populated on first export)
-    pdf_path VARCHAR(1024),
-    pdf_url  VARCHAR(2048)
+    attachments JSONB
 );
 
 -- Soft-delete-aware unique constraint: one active report per incident

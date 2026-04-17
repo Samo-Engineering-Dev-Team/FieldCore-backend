@@ -22,7 +22,6 @@ from app.services.report_support import (
     create_noc_notifications,
     normalize_attachment_item,
     normalize_attachments,
-    upload_storage_file,
 )
 
 
@@ -366,28 +365,6 @@ class _ReportService:
             report_type = report.report_type.value.replace("-", "_")
             created_date = report.created_at.strftime("%Y%m%d") if report.created_at else "unknown"
             filename = f"report_{report_type}_{created_date}_{str(report.id)[:8]}.pdf"
-
-            # Persist generated PDF to Supabase storage (best-effort, export still succeeds on storage failure).
-            try:
-                stored = upload_storage_file(
-                    file_content=pdf_bytes,
-                    filename=filename,
-                    content_type="application/pdf",
-                    folder=f"reports/{report.id}/exports",
-                )
-                LOG.info(
-                    "report_pdf_stored report_id={} file_path={} public_url={}",
-                    report_id,
-                    stored.get("file_path"),
-                    stored.get("public_url"),
-                )
-            except Exception as storage_error:
-                LOG.warning(
-                    "report_pdf_storage_failed report_id={} error_type={} detail={}",
-                    report_id,
-                    type(storage_error).__name__,
-                    storage_error,
-                )
             
             # Reset buffer for reading
             pdf_buffer.seek(0)

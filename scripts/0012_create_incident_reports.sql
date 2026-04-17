@@ -24,10 +24,6 @@ CREATE TABLE IF NOT EXISTS incident_reports (
     -- Evidence attachments
     attachments JSONB,
 
-    -- Stored PDF metadata (populated on first export)
-    pdf_path VARCHAR(1024),
-    pdf_url  VARCHAR(2048),
-
     -- Audit columns
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

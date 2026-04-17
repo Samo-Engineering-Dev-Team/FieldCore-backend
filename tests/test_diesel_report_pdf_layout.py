@@ -104,6 +104,8 @@ def test_diesel_pdf_uses_new_field_layout_and_embeds_images() -> None:
         image_count = sum(len(page.images) for page in pdf.pages)
 
     assert "FIELD OPERATIONS REPORT" in extracted
+    assert "FIELD CORE" in extracted
+    assert "SAMO TELECOMS" not in extracted
     assert "1. DIESEL SUMMARY" in extracted
     assert "2. FILL-UP ENTRIES" in extracted
     assert "FILL ENTRIES" in extracted
@@ -133,6 +135,8 @@ def test_repeater_pdf_uses_new_field_cover_and_header() -> None:
         extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
 
     assert "FIELD OPERATIONS REPORT" in extracted
+    assert "FIELD CORE" in extracted
+    assert "SAMO TELECOMS" not in extracted
     assert "REPEATER REPORT" in extracted
     assert "GLENCAIRN" in extracted
     assert "STATUS" in extracted

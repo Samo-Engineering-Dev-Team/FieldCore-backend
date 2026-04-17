@@ -50,6 +50,8 @@ def test_incident_pdf_uses_incident_metadata_and_stays_two_pages() -> None:
 
     assert "E8813862" in page1
     assert "MAJOR" in page1
+    assert "FIELD CORE" in page1
+    assert "SAMO TELECOMS" not in page1
     assert "INCIDENT OVERVIEW" in page2
     assert "RESOLVED" in page2
     assert page2.count("LOW FUEL ALARM") >= 6

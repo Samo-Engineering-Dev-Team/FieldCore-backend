@@ -37,6 +37,12 @@ _INC_LIGHT_GRAY = "#718096"   # light gray — running header, labels, captions
 _INC_DIVIDER    = "#e2e8f0"   # very light gray — thin separator lines
 _INC_DARK_LABEL = "#2d3748"   # dark gray — metadata values
 
+_FIELDCORE_BRAND = "FIELD CORE"
+_FIELDCORE_REPORT_LABEL = "Field Report - FIELD CORE"
+_FIELDCORE_CONFIDENTIAL = "CONFIDENTIAL - FOR FIELD CORE INTERNAL USE ONLY"
+_FIELDCORE_MARK_ASSET = "fieldcore-logo-mark.png"
+_FIELDCORE_LOCKUP_ASSET = "fieldcore-logo-lockup.png"
+
 
 class PDFService:
     """Service for generating PDF documents from reports."""
@@ -178,6 +184,49 @@ class PDFService:
         }
         return palettes.get(cover_key or "base", palettes["base"])
 
+    def _load_brand_logo(
+        self,
+        filename: str,
+        *,
+        max_width_mm: float,
+        max_height_mm: float,
+    ) -> Image | None:
+        """Load a logo and fit it inside requested bounds while preserving aspect ratio."""
+        path = self.assets_path / filename
+        if not path.exists():
+            return None
+
+        try:
+            reader = ImageReader(str(path))
+            src_width, src_height = reader.getSize()
+            if not src_width or not src_height:
+                return None
+
+            scale = min(max_width_mm / src_width, max_height_mm / src_height)
+            draw_width_mm = src_width * scale
+            draw_height_mm = src_height * scale
+            return Image(
+                str(path),
+                width=draw_width_mm * mm,
+                height=draw_height_mm * mm,
+            )
+        except Exception:
+            return None
+
+    def _load_fieldcore_mark(self, *, max_width_mm: float, max_height_mm: float) -> Image | None:
+        return self._load_brand_logo(
+            _FIELDCORE_MARK_ASSET,
+            max_width_mm=max_width_mm,
+            max_height_mm=max_height_mm,
+        )
+
+    def _load_fieldcore_lockup(self, *, max_width_mm: float, max_height_mm: float) -> Image | None:
+        return self._load_brand_logo(
+            _FIELDCORE_LOCKUP_ASSET,
+            max_width_mm=max_width_mm,
+            max_height_mm=max_height_mm,
+        )
+
     def _configure_first_page_background(
         self,
         cover_key: str | None,
@@ -252,26 +301,14 @@ class PDFService:
 
         Args:
             title:    Large headline (e.g. "Incident Report")
-            subtitle: Smaller descriptor below title (e.g. "Severity: CRITICAL - SAMO TELECOMS x SEACOM")
+            subtitle: Smaller descriptor below title (e.g. "Severity: CRITICAL - FIELD CORE")
             details:  List of [label, value] rows for the info table
         """
         elements = []
         primary_color, accent_color = self._cover_palette(cover_key)
 
-        # Load logos
-        samo_logo = seacom_logo = None
-        try:
-            p = self.assets_path / "samo-logo.png"
-            if p.exists():
-                samo_logo = Image(str(p), width=55 * mm, height=20 * mm)
-        except Exception:
-            pass
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=55 * mm, height=20 * mm)
-        except Exception:
-            pass
+        mark_logo = self._load_fieldcore_mark(max_width_mm=22, max_height_mm=20)
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=52, max_height_mm=18)
 
         # ── Blue header band (logos + brand name) ────────────────────────────
         brand_style = ParagraphStyle(
@@ -283,9 +320,9 @@ class PDFService:
             fontName='Helvetica-Bold',
         )
         header_data = [[
-            samo_logo or Paragraph("<b>SAMO</b>", self.styles['CompanyHeader']),
-            Paragraph("SAMO TELECOMS &amp; SEACOM", brand_style),
-            seacom_logo or Paragraph("<b>SEACOM</b>", self.styles['CompanyHeader']),
+            mark_logo or Paragraph("<b>FC</b>", self.styles['CompanyHeader']),
+            Paragraph(_FIELDCORE_BRAND, brand_style),
+            lockup_logo or Paragraph("<b>FIELD CORE</b>", self.styles['CompanyHeader']),
         ]]
         header_table = Table(header_data, colWidths=[60 * mm, 50 * mm, 60 * mm], rowHeights=[32 * mm])
         header_table.setStyle(TableStyle([
@@ -362,7 +399,7 @@ class PDFService:
             fontName='Helvetica-Oblique',
         )
         elements.append(Paragraph(
-            "CONFIDENTIAL - FOR SAMO TELECOMS AND SEACOM USE ONLY",
+            _FIELDCORE_CONFIDENTIAL,
             conf_style,
         ))
         elements.append(Spacer(1, 3 * mm))
@@ -380,14 +417,14 @@ class PDFService:
     def _build_brand_logo_row(
         self,
         *,
-        samo_width_mm: float,
-        samo_height_mm: float,
-        seacom_width_mm: float,
-        seacom_height_mm: float,
+        mark_width_mm: float,
+        mark_height_mm: float,
+        lockup_width_mm: float,
+        lockup_height_mm: float,
         gap_mm: float = 4,
         fallback_color: str = "#1f2a44",
     ) -> Table:
-        """Build a shared SAMO/SEACOM logo row for field-report layouts."""
+        """Build a shared Field Core mark + lockup row for report layouts."""
         fallback_s = ParagraphStyle(
             "BrandLogoFallback",
             parent=self.styles["Normal"],
@@ -397,35 +434,21 @@ class PDFService:
             alignment=TA_CENTER,
         )
 
-        samo_logo = seacom_logo = None
-        try:
-            samo_path = self.assets_path / "samo-logo.png"
-            if samo_path.exists():
-                samo_logo = Image(
-                    str(samo_path),
-                    width=samo_width_mm * mm,
-                    height=samo_height_mm * mm,
-                )
-        except Exception:
-            samo_logo = None
-
-        try:
-            seacom_path = self.assets_path / "seacom-logo.png"
-            if seacom_path.exists():
-                seacom_logo = Image(
-                    str(seacom_path),
-                    width=seacom_width_mm * mm,
-                    height=seacom_height_mm * mm,
-                )
-        except Exception:
-            seacom_logo = None
+        mark_logo = self._load_fieldcore_mark(
+            max_width_mm=mark_width_mm,
+            max_height_mm=mark_height_mm,
+        )
+        lockup_logo = self._load_fieldcore_lockup(
+            max_width_mm=lockup_width_mm,
+            max_height_mm=lockup_height_mm,
+        )
 
         logos = Table(
             [[
-                samo_logo or Paragraph("<b>SAMO</b>", fallback_s),
-                seacom_logo or Paragraph("<b>SEACOM</b>", fallback_s),
+                mark_logo or Paragraph("<b>FC</b>", fallback_s),
+                lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
             ]],
-            colWidths=[samo_width_mm * mm, seacom_width_mm * mm],
+            colWidths=[mark_width_mm * mm, lockup_width_mm * mm],
         )
         logos.setStyle(TableStyle([
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
@@ -526,13 +549,13 @@ class PDFService:
                 [
                     Paragraph("FIELD OPERATIONS REPORT", kicker_s),
                     Spacer(1, 1.5 * mm),
-                    Paragraph("SAMO TELECOMS x SEACOM", brand_s),
+                    Paragraph(_FIELDCORE_BRAND, brand_s),
                 ],
                 self._build_brand_logo_row(
-                    samo_width_mm=34,
-                    samo_height_mm=15,
-                    seacom_width_mm=40,
-                    seacom_height_mm=16,
+                    mark_width_mm=34,
+                    mark_height_mm=15,
+                    lockup_width_mm=40,
+                    lockup_height_mm=16,
                     fallback_color="#1b2540",
                 ),
             ]],
@@ -551,7 +574,7 @@ class PDFService:
         footer = Table(
             [[
                 Paragraph(
-                    "CONFIDENTIAL DOCUMENT - FOR SAMO TELECOMS AND SEACOM USE ONLY",
+                    _FIELDCORE_CONFIDENTIAL,
                     footer_s,
                 ),
                 Paragraph(f"Generated {escape(generated_at)}", footer_s),
@@ -628,10 +651,10 @@ class PDFService:
                     ),
                 ],
                 self._build_brand_logo_row(
-                    samo_width_mm=26,
-                    samo_height_mm=11,
-                    seacom_width_mm=33,
-                    seacom_height_mm=13,
+                    mark_width_mm=26,
+                    mark_height_mm=11,
+                    lockup_width_mm=33,
+                    lockup_height_mm=13,
                     fallback_color="#1b2540",
                 ),
             ]],
@@ -792,7 +815,7 @@ class PDFService:
             primary_hex, accent_hex = self._cover_palette(report_cover_key)
             story.extend(self._build_cover_page(
                 title=f"{report_type_display} Report",
-                subtitle="Field Report - SAMO TELECOMS x SEACOM",
+                subtitle=_FIELDCORE_REPORT_LABEL,
                 details=cover_details,
                 cover_key=report_cover_key,
             ))
@@ -800,7 +823,7 @@ class PDFService:
             # ── Page 2: banner header ─────────────────────────────────────────
             story.extend(self._build_page_header(
                 title=f"{report_type_display} Report",
-                subtitle=f"Field Report - SAMO TELECOMS x SEACOM  |  {self._format_datetime(report.created_at)}",
+                subtitle=f"{_FIELDCORE_REPORT_LABEL}  |  {self._format_datetime(report.created_at)}",
                 primary_hex=primary_hex,
                 accent_hex=accent_hex,
             ))
@@ -947,7 +970,7 @@ class PDFService:
                 report_type_label=report_type_display,
                 title=f"{report_type_display} Report",
                 site=site_display,
-                subtitle="Field Report - SAMO TELECOMS x SEACOM",
+                subtitle=_FIELDCORE_REPORT_LABEL,
                 descriptor=(
                     f"Prepared for {service_provider_display}. Structured field document "
                     "for operational review, archive, and audit traceability."
@@ -969,7 +992,7 @@ class PDFService:
 
             story.extend(self._build_field_page_header(
                 title=f"{report_type_display} Report",
-                subtitle=f"Field Report - SAMO TELECOMS x SEACOM | {created_display}",
+                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {created_display}",
                 accent_hex=accent_hex,
             ))
             story.extend(self._build_field_overview_cards(
@@ -1193,7 +1216,7 @@ class PDFService:
     ) -> list:
         """
         Build a dark-background-compatible cover page matching the
-        SEACOM Operations Report style: logos + pill badge top bar, large white
+        Field Core incident style: logos + pill badge top bar, large white
         title, frosted info boxes at the bottom.
         """
         elements = []
@@ -1332,20 +1355,9 @@ class PDFService:
         # ── 1. Top breathing room ─────────────────────────────────────────────
         elements.append(Spacer(1, 6 * mm))
 
-        # ── 2. Top bar: SAMO logo | "INCIDENT REPORT" pill | SEACOM logo ─────
-        samo_logo = seacom_logo = None
-        try:
-            p = self.assets_path / "samo-logo.png"
-            if p.exists():
-                samo_logo = Image(str(p), width=40 * mm, height=15 * mm)
-        except Exception:
-            pass
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=45 * mm, height=16 * mm)
-        except Exception:
-            pass
+        # ── 2. Top bar: Field Core mark | "INCIDENT REPORT" pill | Field Core lockup ─────
+        mark_logo = self._load_fieldcore_mark(max_width_mm=40, max_height_mm=15)
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=45, max_height_mm=16)
 
         # Pill badge (nested table with white border)
         pill_inner = Table(
@@ -1362,9 +1374,9 @@ class PDFService:
 
         top_bar = Table(
             [[
-                samo_logo or Paragraph("<b>SAMO</b>", fb_s),
+                mark_logo or Paragraph("<b>FC</b>", fb_s),
                 pill_inner,
-                seacom_logo or Paragraph("<b>SEACOM</b>", fb_r_s),
+                lockup_logo or Paragraph("<b>FIELD CORE</b>", fb_r_s),
             ]],
             colWidths=[50 * mm, 70 * mm, 50 * mm],
         )
@@ -1386,7 +1398,7 @@ class PDFService:
         # ── 4. Brand line ─────────────────────────────────────────────────────
         elements.append(Paragraph("FIELD OPERATIONS DOSSIER", kicker_s))
         elements.append(Spacer(1, 2 * mm))
-        elements.append(Paragraph("SAMO  TELECOMS    \u00d7    SEACOM", brand_s))
+        elements.append(Paragraph(_FIELDCORE_BRAND, brand_s))
         elements.append(Spacer(1, 5 * mm))
 
         # ── 5. Large title ────────────────────────────────────────────────────
@@ -1497,7 +1509,7 @@ class PDFService:
         # ── 8. Confidentiality footer box ─────────────────────────────────────
         conf_box = Table(
             [[Paragraph(
-                f"Ref: {seacom_ref}  \u2014  Confidential, Samo Engineering and SEACOM internal use.",
+                f"Ref: {seacom_ref}  \u2014  Confidential, Field Core internal use.",
                 conf_s,
             )]],
             colWidths=[170 * mm],
@@ -2285,18 +2297,12 @@ class PDFService:
             else generated_dt.strftime("%H:%M UTC")
         )
 
-        seacom_logo = None
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=43 * mm, height=15 * mm)
-        except Exception:
-            pass
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=43, max_height_mm=15)
 
         header = Table(
             [[
-                Paragraph("Samo Engineering // SEACOM incident services", top_l_s),
-                seacom_logo or Paragraph("SAMO x SEACOM", top_r_s),
+                Paragraph("Field Core incident services", top_l_s),
+                lockup_logo or Paragraph("FIELD CORE", top_r_s),
             ]],
             colWidths=[109 * mm, 61 * mm],
         )
@@ -2868,7 +2874,7 @@ class PDFService:
         ]
         story.extend(self._build_cover_page(
             title="Executive Management Report",
-            subtitle=f"{month_label} - SAMO TELECOMS x SEACOM",
+            subtitle=f"{month_label} - {_FIELDCORE_BRAND}",
             details=cover_details,
             cover_key="executive",
         ))
@@ -2877,7 +2883,7 @@ class PDFService:
         exec_primary, exec_accent = self._cover_palette("executive")
         story.extend(self._build_page_header(
             title="Executive Management Report",
-            subtitle=f"{month_label}  |  SAMO TELECOMS x SEACOM",
+            subtitle=f"{month_label}  |  {_FIELDCORE_BRAND}",
             primary_hex=exec_primary,
             accent_hex=exec_accent,
         ))
@@ -3018,21 +3024,10 @@ class PDFService:
         """
         Build a full-width dark banner for the top of every content page.
         Mirrors the .content-header style from the client HTML report:
-        [ samo logo | title + subtitle | seacom logo ]
+        [ Field Core mark | title + subtitle | Field Core lockup ]
         """
-        samo_logo = seacom_logo = None
-        try:
-            p = self.assets_path / "samo-logo.png"
-            if p.exists():
-                samo_logo = Image(str(p), width=46 * mm, height=16 * mm)
-        except Exception:
-            pass
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=46 * mm, height=16 * mm)
-        except Exception:
-            pass
+        mark_logo = self._load_fieldcore_mark(max_width_mm=46, max_height_mm=16)
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=46, max_height_mm=16)
 
         title_s = ParagraphStyle(
             "BnrTitle",
@@ -3061,9 +3056,9 @@ class PDFService:
 
         banner = Table(
             [[
-                samo_logo or Paragraph("<b>SAMO</b>", fallback_s),
+                mark_logo or Paragraph("<b>FC</b>", fallback_s),
                 [Paragraph(title, title_s), Spacer(1, 2), Paragraph(subtitle, sub_s)],
-                seacom_logo or Paragraph("<b>SEACOM</b>", fallback_s),
+                lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
             ]],
             colWidths=[46 * mm, 78 * mm, 46 * mm],
         )
