@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import Database
-from app.services.auth import ManagerOrAdminUser, NocOrManagerOrAdminUser
+from app.services.auth import AdminUser, ManagerOrAdminUser, NocOrManagerOrAdminUser
 from app.models.user import User
 import os
 import shutil
@@ -706,7 +706,7 @@ def get_system_alerts(
 # ============================================================
 @router.get("/login-audit")
 def get_login_audit(
-    current_user: ManagerOrAdminUser,
+    current_user: AdminUser,
     success: Optional[bool] = Query(None),
     email: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),

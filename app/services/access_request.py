@@ -17,9 +17,12 @@ from app.models import (
     )
 from app.exceptions.http import (
     ConflictException,
+    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
+from app.models.auth import TokenData
+from app.services.authorization import get_technician_id_for_user, is_management
 
 
 class _AccessRequestService:
@@ -34,7 +37,40 @@ class _AccessRequestService:
             site_name=access_request.site.name
             )
 
-    def create_access_request(self, data: AccessRequestCreate, session: Session) -> AccessRequestResponse:
+    def _assert_can_access_request(
+        self,
+        access_request: AccessRequest,
+        session: Session,
+        current_user: TokenData,
+        action: str,
+    ) -> None:
+        if is_management(current_user):
+            return
+
+        technician_id = get_technician_id_for_user(current_user.user_id, session)
+        if access_request.technician_id != technician_id:
+            raise ForbiddenException(
+                f"You do not have permission to {action} this access request."
+            )
+
+    def create_access_request(
+        self,
+        data: AccessRequestCreate,
+        session: Session,
+        current_user: TokenData,
+    ) -> AccessRequestResponse:
+        if current_user.role == UserRole.TECHNICIAN:
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
+            if data.technician_id != technician_id:
+                raise ForbiddenException(
+                    "Technicians can only create access requests for themselves."
+                )
+            data = data.model_copy(update={"technician_id": technician_id})
+        elif not is_management(current_user):
+            raise ForbiddenException(
+                "Only technicians, NOC, managers, or admins can create access requests."
+            )
+
         # Handle site
         statement = select(Site).where(Site.id == data.site_id, Site.deleted_at.is_(None)) # type: ignore
         site: Site | None = session.exec(statement).first()
@@ -85,19 +121,29 @@ class _AccessRequestService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating access-request: {e}")
 
-    def read_access_request(self, access_request_id: UUID, session: Session) -> AccessRequestResponse:
+    def read_access_request(
+        self,
+        access_request_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> AccessRequestResponse:
         access_request = self._get_access_request(access_request_id, session)
+        self._assert_can_access_request(access_request, session, current_user, "view")
         return self.access_request_to_response(access_request)
 
     def read_access_requests(
         self,
         session: Session,
+        current_user: TokenData,
         status: AccessRequestStatus | None = None,
         technician_id: UUID | None = None,
         offset: int = 0,
         limit: int = 100,
     ) -> List[AccessRequestResponse]:
         statement = select(AccessRequest).where(AccessRequest.deleted_at.is_(None))  # type: ignore
+
+        if current_user.role == UserRole.TECHNICIAN:
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
 
         if status is not None:
             statement = statement.where(AccessRequest.status == status)
@@ -109,9 +155,14 @@ class _AccessRequestService:
         return [self.access_request_to_response(access_request) for access_request in access_requests]
 
     def update_access_request(
-        self, access_request_id: UUID, data: AccessRequestUpdate, session: Session
+        self,
+        access_request_id: UUID,
+        data: AccessRequestUpdate,
+        session: Session,
+        current_user: TokenData,
     ) -> AccessRequestResponse:
         access_request = self._get_access_request(access_request_id, session)
+        self._assert_can_access_request(access_request, session, current_user, "update")
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
         )
@@ -135,8 +186,14 @@ class _AccessRequestService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error updating access_request: {e}")
 
-    def delete_access_request(self, access_request_id: UUID, session: Session) -> None:
+    def delete_access_request(
+        self,
+        access_request_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> None:
         access_request = self._get_access_request(access_request_id, session)
+        self._assert_can_access_request(access_request, session, current_user, "delete")
         access_request.soft_delete()
         session.commit()
     

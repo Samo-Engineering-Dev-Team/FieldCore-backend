@@ -13,9 +13,11 @@ from app.models.auth import TokenData
 from app.exceptions.http import (
     BadRequestException,
     ConflictException,
+    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
+from app.services.authorization import get_technician_id_for_user, is_management
 
 
 class _TaskService:
@@ -97,6 +99,20 @@ class _TaskService:
         )
         return session.exec(statement).first()
 
+    def _assert_task_owner_or_management(
+        self,
+        task: Task,
+        session: Session,
+        current_user: TokenData,
+        action: str,
+    ) -> None:
+        if is_management(current_user):
+            return
+
+        technician_id = get_technician_id_for_user(current_user.user_id, session)
+        if task.technician_id != technician_id:
+            raise ForbiddenException(f"You do not have permission to {action} this task.")
+
     def _ensure_auto_report_for_task(
         self,
         task: Task,
@@ -142,7 +158,10 @@ class _TaskService:
                 return existing_after_race, False
             raise
 
-    def create_task(self, data: TaskCreate, session: Session, current_user: TokenData | None = None) -> TaskResponse:
+    def create_task(self, data: TaskCreate, session: Session, current_user: TokenData) -> TaskResponse:
+        if not is_management(current_user):
+            raise ForbiddenException("Only NOC, managers, or admins can create tasks.")
+
         # Handle site
         statement = select(Site).where(Site.id == data.site_id, Site.deleted_at.is_(None)) # type: ignore
         site: Site | None = session.exec(statement).first()
@@ -196,13 +215,15 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating task: {e}")
 
-    def read_task(self, task_id: UUID, session: Session) -> TaskResponse:
+    def read_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "view")
         return self.task_to_response(task, session)
 
     def read_tasks(
         self,
         session: Session,
+        current_user: TokenData,
         technician_id: UUID | None = None,
         task_type: TaskType | None = None,
         status: TaskStatus | None = None,
@@ -218,7 +239,11 @@ class _TaskService:
             .where(Task.deleted_at.is_(None))
         )  # type: ignore
 
-        if technician_id is not None:
+        if is_management(current_user):
+            if technician_id is not None:
+                statement = statement.where(Task.technician_id == technician_id)
+        else:
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
             statement = statement.where(Task.technician_id == technician_id)
         if task_type is not None:
             statement = statement.where(Task.task_type == task_type)
@@ -230,8 +255,11 @@ class _TaskService:
         return [self.task_to_response(task, session) for task in tasks]
 
     def update_task(
-        self, task_id: UUID, data: TaskUpdate, session: Session
+        self, task_id: UUID, data: TaskUpdate, session: Session, current_user: TokenData
     ) -> TaskResponse:
+        if not is_management(current_user):
+            raise ForbiddenException("Only NOC, managers, or admins can update tasks.")
+
         task = self._get_task(task_id, session)
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
@@ -256,7 +284,10 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error updating task: {e}")
 
-    def delete_task(self, task_id: UUID, session: Session) -> None:
+    def delete_task(self, task_id: UUID, session: Session, current_user: TokenData) -> None:
+        if not is_management(current_user):
+            raise ForbiddenException("Only NOC, managers, or admins can delete tasks.")
+
         task = self._get_task(task_id, session)
 
         # Notify the assigned technician before deleting so they don't travel to the site.
@@ -274,9 +305,10 @@ class _TaskService:
         task.soft_delete()
         session.commit()
     
-    def start_task(self, task_id: UUID, session: Session) -> TaskResponse:
+    def start_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
         """Start a task, ensure auto-report exists (skipped for RHS), and notify NOC operators."""
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "start")
         task.start()
         try:
             session.commit()
@@ -331,9 +363,16 @@ class _TaskService:
             LOG.exception("Unexpected error starting task. task_id={} error={}", task_id, e)
             raise InternalServerErrorException(f"Unexpected error starting task: {e}")
     
-    def submit_feedback(self, task_id: UUID, feedback: str, session: Session) -> TaskResponse:
+    def submit_feedback(
+        self,
+        task_id: UUID,
+        feedback: str,
+        session: Session,
+        current_user: TokenData,
+    ) -> TaskResponse:
         """Submit RHS feedback and complete the task. No report is created."""
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "complete")
         task.feedback = feedback
         task.complete()
         try:
@@ -367,9 +406,10 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error submitting feedback: {e}")
 
-    def complete_task(self, task_id: UUID, session: Session) -> TaskResponse:
+    def complete_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
         """Complete a task, self-heal missing report if needed, and notify NOC operators."""
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "complete")
         task.complete()
         try:
             session.commit()
@@ -437,9 +477,10 @@ class _TaskService:
             LOG.exception("Unexpected error completing task. task_id={} error={}", task_id, e)
             raise InternalServerErrorException(f"Unexpected error completing task: {e}")
     
-    def fail_task(self, task_id: UUID, session: Session) -> TaskResponse:
+    def fail_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
         """Mark a task as failed and notify NOC operators."""
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "fail")
         task.fail()
         try:
             session.commit()
@@ -472,9 +513,16 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error failing task: {e}")
 
-    def hold_task(self, task_id: UUID, reason: str | None, session: Session) -> TaskResponse:
+    def hold_task(
+        self,
+        task_id: UUID,
+        reason: str | None,
+        session: Session,
+        current_user: TokenData,
+    ) -> TaskResponse:
         """Put a started task on hold so the technician can continue the next day."""
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "hold")
         if task.status != TaskStatus.STARTED:
             raise BadRequestException(
                 f"Cannot hold a task that is not started (current status: {task.status})"
@@ -488,9 +536,10 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error holding task: {e}")
 
-    def resume_task(self, task_id: UUID, session: Session) -> TaskResponse:
+    def resume_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
         """Resume an on-hold task, restoring it to started status."""
         task = self._get_task(task_id, session)
+        self._assert_task_owner_or_management(task, session, current_user, "resume")
         if task.status != TaskStatus.ON_HOLD:
             raise BadRequestException(
                 f"Cannot resume a task that is not on hold (current status: {task.status})"

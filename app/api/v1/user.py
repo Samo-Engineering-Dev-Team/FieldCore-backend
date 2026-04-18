@@ -7,6 +7,7 @@ from app.services import UserService, CurrentUser
 from app.database import Session
 from app.utils.enums import UserRole, UserStatus
 from app.exceptions.http import UnauthorizedException
+from app.services.authorization import ADMIN_MANAGER_ROLES, assert_self_or_roles
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -46,9 +47,16 @@ def read_users(
 def read_user(
     user_id: UUID,
     service: UserService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> UserResponse:
     """"""
+    assert_self_or_roles(
+        user_id,
+        current_user,
+        ADMIN_MANAGER_ROLES,
+        "You do not have permission to view this user.",
+    )
     return service.read_user(user_id, session)
 
 
@@ -58,8 +66,15 @@ def update_user(
     payload: UserUpdate,
     service: UserService,
     session: Session,
+    current_user: CurrentUser,
 ) -> UserResponse:
     """"""
+    assert_self_or_roles(
+        user_id,
+        current_user,
+        ADMIN_MANAGER_ROLES,
+        "You do not have permission to update this user.",
+    )
     return service.update_user(user_id, payload, session)
 
 

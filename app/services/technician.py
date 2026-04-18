@@ -11,10 +11,13 @@ from loguru import logger as LOG
 from app.models import Technician, TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate, User, Site
 from app.exceptions.http import (
     ConflictException,
+    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
 from app.utils.funcs import utcnow
+from app.models.auth import TokenData
+from app.services.authorization import assert_technician_self_or_roles, is_management
 
 
 class _TechnicianService:
@@ -67,7 +70,20 @@ class _TechnicianService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating technician: {e}")
 
-    def read_technician(self, technician_id: UUID, session: Session) -> TechnicianResponse:
+    def read_technician(
+        self,
+        technician_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> TechnicianResponse:
+        if not is_management(current_user):
+            assert_technician_self_or_roles(
+                technician_id,
+                current_user,
+                session,
+                allowed_roles=(),
+                message="You do not have permission to view this technician.",
+            )
         technician = self._get_technician(technician_id, session)
         return self.technician_to_response(technician)
 
@@ -83,8 +99,20 @@ class _TechnicianService:
         return [self.technician_to_response(technician) for technician in technicians]
 
     def update_technician(
-        self, technician_id: UUID, data: TechnicianUpdate, session: Session
+        self,
+        technician_id: UUID,
+        data: TechnicianUpdate,
+        session: Session,
+        current_user: TokenData,
     ) -> TechnicianResponse:
+        if not is_management(current_user):
+            assert_technician_self_or_roles(
+                technician_id,
+                current_user,
+                session,
+                allowed_roles=(),
+                message="You do not have permission to update this technician.",
+            )
         technician = self._get_technician(technician_id, session)
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
@@ -149,9 +177,18 @@ class _TechnicianService:
         self, 
         technician_id: UUID, 
         data: TechnicianLocationUpdate, 
-        session: Session
+        session: Session,
+        current_user: TokenData,
     ) -> TechnicianResponse:
         """Update technician's current location (called from mobile app)."""
+        if not is_management(current_user):
+            assert_technician_self_or_roles(
+                technician_id,
+                current_user,
+                session,
+                allowed_roles=(),
+                message="You do not have permission to update this technician's location.",
+            )
         technician = self._get_technician(technician_id, session)
         technician.update_location(data.latitude, data.longitude)
         
