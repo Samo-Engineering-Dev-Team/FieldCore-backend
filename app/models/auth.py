@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from uuid import uuid4, UUID
 from datetime import datetime
+from typing import Any
 
 from app.utils.enums import UserRole
 
