@@ -4,13 +4,13 @@ from fastapi import Depends
 from typing import List, Annotated, Any
 from sqlmodel import Session, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy.orm import object_session
 from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
 import time
 
-from app.utils.enums import ReportType, ReportStatus
+from app.utils.enums import ReportType, ReportStatus, UserRole
 from app.models import Report, ReportCreate, ReportUpdate, ReportResponse, Task, Technician
+from app.models.auth import TokenData
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -72,7 +72,42 @@ class _ReportService:
             seacom_ref=seacom_ref
             )
 
-    def create_report(self, data: ReportCreate, session: Session) -> ReportResponse:
+    def _get_technician_by_user(self, user_id: UUID, session: Session) -> Technician:
+        statement = select(Technician).where(
+            Technician.user_id == user_id,
+            Technician.deleted_at.is_(None),  # type: ignore
+        )
+        technician: Technician | None = session.exec(statement).first()
+        if not technician:
+            raise NotFoundException("technician profile not found for current user")
+        return technician
+
+    def _assert_can_access_report(
+        self,
+        report: Report,
+        current_user: TokenData,
+        session: Session,
+        action: str,
+    ) -> None:
+        if current_user.role != UserRole.TECHNICIAN:
+            return
+
+        technician = self._get_technician_by_user(current_user.user_id, session)
+        if report.technician_id != technician.id:
+            raise ForbiddenException(f"Technicians can only {action} their own reports")
+
+    def create_report(
+        self,
+        data: ReportCreate,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
+        if current_user.role == UserRole.TECHNICIAN:
+            technician = self._get_technician_by_user(current_user.user_id, session)
+            if data.technician_id != technician.id:
+                raise ForbiddenException("Technicians can only create reports for themselves")
+            data = data.model_copy(update={"technician_id": technician.id})
+
         report_data = data.model_dump()
         report_data["attachments"] = self._normalize_attachments(report_data.get("attachments"))
         report: Report = Report(**report_data)
@@ -110,13 +145,20 @@ class _ReportService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating report: {e}")
 
-    def read_report(self, report_id: UUID, session: Session) -> ReportResponse:
+    def read_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "view")
         return self.report_to_response(report)
 
     def read_reports(
         self,
         session: Session,
+        current_user: TokenData,
         report_type: ReportType | None = None,
         status: ReportStatus | None = None,
         technician_id: UUID | None = None,
@@ -132,19 +174,27 @@ class _ReportService:
             .where(Report.deleted_at.is_(None))
         )  # type: ignore
 
+        if current_user.role == UserRole.TECHNICIAN:
+            technician = self._get_technician_by_user(current_user.user_id, session)
+            statement = statement.where(Report.technician_id == technician.id)
+        elif technician_id is not None:
+            statement = statement.where(Report.technician_id == technician_id)
+
         if report_type is not None:
             statement = statement.where(Report.report_type == report_type)
         if status is not None:
             statement = statement.where(Report.status == status)
-        if technician_id is not None:
-            statement = statement.where(Report.technician_id == technician_id)
 
         statement = statement.offset(offset).limit(limit)
         reports = session.exec(statement).all()
         return [self.report_to_response(report) for report in reports]
 
     def update_report(
-        self, report_id: UUID, data: ReportUpdate, session: Session
+        self,
+        report_id: UUID,
+        data: ReportUpdate,
+        session: Session,
+        current_user: TokenData,
     ) -> ReportResponse:
         """
         Update a report with the provided data.
@@ -159,6 +209,7 @@ class _ReportService:
             try:
                 # Step 1: Fetch the report
                 report = self._get_report(report_id, session)
+                self._assert_can_access_report(report, current_user, session, "update")
                 update_data = data.model_dump(
                     exclude_none=True, exclude_defaults=True, exclude_unset=True
                 )
@@ -294,14 +345,26 @@ class _ReportService:
             "Report is currently being updated by another request. Please retry."
         )
 
-    def delete_report(self, report_id: UUID, session: Session) -> None:
+    def delete_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> None:
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "delete")
         report.soft_delete()
         session.commit()
     
-    def start_report(self, report_id: UUID, session: Session) -> ReportResponse:
+    def start_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
         """"""
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "start")
         report.start()
         try:
             session.commit()
@@ -314,9 +377,15 @@ class _ReportService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error starting report: {e}")
     
-    def complete_report(self, report_id: UUID, session: Session) -> ReportResponse:
+    def complete_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
         """"""
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "complete")
         report.complete()
         try:
             session.commit()

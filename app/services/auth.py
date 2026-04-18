@@ -5,9 +5,11 @@ from sqlmodel import select, Session, text
 from uuid import UUID
 
 from app.core import SecurityUtils
-from app.models import User, Token, TokenData, LoginForm, PasswordChange
+from app.models import User, Token, TokenData, LoginForm, PasswordChange, PasswordResetCompletion
 from app.exceptions.http import UnauthorizedException, NotFoundException, ForbiddenException, BadRequestException
 from app.utils.enums import UserRole
+from app.utils.funcs import utcnow
+from app.database import get_session
 from loguru import logger as LOG
 
 oauth = OAuth2PasswordBearer("/api/v1/auth/login")
@@ -86,7 +88,13 @@ class _AuthService:
         _record_login(session, email=form.email, success=True,
                       user_id=user.id, role=str(user.role),
                       ip_address=ip_address, user_agent=user_agent)
-        return SecurityUtils.create_token(user.id, user.role, user.name, user.surname)
+        return SecurityUtils.create_token(
+            user.id,
+            user.role,
+            user.name,
+            user.surname,
+            user.must_change_password,
+        )
 
     def change_password(self, user_id: UUID, payload: PasswordChange, session: Session) -> dict:
         """Change the password for a user."""
@@ -95,12 +103,7 @@ class _AuthService:
             raise BadRequestException("New password and confirmation do not match")
         
         # Get user from database
-        user = session.exec(
-            select(User).where(User.id == user_id, User.deleted_at.is_(None))
-        ).first()
-        
-        if not user:
-            raise NotFoundException("User not found")
+        user = self._get_user(user_id, session)
         
         # Verify current password
         if not SecurityUtils.check_password(payload.current_password, user.password_hash):
@@ -112,19 +115,107 @@ class _AuthService:
         
         # Update password
         user.password_hash = SecurityUtils.hash_password(payload.new_password)
+        user.credentials_updated_at = utcnow()
+        user.must_change_password = False
         session.add(user)
         session.commit()
         
         return {"message": "Password changed successfully"}
+
+    def complete_password_reset(
+        self,
+        user_id: UUID,
+        payload: PasswordResetCompletion,
+        session: Session,
+    ) -> Token:
+        """Replace temporary password with user's final password and clear reset flag."""
+        user = self._get_user(user_id, session)
+
+        if not user.must_change_password:
+            raise BadRequestException("Password reset is not required for this account")
+
+        if payload.new_password != payload.confirm_password:
+            raise BadRequestException("New password and confirmation do not match")
+
+        if SecurityUtils.check_password(payload.new_password, user.password_hash):
+            raise BadRequestException("New password must be different from temporary password")
+
+        user.password_hash = SecurityUtils.hash_password(payload.new_password)
+        user.credentials_updated_at = utcnow()
+        user.must_change_password = False
+        session.add(user)
+        session.commit()
+        session.refresh(user)
+
+        return SecurityUtils.create_token(
+            user.id,
+            user.role,
+            user.name,
+            user.surname,
+            user.must_change_password,
+        )
+
+    def read_current_user(self, current_user: TokenData, session: Session) -> TokenData:
+        """Return latest user profile fields while keeping token metadata."""
+        user = self._get_user(current_user.user_id, session)
+
+        return TokenData(
+            user_id=user.id,
+            role=user.role,
+            name=user.name,
+            surname=user.surname,
+            must_change_password=user.must_change_password,
+            exp=current_user.exp,
+            token_type=current_user.token_type,
+            iat=current_user.iat,
+        )
+
+    def _get_user(self, user_id: UUID, session: Session) -> User:
+        user = session.exec(
+            select(User).where(User.id == user_id, User.deleted_at.is_(None))
+        ).first()
+
+        if not user:
+            raise NotFoundException("User not found")
+
+        return user
 
 def get_auth_service() -> _AuthService:
     """"""
     return _AuthService()
 
 
-def get_current_user(token: str = Depends(oauth)) -> TokenData:
-    """"""
-    return SecurityUtils.decode_token(token, "access")
+def get_current_user(token: str = Depends(oauth), session: Session = Depends(get_session)) -> TokenData:
+    """Decode access token, then validate it against live user credentials."""
+    current_user = SecurityUtils.decode_token(token, "access")
+
+    user = session.exec(
+        select(User).where(User.id == current_user.user_id, User.deleted_at.is_(None))
+    ).first()
+
+    if not user:
+        raise UnauthorizedException("User not found")
+
+    if not user.is_active():
+        raise UnauthorizedException("This account has been deactivated. Please contact your admin.")
+
+    if (
+        current_user.iat is not None
+        and user.credentials_updated_at is not None
+        and current_user.iat < user.credentials_updated_at
+    ):
+        raise UnauthorizedException("Session expired. Please log in again.")
+
+    return TokenData(
+        user_id=user.id,
+        role=user.role,
+        name=user.name,
+        surname=user.surname,
+        must_change_password=user.must_change_password,
+        exp=current_user.exp,
+        token_type=current_user.token_type,
+        iat=current_user.iat,
+    )
 
 
 def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:

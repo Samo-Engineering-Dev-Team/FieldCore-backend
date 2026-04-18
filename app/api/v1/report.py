@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, Response as FastAPIResponse
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import Response
 from typing import List
 from uuid import UUID
 
@@ -20,7 +20,7 @@ def create_report(
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
-    return service.create_report(payload, session)
+    return service.create_report(payload, session, current_user)
 
 
 @router.get("/", response_model=List[ReportResponse], status_code=200)
@@ -37,7 +37,15 @@ def read_reports(
 ) -> List[ReportResponse]:
     """"""
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
-    return service.read_reports(session, report_type, status, technician_id, offset, limit)
+    return service.read_reports(
+        session,
+        current_user,
+        report_type,
+        status,
+        technician_id,
+        offset,
+        limit,
+    )
 
 
 @router.get("/{report_id}", response_model=ReportResponse, status_code=200)
@@ -50,7 +58,7 @@ def read_report(
 ) -> ReportResponse:
     """"""
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
-    return service.read_report(report_id, session)
+    return service.read_report(report_id, session, current_user)
 
 
 @router.patch("/{report_id}", response_model=ReportResponse, status_code=200)
@@ -62,7 +70,7 @@ def update_report(
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
-    return service.update_report(report_id, payload, session)
+    return service.update_report(report_id, payload, session, current_user)
 
 
 @router.delete("/{report_id}", status_code=204)
@@ -73,7 +81,7 @@ def delete_report(
     current_user: CurrentUser,
 ) -> None:
     """"""
-    service.delete_report(report_id, session)
+    service.delete_report(report_id, session, current_user)
 
 
 @router.patch("/{report_id}/start", response_model=ReportResponse, status_code=200)
@@ -84,7 +92,7 @@ def start_report(
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
-    return service.start_report(report_id, session)
+    return service.start_report(report_id, session, current_user)
 
 
 @router.patch("/{report_id}/complete", response_model=ReportResponse, status_code=200)
@@ -95,7 +103,7 @@ def complete_report(
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
-    return service.complete_report(report_id, session)
+    return service.complete_report(report_id, session, current_user)
 
 
 @router.get("/{report_id}/export/pdf", status_code=200)

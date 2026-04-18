@@ -74,8 +74,46 @@ def _sample_repeater_report():
             ),
         ),
         data={
+            "routineType": "Weekly",
             "dateRoutinePerformed": "2026-03-26",
             "nocRoutineTicketReference": None,
+            "powerSystems": {
+                "upsA": {
+                    "upsStatus": "Normal",
+                    "batteryChargeStatus": "100",
+                    "loadPercent": "25",
+                    "runtime": "12:30",
+                },
+                "upsB": {
+                    "upsStatus": "Normal",
+                    "batteryChargeStatus": "98",
+                    "loadPercent": "27",
+                    "runtime": "11:45",
+                },
+                "rectA": {
+                    "loadCurrent": "18.2",
+                    "outputVoltage": "56",
+                    "installedModules": "3",
+                    "modulesOnLine": "3",
+                    "batteryChargeStatus": "100",
+                },
+                "rectB": {
+                    "loadCurrent": "34.5",
+                    "outputVoltage": "56",
+                    "installedModules": "3",
+                    "modulesOnLine": "3",
+                    "batteryChargeStatus": "100",
+                },
+            },
+            "sitePictures": {
+                "pictures": [],
+                "categories": {
+                    "siteViews": {
+                        "remarks": "Front gate and fence visible, no damage noted.",
+                        "pictures": ["https://example.com/repeater-site-view.png"],
+                    }
+                },
+            },
             "gen1": {
                 "oilLevelFull": True,
                 "serialNumber": "Test123",
@@ -127,12 +165,17 @@ def test_diesel_pdf_uses_new_field_layout_and_embeds_images() -> None:
 def test_repeater_pdf_uses_new_field_cover_and_header() -> None:
     service = PDFService()
     report = _sample_repeater_report()
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+    )
+    service._fetch_image_bytes = lambda url: BytesIO(png_bytes)  # type: ignore[method-assign]
     service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
 
     pdf_buffer = service.generate_report_pdf(report)
 
     with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
         extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+        image_count = sum(len(page.images) for page in pdf.pages)
 
     assert "FIELD OPERATIONS REPORT" in extracted
     assert "FIELD CORE" in extracted
@@ -144,4 +187,14 @@ def test_repeater_pdf_uses_new_field_cover_and_header() -> None:
     assert "TECHNICIAN" in extracted
     assert "SITE" in extracted
     assert "1. ROUTINE INFORMATION" in extracted
+    assert "ROUTINE TYPE" in extracted
+    assert "WEEKLY" in extracted
+    assert "UPS DISPLAY PANEL READINGS" in extracted
+    assert "UPS STATUS" in extracted
+    assert "RECTIFIER DISPLAY PANEL READINGS" in extracted
+    assert "RECTIFIER LOAD CURRENT" in extracted
+    assert "18.2" in extracted
+    assert "34.5" in extracted
+    assert "FRONT GATE AND FENCE VISIBLE, NO DAMAGE NOTED." in extracted
+    assert image_count >= 1
     assert "REPORT DETAILS" not in extracted

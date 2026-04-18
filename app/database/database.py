@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Session as _Session, create_engine
-from sqlalchemy import Engine
+from sqlalchemy import Engine, inspect, text
 from loguru import logger as LOG
 from typing import Generator, List, Annotated
 from fastapi import Depends
@@ -59,6 +59,7 @@ class Database:
             return
         try:
             SQLModel.metadata.create_all(cls.connection)
+            cls._apply_schema_fixes()
             table_names: List[str] = [key for key in SQLModel.metadata.tables.keys()]
             LOG.debug(
                 f"Initialized {cls.connection.url.database} database and created tables: {', '.join(table_names)}"
@@ -68,6 +69,76 @@ class Database:
                 f"Failed to initialize {cls.connection.url.database} database: {e}"
             )
             LOG.error(message)
+
+    @classmethod
+    def _apply_schema_fixes(cls) -> None:
+        """Apply small idempotent schema fixes for legacy databases."""
+        if not cls.connection:
+            return
+
+        inspector = inspect(cls.connection)
+
+        if not inspector.has_table("users"):
+            return
+
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if (
+            "must_change_password" in user_columns
+            and "credentials_updated_at" in user_columns
+        ):
+            return
+
+        with cls.connection.begin() as connection:
+            if "must_change_password" not in user_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added users.must_change_password column"
+                )
+
+            if "credentials_updated_at" not in user_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ADD COLUMN credentials_updated_at TIMESTAMPTZ
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        UPDATE users
+                        SET credentials_updated_at = COALESCE(created_at, NOW())
+                        WHERE credentials_updated_at IS NULL
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ALTER COLUMN credentials_updated_at SET DEFAULT NOW()
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ALTER COLUMN credentials_updated_at SET NOT NULL
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added users.credentials_updated_at column"
+                )
 
     @classmethod
     def get_session(cls) -> Generator[_Session, None, None]:

@@ -1,5 +1,12 @@
 from .base import BaseDB
-from .auth import Token, TokenData, LoginForm, PasswordChange
+from .auth import (
+    Token,
+    TokenData,
+    LoginForm,
+    PasswordChange,
+    AdminPasswordReset,
+    PasswordResetCompletion,
+)
 from .user import User, UserCreate, UserUpdate, UserStatusUpdate, UserRoleUpdate, UserResponse
 from .technician import TechnicianCreate, Technician, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate
 from .site import Site, SiteCreate, SiteUpdate, SiteResponse
@@ -33,6 +40,8 @@ __all__ = [
     "Token",
     "TokenData",
     "LoginForm",
+    "AdminPasswordReset",
+    "PasswordResetCompletion",
     "User",
     "UserCreate",
     "UserUpdate",
