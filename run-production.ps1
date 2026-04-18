@@ -10,4 +10,4 @@ Write-Host "WARNING: Connected to PRODUCTION database!" -ForegroundColor Red
 Write-Host ""
 
 # Uses credentials from .env file (production)
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8000

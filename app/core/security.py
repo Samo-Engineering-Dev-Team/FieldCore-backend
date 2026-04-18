@@ -1,5 +1,6 @@
-from passlib.context import CryptContext
 from jose import jwt, JWTError
+from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -22,10 +23,7 @@ class SecurityUtils:
     - Creating and decoding JWT refresh tokens
     """
 
-    context = CryptContext(
-        schemes=["argon2"],
-        deprecated="auto",
-    )
+    password_hasher = PasswordHash.recommended()
 
     @classmethod
     def hash_password(cls, password: str) -> str:
@@ -38,7 +36,7 @@ class SecurityUtils:
         Returns:
             The hashed password string
         """
-        return cls.context.hash(password)
+        return cls.password_hasher.hash(password)
 
     @classmethod
     def check_password(cls, password: str, password_hash: str) -> bool:
@@ -52,7 +50,10 @@ class SecurityUtils:
         Returns:
             True if the password matches the hash, False otherwise
         """
-        return cls.context.verify(password, password_hash)
+        try:
+            return cls.password_hasher.verify(password, password_hash)
+        except UnknownHashError:
+            return False
 
     @classmethod
     def create_token(

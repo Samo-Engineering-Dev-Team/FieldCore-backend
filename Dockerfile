@@ -9,21 +9,22 @@ RUN apt-get update \
        build-essential \
        gcc \
        libpq-dev \
-       curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only pyproject first for caching
-COPY pyproject.toml pyproject.toml
+RUN python -m pip install --no-cache-dir "uv==0.9.29"
+
+# Copy lockfile first for reproducible dependency installs
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
 COPY app app
 COPY scripts scripts
 
-# Upgrade pip and install project (uses pyproject)
-RUN python -m pip install --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir .
-
 EXPOSE 8000
 
+ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
+ENV FORWARDED_ALLOW_IPS=*
 
-CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+CMD ["sh", "-c", "exec gunicorn -k uvicorn.workers.UvicornWorker -w ${WEB_CONCURRENCY:-2} -b 0.0.0.0:${PORT:-8000} app.main:app"]

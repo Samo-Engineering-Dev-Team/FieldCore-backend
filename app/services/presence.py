@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 import json
 import time
+from uuid import UUID, uuid4
 
 from sqlmodel import select
 from sqlalchemy import and_
@@ -23,6 +24,15 @@ from loguru import logger as LOG
 # lazy import to keep redis optional
 _redis_client = None
 _redis_retry_after_ts = 0.0
+
+
+def _utc_iso_from_timestamp(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
+
+def _normalize_role(role: str) -> str:
+    return str(role).strip().lower()
+
 
 def _get_redis():
     global _redis_client, _redis_retry_after_ts
@@ -70,8 +80,9 @@ class PresenceService:
     HEARTBEAT_TTL = timedelta(seconds=app_settings.PRESENCE_REDIS_TTL_SECONDS)
 
     # Redis key patterns
-    _ZKEY_ROLE = "presence:role:{role}"          # sorted set: member=session_id score=last_seen_ts
-    _HASH_SESSION = "presence:session:{session_id}"  # hash: metadata json
+    _ZKEY_ROLE = "presence:role:{role}"          # sorted set: member=user_id score=last_seen_ts
+    _HASH_USER = "presence:user:{user_id}"       # hash: lightweight presence metadata
+    _KEY_SESSION_LOOKUP = "presence:sid:{session_id}"  # string: session_id -> user_id
 
     @classmethod
     def _use_redis(cls) -> bool:
@@ -83,115 +94,221 @@ class PresenceService:
 
     # -------------------- Redis-backed implementations --------------------
     @classmethod
-    def _redis_upsert(cls, user_id, role: str, session_id: str, expires_at: Optional[datetime] = None) -> dict:
-        r = _get_redis()
-        now_ts = int(time.time())
+    def _record_ttl_seconds(cls) -> int:
+        return max(int(cls.HEARTBEAT_TTL.total_seconds()) * 2, 1)
+
+    @classmethod
+    def _role_key(cls, role: str) -> str:
+        return cls._ZKEY_ROLE.format(role=_normalize_role(role))
+
+    @classmethod
+    def _user_key(cls, user_id) -> str:
+        return cls._HASH_USER.format(user_id=str(user_id))
+
+    @classmethod
+    def _session_lookup_key(cls, session_id: str) -> str:
+        return cls._KEY_SESSION_LOOKUP.format(session_id=session_id)
+
+    @classmethod
+    def _all_roles(cls) -> tuple[str, ...]:
+        return tuple(_normalize_role(role) for role in UserRole)
+
+    @classmethod
+    def _load_user_meta(cls, r, user_id) -> dict:
+        return r.hgetall(cls._user_key(user_id)) or {}
+
+    @classmethod
+    def _prune_role(cls, r, role: str) -> None:
+        stale_cutoff = int(time.time()) - cls._record_ttl_seconds()
+        r.zremrangebyscore(cls._role_key(role), "-inf", stale_cutoff)
+
+    @classmethod
+    def _build_meta(
+        cls,
+        user_id,
+        role: str,
+        session_id: Optional[str],
+        now_ts: int,
+        existing: Optional[dict] = None,
+        expires_at: Optional[datetime] = None,
+    ) -> dict:
+        existing = existing or {}
+        resolved_session_id = session_id or existing.get("session_id") or str(uuid4())
         meta = {
             "user_id": str(user_id),
-            "role": role,
-            "session_id": session_id,
-            "last_seen": datetime.utcfromtimestamp(now_ts).isoformat(),
+            "role": _normalize_role(role),
+            "session_id": resolved_session_id,
+            "last_seen": _utc_iso_from_timestamp(now_ts),
         }
         if expires_at:
             meta["expires_at"] = expires_at.isoformat()
-        # store metadata and add to sorted set
-        r.hset(cls._HASH_SESSION.format(session_id=session_id), mapping={"meta": json.dumps(meta)})
-        r.zadd(cls._ZKEY_ROLE.format(role=role), {session_id: now_ts})
-        r.expire(cls._HASH_SESSION.format(session_id=session_id), int(cls.HEARTBEAT_TTL.total_seconds()) * 2)
-        # publish event for SSE consumers if needed
+        elif existing.get("expires_at"):
+            meta["expires_at"] = existing["expires_at"]
+        if existing.get("fullname"):
+            meta["fullname"] = existing["fullname"]
+        return meta
+
+    @classmethod
+    def _sync_redis_presence(cls, r, meta: dict, previous_meta: Optional[dict] = None) -> dict:
+        previous_meta = previous_meta or {}
+        user_id = meta["user_id"]
+        role = meta["role"]
+        previous_role = previous_meta.get("role")
+        previous_session_id = previous_meta.get("session_id")
+        ttl_seconds = cls._record_ttl_seconds()
+
+        cls._prune_role(r, role)
+
+        pipe = r.pipeline()
+        if previous_role and previous_role != role:
+            pipe.zrem(cls._role_key(previous_role), user_id)
+        if previous_session_id and previous_session_id != meta["session_id"]:
+            pipe.delete(cls._session_lookup_key(previous_session_id))
+        pipe.hset(cls._user_key(user_id), mapping=meta)
+        pipe.expire(cls._user_key(user_id), ttl_seconds)
+        pipe.zadd(cls._role_key(role), {user_id: int(time.time())})
+        pipe.set(cls._session_lookup_key(meta["session_id"]), user_id, ex=ttl_seconds)
+        pipe.execute()
+        return meta
+
+    @classmethod
+    def _publish_presence_event(cls, event_type: str, data: dict) -> None:
+        r = _get_redis()
         try:
-            r.publish(app_settings.PRESENCE_PUBSUB_CHANNEL, json.dumps({"type": "presence_upsert", "data": meta}))
+            r.publish(
+                app_settings.PRESENCE_PUBSUB_CHANNEL,
+                json.dumps({"type": event_type, "data": data}),
+            )
         except Exception:
             pass
+
+    @classmethod
+    def _get_user_fullnames(cls, user_ids: List[str]) -> dict[str, str]:
+        uuid_map = {}
+        for raw_user_id in user_ids:
+            try:
+                uuid_map[UUID(str(raw_user_id))] = str(raw_user_id)
+            except (TypeError, ValueError):
+                continue
+
+        if not uuid_map:
+            return {}
+
+        try:
+            with Database.session() as s:
+                rows = s.exec(select(User).where(User.id.in_(list(uuid_map.keys())))).all()
+        except Exception as e:
+            LOG.warning("Failed to enrich Redis presence names from DB: {}", e)
+            return {}
+
+        return {
+            str(user_row.id): f"{user_row.name} {user_row.surname}".strip()
+            for user_row in rows
+        }
+
+    @classmethod
+    def _redis_upsert(cls, user_id, role: str, session_id: str, expires_at: Optional[datetime] = None) -> dict:
+        r = _get_redis()
+        now_ts = int(time.time())
+        user_id = str(user_id)
+        normalized_role = _normalize_role(role)
+        existing = cls._load_user_meta(r, user_id)
+        meta = cls._build_meta(
+            user_id=user_id,
+            role=normalized_role,
+            session_id=session_id,
+            now_ts=now_ts,
+            existing=existing,
+            expires_at=expires_at,
+        )
+        cls._sync_redis_presence(r, meta, existing)
+        cls._publish_presence_event("presence_upsert", meta)
         return meta
 
     @classmethod
     def _redis_heartbeat(cls, user_id, role: str, session_id: Optional[str] = None) -> dict:
         r = _get_redis()
         now_ts = int(time.time())
-        # prefer session_id; try to find by user_id otherwise
-        if session_id:
-            key = cls._HASH_SESSION.format(session_id=session_id)
-            meta_json = r.hget(key, "meta")
-            if meta_json:
-                meta = json.loads(meta_json)
-                meta["last_seen"] = datetime.utcfromtimestamp(now_ts).isoformat()
-            else:
-                meta = {"user_id": str(user_id), "role": role, "session_id": session_id, "last_seen": datetime.utcfromtimestamp(now_ts).isoformat()}
-            r.hset(key, mapping={"meta": json.dumps(meta)})
-            r.zadd(cls._ZKEY_ROLE.format(role=role), {session_id: now_ts})
-            r.expire(key, int(cls.HEARTBEAT_TTL.total_seconds()) * 2)
-            return meta
-
-        # find most recent session for user
-        pattern = cls._ZKEY_ROLE.format(role=role)
-        # scan sorted set for candidates (small sets expected)
-        members = r.zrange(pattern, 0, -1)
-        for m in members:
-            meta_json = r.hget(cls._HASH_SESSION.format(session_id=m), "meta")
-            if not meta_json:
-                continue
-            meta = json.loads(meta_json)
-            if meta.get("user_id") == str(user_id):
-                meta["last_seen"] = datetime.utcfromtimestamp(now_ts).isoformat()
-                r.hset(cls._HASH_SESSION.format(session_id=m), mapping={"meta": json.dumps(meta)})
-                r.zadd(pattern, {m: now_ts})
-                r.expire(cls._HASH_SESSION.format(session_id=m), int(cls.HEARTBEAT_TTL.total_seconds()) * 2)
-                return meta
-
-        # create new session if none found
-        import uuid
-        sid = str(uuid.uuid4())
-        return cls._redis_upsert(user_id, role, sid, None)
+        user_id = str(user_id)
+        normalized_role = _normalize_role(role)
+        existing = cls._load_user_meta(r, user_id)
+        meta = cls._build_meta(
+            user_id=user_id,
+            role=normalized_role,
+            session_id=session_id,
+            now_ts=now_ts,
+            existing=existing,
+        )
+        cls._sync_redis_presence(r, meta, existing)
+        return meta
 
     @classmethod
     def _redis_deactivate(cls, user_id=None, session_id: Optional[str] = None) -> None:
         r = _get_redis()
-        if session_id:
-            meta_key = cls._HASH_SESSION.format(session_id=session_id)
-            meta_json = r.hget(meta_key, "meta")
-            if meta_json:
-                meta = json.loads(meta_json)
-                role = meta.get("role")
-                r.zrem(cls._ZKEY_ROLE.format(role=role), session_id)
-                r.delete(meta_key)
-                r.publish(app_settings.PRESENCE_PUBSUB_CHANNEL, json.dumps({"type": "presence_remove", "data": {"session_id": session_id}}))
-                return
-        if user_id:
-            # remove all sessions for user across roles
-            # (we only expect a few entries)
-            for role in [UserRole.NOC, UserRole.TECHNICIAN, UserRole.MANAGER, UserRole.ADMIN]:
-                members = r.zrange(cls._ZKEY_ROLE.format(role=role), 0, -1)
-                for m in members:
-                    meta_json = r.hget(cls._HASH_SESSION.format(session_id=m), "meta")
-                    if not meta_json:
-                        continue
-                    meta = json.loads(meta_json)
-                    if meta.get("user_id") == str(user_id):
-                        r.zrem(cls._ZKEY_ROLE.format(role=role), m)
-                        r.delete(cls._HASH_SESSION.format(session_id=m))
-                        r.publish(app_settings.PRESENCE_PUBSUB_CHANNEL, json.dumps({"type": "presence_remove", "data": {"session_id": m}}))
+        user_id = str(user_id) if user_id else None
+        if not user_id and session_id:
+            user_id = r.get(cls._session_lookup_key(session_id))
+        if not user_id:
+            return
+
+        meta = cls._load_user_meta(r, user_id)
+        session_ids_to_delete = {
+            sid for sid in [session_id, meta.get("session_id")] if sid
+        }
+
+        pipe = r.pipeline()
+        for role_name in cls._all_roles():
+            pipe.zrem(cls._role_key(role_name), user_id)
+        pipe.delete(cls._user_key(user_id))
+        for sid in session_ids_to_delete:
+            pipe.delete(cls._session_lookup_key(sid))
+        pipe.execute()
+
+        cls._publish_presence_event(
+            "presence_remove",
+            {"session_id": meta.get("session_id") or session_id, "user_id": user_id},
+        )
 
     @classmethod
     def _redis_list_active_noc(cls, cutoff_minutes: int = 10) -> List[dict]:
         r = _get_redis()
         cutoff_ts = int(time.time()) - (cutoff_minutes * 60)
-        key = cls._ZKEY_ROLE.format(role=UserRole.NOC)
+        cls._prune_role(r, UserRole.NOC)
+        key = cls._role_key(UserRole.NOC)
         members = r.zrangebyscore(key, cutoff_ts, "+inf")
+        if not members:
+            return []
+
+        pipe = r.pipeline()
+        for user_id in members:
+            pipe.hgetall(cls._user_key(user_id))
+        meta_rows = pipe.execute()
+
+        stale_members = []
         results = []
-        for m in members:
-            meta_json = r.hget(cls._HASH_SESSION.format(session_id=m), "meta")
-            if not meta_json:
+        for user_id, meta in zip(members, meta_rows):
+            if not meta:
+                stale_members.append(user_id)
                 continue
-            meta = json.loads(meta_json)
+            if _normalize_role(meta.get("role", "")) != _normalize_role(UserRole.NOC):
+                stale_members.append(user_id)
+                continue
             results.append({
-                "user_id": meta.get("user_id"),
+                "user_id": meta.get("user_id") or str(user_id),
                 "fullname": meta.get("fullname") or "",
                 "role": meta.get("role"),
                 "session_id": meta.get("session_id"),
                 "is_active": True,
                 "last_seen": meta.get("last_seen"),
             })
+
+        if stale_members:
+            r.zrem(key, *stale_members)
+
+        fullnames = cls._get_user_fullnames([row["user_id"] for row in results])
+        for row in results:
+            row["fullname"] = fullnames.get(row["user_id"], row["fullname"])
+
         return results
 
     # -------------------- DB (fallback) implementations --------------------
@@ -323,6 +440,7 @@ class PresenceService:
     # -------------------- Public API (chooses backend) --------------------
     @classmethod
     def upsert_session(cls, user_id, role: str, session_id: str, expires_at: Optional[datetime] = None) -> dict:
+        role = _normalize_role(role)
         if cls._use_redis():
             try:
                 return cls._redis_upsert(user_id, role, session_id, expires_at)
@@ -332,6 +450,7 @@ class PresenceService:
 
     @classmethod
     def heartbeat(cls, user_id, role: str, session_id: Optional[str] = None) -> dict:
+        role = _normalize_role(role)
         if cls._use_redis():
             try:
                 return cls._redis_heartbeat(user_id, role, session_id)

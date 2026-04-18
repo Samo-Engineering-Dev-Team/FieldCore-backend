@@ -1,14 +1,15 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 from pathlib import Path
+
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 # Load .env early so AppSettings picks up values when imported in different contexts.
 # Use python-dotenv if available; otherwise rely on pydantic's env_file setting.
 try:
     from dotenv import load_dotenv
-    _env_path = Path(__file__).resolve().parents[1] / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path)
+    if _ENV_FILE.exists():
+        load_dotenv(_ENV_FILE)
     else:
         # fallback: attempt to load default .env from cwd
         load_dotenv()
@@ -19,6 +20,11 @@ except Exception:
 
 class AppSettings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(
+        env_file=_ENV_FILE,
+        extra="ignore",
+    )
 
     # Database
     DB_HOST: str = ""
@@ -103,8 +109,4 @@ class AppSettings(BaseSettings):
             f"{self.DB_NAME}"
         )
     
-    class Config:
-        env_file = ".env"
-
-
 app_settings = AppSettings()

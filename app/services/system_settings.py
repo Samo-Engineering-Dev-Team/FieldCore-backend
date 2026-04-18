@@ -45,19 +45,14 @@ class _SystemSettingsService:
 
     def get_setting(self, key: str, session: Session, default: Any = None) -> Any:
         """Get a single setting value by key."""
+        if not self._cache_loaded:
+            self._load_cache(session)
+
         # Try cache first
-        if self._cache_loaded and key in self._cache:
+        if key in self._cache:
             return self._cache[key]
-        
-        statement = select(SystemSetting).where(SystemSetting.key == key)
-        setting = session.exec(statement).first()
-        
-        if not setting:
-            return default
-        
-        # Update cache
-        self._cache[key] = setting.value
-        return setting.value
+
+        return default
 
     def get_setting_full(self, key: str, session: Session) -> SystemSettingResponse:
         """Get full setting details by key."""

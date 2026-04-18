@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "mailtrap": "^4.4.0"
+    "mailtrap": "^4.4.0",
+    "redis": "^5.12.1"
   }
 }
