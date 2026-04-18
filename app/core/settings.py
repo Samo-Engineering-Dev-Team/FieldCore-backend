@@ -38,6 +38,10 @@ class AppSettings(BaseSettings):
     JWT_SECRET_KEY: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:5173")
+    PASSKEY_RP_NAME: str = Field(default="FieldCore")
+    PASSKEY_RP_ID: str = Field(default="")
+    PASSKEY_ALLOWED_ORIGINS: str = Field(default="")
+    PASSKEY_CEREMONY_TIMEOUT_MS: int = Field(default=120000, ge=30000, le=600000)
 
     # Presence backend (db | redis). If 'redis' and REDIS_URL is set, presence uses Redis for heartbeats.
     PRESENCE_BACKEND: str = Field(default="db", description="Storage for presence: 'db' or 'redis'")
@@ -92,6 +96,14 @@ class AppSettings(BaseSettings):
     def allowed_origins(self) -> list[str]:
         """Parse allowed origins from comma-separated string."""
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def passkey_allowed_origins(self) -> list[str]:
+        """Origins allowed to initiate WebAuthn ceremonies."""
+        raw = self.PASSKEY_ALLOWED_ORIGINS.strip()
+        if raw:
+            return [origin.strip() for origin in raw.split(",") if origin.strip()]
+        return self.allowed_origins
 
     @property
     def database_url(self) -> str:

@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, EmailStr, Field
 from uuid import uuid4, UUID
 from datetime import datetime
@@ -144,3 +146,43 @@ class PasswordResetCompletion(BaseModel):
         description="Confirm the user's final replacement password",
         examples=["FinalPassword456"]
     )
+
+
+class PasskeyCeremonyStart(BaseModel):
+    """"""
+
+    ceremony_id: UUID
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class PasskeyCredentialResponse(BaseModel):
+    """"""
+
+    id: UUID
+    name: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+    device_type: str | None = None
+    backed_up: bool | None = None
+    transports: list[str] = Field(default_factory=list)
+
+
+class PasskeyRegistrationVerification(BaseModel):
+    """"""
+
+    ceremony_id: UUID
+    credential: dict[str, Any] = Field(default_factory=dict)
+    name: str | None = Field(default=None, max_length=100)
+
+
+class PasskeyAuthenticationVerification(BaseModel):
+    """"""
+
+    ceremony_id: UUID
+    credential: dict[str, Any] = Field(default_factory=dict)
+
+
+class PasskeyMutationResponse(BaseModel):
+    """"""
+
+    message: str

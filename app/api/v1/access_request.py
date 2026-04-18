@@ -6,7 +6,7 @@ from app.models import AccessRequestCreate, AccessRequestUpdate, AccessRequestRe
 from app.services import AccessRequestService, CurrentUser
 from app.database import Session
 from app.utils.enums import AccessRequestStatus, UserRole
-from app.exceptions.http import ForbiddenException
+from app.services.authorization import require_management
 
 router = APIRouter(prefix="/access-requests", tags=["Access Requests"])
 
@@ -15,33 +15,43 @@ router = APIRouter(prefix="/access-requests", tags=["Access Requests"])
 def create_access_request(
     payload: AccessRequestCreate,
     service: AccessRequestService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> AccessRequestResponse:
     """"""
-    return service.create_access_request(payload, session)
+    return service.create_access_request(payload, session, current_user)
 
 
 @router.get("/", response_model=List[AccessRequestResponse], status_code=200)
 def read_access_requests(
     service: AccessRequestService,
     session: Session,
+    current_user: CurrentUser,
     status: AccessRequestStatus | None = Query(None),
     technician_id: UUID | None = Query(None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000)
 ) -> List[AccessRequestResponse]:
     """"""
-    return service.read_access_requests(session, status, technician_id, offset, limit)
+    return service.read_access_requests(
+        session,
+        current_user,
+        status,
+        technician_id,
+        offset,
+        limit,
+    )
 
 
 @router.get("/{access_request_id}", response_model=AccessRequestResponse, status_code=200)
 def read_access_request(
     access_request_id: UUID,
     service: AccessRequestService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> AccessRequestResponse:
     """"""
-    return service.read_access_request(access_request_id, session)
+    return service.read_access_request(access_request_id, session, current_user)
 
 
 @router.patch("/{access_request_id}", response_model=AccessRequestResponse, status_code=200)
@@ -50,19 +60,21 @@ def update_access_request(
     payload: AccessRequestUpdate,
     service: AccessRequestService,
     session: Session,
+    current_user: CurrentUser,
 ) -> AccessRequestResponse:
     """"""
-    return service.update_access_request(access_request_id, payload, session)
+    return service.update_access_request(access_request_id, payload, session, current_user)
 
 
 @router.delete("/{access_request_id}", status_code=204)
 def delete_access_request(
     access_request_id: UUID,
     service: AccessRequestService,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> None:
     """"""
-    service.delete_access_request(access_request_id, session)
+    service.delete_access_request(access_request_id, session, current_user)
 
 
 @router.patch("/{access_request_id}/approve", response_model=AccessRequestResponse, status_code=200)
@@ -77,8 +89,7 @@ def approve_access_request(
     Approve an access request with SEACOM Reference Number.
     The seacom_ref is provided by SEACOM client and will be propagated to related task.
     """
-    if user.role not in (UserRole.NOC, UserRole.MANAGER):
-        raise ForbiddenException("you are not allowed to perform this action")
+    require_management(user, "Only NOC, managers, or admins can approve access requests.")
     return service.approve_access_request(access_request_id, seacom_ref, session)
 
 
@@ -90,6 +101,5 @@ def reject_access_request(
     session: Session
 ) -> AccessRequestResponse:
     """"""
-    if user.role not in (UserRole.NOC, UserRole.MANAGER):
-        raise ForbiddenException("you are not allowed to perform this action")
+    require_management(user, "Only NOC, managers, or admins can reject access requests.")
     return service.reject_access_request(access_request_id, session)

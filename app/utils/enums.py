@@ -15,6 +15,12 @@ class UserStatus(StrEnum):
     DISABLED = "disabled"
 
 
+class PasskeyCeremonyType(StrEnum):
+    """"""
+    REGISTRATION = "registration"
+    AUTHENTICATION = "authentication"
+
+
 class TaskType(StrEnum):
     RHS = "remote-hand-support"
     ROUTINE_MAINTENANCE = "routine-maintenance"
