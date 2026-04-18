@@ -8,12 +8,15 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session, select
 
+from app.exceptions.http import ForbiddenException
 from app.models.route_patrol import (
     RoutePatrol,
     RoutePatrolCreate,
     RoutePatrolUpdate,
     RoutePatrolResponse,
 )
+from app.models.auth import TokenData
+from app.services.authorization import get_technician_id_for_user, is_management
 
 
 def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
@@ -37,7 +40,18 @@ def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
 
 
 class _RoutePatrolService:
-    def create(self, data: RoutePatrolCreate, session: Session) -> RoutePatrolResponse:
+    def create(
+        self,
+        data: RoutePatrolCreate,
+        session: Session,
+        current_user: TokenData,
+    ) -> RoutePatrolResponse:
+        if not is_management(current_user):
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
+            if data.technician_id != technician_id:
+                raise ForbiddenException("Technicians can only create patrols for themselves.")
+            data = data.model_copy(update={"technician_id": technician_id})
+
         patrol = RoutePatrol.model_validate(data)
         session.add(patrol)
         session.commit()
@@ -73,11 +87,15 @@ class _RoutePatrolService:
     def list_patrols(
         self,
         session: Session,
+        current_user: TokenData,
         technician_id: UUID | None = None,
         site_id:       UUID | None = None,
         limit:         int = 100,
         offset:        int = 0,
     ) -> list[RoutePatrolResponse]:
+        if not is_management(current_user):
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
+
         stmt = select(RoutePatrol).where(RoutePatrol.deleted_at.is_(None))
         if technician_id:
             stmt = stmt.where(RoutePatrol.technician_id == technician_id)
@@ -86,11 +104,15 @@ class _RoutePatrolService:
         stmt = stmt.order_by(RoutePatrol.patrol_date.desc()).offset(offset).limit(limit)  # type: ignore
         return [_enrich(p, session) for p in session.exec(stmt).all()]
 
-    def get(self, patrol_id: UUID, session: Session) -> RoutePatrolResponse:
+    def get(self, patrol_id: UUID, session: Session, current_user: TokenData) -> RoutePatrolResponse:
         p = session.get(RoutePatrol, patrol_id)
         if not p or p.deleted_at:
             from app.exceptions.http import NotFoundException
             raise NotFoundException("route patrol not found")
+        if not is_management(current_user):
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
+            if p.technician_id != technician_id:
+                raise ForbiddenException("Technicians can only view their own route patrols.")
         return _enrich(p, session)
 
     def update(self, patrol_id: UUID, data: RoutePatrolUpdate, session: Session) -> RoutePatrolResponse:

@@ -6,7 +6,13 @@ from .auth import (
     PasswordChange,
     AdminPasswordReset,
     PasswordResetCompletion,
+    PasskeyCeremonyStart,
+    PasskeyCredentialResponse,
+    PasskeyRegistrationVerification,
+    PasskeyAuthenticationVerification,
+    PasskeyMutationResponse,
 )
+from .passkey import PasskeyCredential, PasskeyChallenge
 from .user import User, UserCreate, UserUpdate, UserStatusUpdate, UserRoleUpdate, UserResponse
 from .technician import TechnicianCreate, Technician, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate
 from .site import Site, SiteCreate, SiteUpdate, SiteResponse
@@ -40,8 +46,16 @@ __all__ = [
     "Token",
     "TokenData",
     "LoginForm",
+    "PasswordChange",
     "AdminPasswordReset",
     "PasswordResetCompletion",
+    "PasskeyCeremonyStart",
+    "PasskeyCredentialResponse",
+    "PasskeyRegistrationVerification",
+    "PasskeyAuthenticationVerification",
+    "PasskeyMutationResponse",
+    "PasskeyCredential",
+    "PasskeyChallenge",
     "User",
     "UserCreate",
     "UserUpdate",
