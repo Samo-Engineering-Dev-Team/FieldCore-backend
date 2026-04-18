@@ -3925,6 +3925,24 @@ class PDFService:
         info_lbl_s = ParagraphStyle("RpInfoL", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"))
         info_val_s = ParagraphStyle("RpInfoV", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.HexColor("#4a5568"))
         body_s = ParagraphStyle("RpBody", parent=self.styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.HexColor("#2d3748"), leading=16)
+        subhead_s = ParagraphStyle(
+            "RpSubhead",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(primary_hex),
+            spaceBefore=2,
+            spaceAfter=4,
+        )
+        photo_note_style = ParagraphStyle(
+            "RpPhotoNote",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#4a5568"),
+            leading=13,
+            spaceAfter=4,
+        )
 
         def _info_table(rows: list[list[str]]) -> Table:
             t = Table(rows, colWidths=[80 * mm, 90 * mm])
@@ -3947,11 +3965,56 @@ class PDFService:
             return t
 
         # ── 1. Routine Information ──────────────────────────────────────────
+        def _text_value(value: Any) -> str:
+            if value is None:
+                return "N/A"
+            if isinstance(value, str):
+                cleaned = value.strip()
+                return cleaned or "N/A"
+            if isinstance(value, bool):
+                return "Yes" if value else "No"
+            return str(value)
+
+        power_systems: dict[str, Any] = data.get("powerSystems") or {}
+        ups_a: dict[str, Any] = power_systems.get("upsA") or {}
+        ups_b: dict[str, Any] = power_systems.get("upsB") or {}
+        rect_a: dict[str, Any] = power_systems.get("rectA") or {}
+        rect_b: dict[str, Any] = power_systems.get("rectB") or {}
+
         story.extend(self._repeater_section_header("1. Routine Information", primary_hex, accent_hex))
         story.append(_info_table([
+            ["Service Provider", report.service_provider or "N/A"],
+            ["Routine Type", _text_value(data.get("routineType"))],
             ["Date Routine Performed", data.get("dateRoutinePerformed") or "N/A"],
             ["NOC Routine Ticket Reference", data.get("nocRoutineTicketReference") or "N/A"],
         ]))
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph("UPS Display Panel Readings", subhead_s))
+        story.append(self._build_field_data_table(
+            headers=["Reading", "UPS A", "UPS B"],
+            rows=[
+                ["UPS Status", _text_value(ups_a.get("upsStatus")), _text_value(ups_b.get("upsStatus"))],
+                ["UPS battery charge status %", _text_value(ups_a.get("batteryChargeStatus")), _text_value(ups_b.get("batteryChargeStatus"))],
+                ["UPS load %", _text_value(ups_a.get("loadPercent")), _text_value(ups_b.get("loadPercent"))],
+                ["UPS runtime h:m", _text_value(ups_a.get("runtime")), _text_value(ups_b.get("runtime"))],
+            ],
+            col_widths=[74 * mm, 48 * mm, 48 * mm],
+            primary_hex=primary_hex,
+        ))
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph("Rectifier Display Panel Readings", subhead_s))
+        story.append(self._build_field_data_table(
+            headers=["Reading", "Rect A", "Rect B"],
+            rows=[
+                ["Rectifier load current", _text_value(rect_a.get("loadCurrent")), _text_value(rect_b.get("loadCurrent"))],
+                ["Rectifier output voltage", _text_value(rect_a.get("outputVoltage")), _text_value(rect_b.get("outputVoltage"))],
+                ["Number of installed rectifier modules", _text_value(rect_a.get("installedModules")), _text_value(rect_b.get("installedModules"))],
+                ["Rectifier modules on-line", _text_value(rect_a.get("modulesOnLine")), _text_value(rect_b.get("modulesOnLine"))],
+                ["Rectifier battery charge status", _text_value(rect_a.get("batteryChargeStatus")), _text_value(rect_b.get("batteryChargeStatus"))],
+            ],
+            col_widths=[74 * mm, 48 * mm, 48 * mm],
+            primary_hex=primary_hex,
+        ))
         story.append(Spacer(1, 6 * mm))
 
         # ── 2 & 3. Generator Inspections ──────────────────────────────────
@@ -4051,19 +4114,43 @@ class PDFService:
                     out.append(item)
             return out
 
-        picture_groups: dict[str, list[Any]] = {}
+        picture_groups: dict[str, dict[str, Any]] = {}
 
-        def _add_picture_group(title: str, values: Any) -> None:
+        def _add_picture_group(title: str, values: Any, remarks: Any = None) -> None:
             photos = _unique_photos(values)
             if not photos:
                 return
-            existing = picture_groups.get(title, [])
-            picture_groups[title] = _unique_photos([*existing, *photos])
+            normalized_remarks = str(remarks or "").strip()
+            existing = picture_groups.get(title, {"photos": [], "remarks": ""})
+            picture_groups[title] = {
+                "photos": _unique_photos([*existing.get("photos", []), *photos]),
+                "remarks": existing.get("remarks") or normalized_remarks,
+            }
 
         concerns_pictures = (concerns or {}).get("pictures")
         site_pics: dict = data.get("sitePictures") or {}
         _add_picture_group("Site Concerns", concerns_pictures)
         _add_picture_group("Site Pictures", site_pics.get("pictures"))
+
+        picture_categories = site_pics.get("categories") if isinstance(site_pics, dict) else {}
+        if isinstance(picture_categories, dict):
+            category_labels = {
+                "siteViews": "Site - front, rear, left and right view",
+                "siteAssets": "Site - rear cage, generators, Gates",
+                "generatorControls": "Generators - PLC Gen A, Gen B, battery chargers Gen A and Gen B",
+                "fireAndAircon": "Fire Panel, FM200 level display, Aircon controller",
+                "rectifierAndOdf": "Display, rectifier B, display, ODF top half, ODF bottom half",
+                "cabinetAlarms": "Cabinets with Alarms present",
+            }
+            for key, title in category_labels.items():
+                category_data = picture_categories.get(key)
+                if not isinstance(category_data, dict):
+                    continue
+                _add_picture_group(
+                    title,
+                    category_data.get("pictures"),
+                    category_data.get("remarks"),
+                )
 
         gen1_data: dict = data.get("gen1") or {}
         gen2_data: dict = data.get("gen2") or {}
@@ -4092,9 +4179,12 @@ class PDFService:
                 spaceBefore=4,
                 spaceAfter=2,
             )
-            for title, photos in picture_groups.items():
+            for title, group in picture_groups.items():
                 story.append(Paragraph(title, photo_group_title_style))
-                self._render_photo_grid(photos, story, cols=3)
+                remarks = str(group.get("remarks") or "").strip()
+                if remarks:
+                    story.append(Paragraph(escape(remarks), photo_note_style))
+                self._render_photo_grid(group.get("photos", []), story, cols=3)
                 story.append(Spacer(1, 3 * mm))
 
 
