@@ -4,8 +4,9 @@ from uuid import UUID
 
 from app.models import ClientCreate, ClientUpdate, ClientResponse
 from app.services.client import ClientServiceDep
-from app.services.auth import require_admin
+from app.services.auth import require_admin, CurrentUser
 from app.database import Session
+from app.services.authorization import require_management
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
 
@@ -24,11 +25,13 @@ def create_client(
 def read_clients(
     service: ClientServiceDep,
     session: Session,
+    current_user: CurrentUser,
     active_only: bool = Query(default=True, description="Only return active clients"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000)
 ) -> List[ClientResponse]:
     """Get all clients."""
+    require_management(current_user, "Only NOC, managers, or admins can view clients.")
     return service.read_clients(session, active_only, offset, limit)
 
 
@@ -46,9 +49,11 @@ def find_inactive_client(
 def read_client(
     client_id: UUID,
     service: ClientServiceDep,
-    session: Session
+    session: Session,
+    current_user: CurrentUser,
 ) -> ClientResponse:
     """Get a single client by ID."""
+    require_management(current_user, "Only NOC, managers, or admins can view clients.")
     return service.read_client(client_id, session)
 
 
