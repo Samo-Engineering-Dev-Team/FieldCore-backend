@@ -21,6 +21,12 @@ class PasskeyCeremonyType(StrEnum):
     AUTHENTICATION = "authentication"
 
 
+class LicenseHistoryAction(StrEnum):
+    """"""
+    ASSIGNED = "assigned"
+    UNASSIGNED = "unassigned"
+
+
 class TaskType(StrEnum):
     RHS = "remote-hand-support"
     ROUTINE_MAINTENANCE = "routine-maintenance"

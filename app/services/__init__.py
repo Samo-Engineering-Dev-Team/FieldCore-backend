@@ -18,6 +18,7 @@ from .fault_update import FaultUpdateService, get_fault_update_service
 from .maintenance_schedule import MaintenanceScheduleService, get_maintenance_schedule_service
 from .route_patrol import RoutePatrolService, get_route_patrol_service
 from .pdf import PDFService, get_pdf_service
+from .licensing import LicensingService, tenant_has_entitlement
 from .system_settings import SystemSettingsService, get_system_settings_service
 
 __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
@@ -25,6 +26,7 @@ __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
            "NotificationService", "AccessRequestService", "RoutineCheckService",
            "RoutineIssueService", "RoutineInspectionService", "ManagementDashboardService",
            "WebhookService", "PresenceService", "IncidentReportService", "get_incident_report_service",
+           "LicensingService", "tenant_has_entitlement",
            "PDFService", "get_pdf_service",
            "SystemSettingsService", "get_system_settings_service",
            "FaultUpdateService", "get_fault_update_service",
