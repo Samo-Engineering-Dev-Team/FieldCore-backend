@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Index, UniqueConstraint
+from sqlalchemy import Date, DateTime, Index, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 from app.utils.enums import LicenseHistoryAction
@@ -237,3 +237,156 @@ class LicensingDashboardResponse(SQLModel):
     metrics: LicensingDashboardMetrics
     tenant_summaries: list[TenantLicenseDashboardSummary] = Field(default_factory=list)
     recent_history: list[LicenseHistoryDetail] = Field(default_factory=list)
+
+
+class TenantFeatureUsageEventBase(SQLModel):
+    tenant_id: str = Field(max_length=128, nullable=False, index=True)
+    feature_key: str = Field(max_length=120, nullable=False, index=True)
+    feature_name: str | None = Field(default=None, max_length=120)
+    usage_quantity: int = Field(default=1, nullable=False, ge=0)
+    occurred_at: datetime = Field(
+        default_factory=utcnow,
+        sa_type=DateTime(timezone=True),  # type: ignore[arg-type]
+        nullable=False,
+        index=True,
+    )
+    recorded_by_user_id: UUID | None = Field(default=None, index=True)
+
+
+class TenantFeatureUsageEvent(BaseDB, TenantFeatureUsageEventBase, table=True):
+    __tablename__ = "tenant_feature_usage_events"  # type: ignore
+    __table_args__ = (
+        Index(
+            "ix_tenant_feature_usage_events_lookup",
+            "tenant_id",
+            "feature_key",
+            "occurred_at",
+        ),
+    )
+
+
+class TenantFeatureUsageEventCreate(TenantFeatureUsageEventBase):
+    pass
+
+
+class TenantFeatureUsageEventResponse(BaseDB, TenantFeatureUsageEventBase):
+    pass
+
+
+class TenantUsageDailyBase(SQLModel):
+    tenant_id: str = Field(max_length=128, nullable=False, index=True)
+    usage_date: date = Field(
+        sa_type=Date(),  # type: ignore[arg-type]
+        nullable=False,
+        index=True,
+    )
+    feature_key: str = Field(max_length=120, nullable=False, index=True)
+    feature_name: str = Field(max_length=120, nullable=False)
+    usage_value: int = Field(default=0, nullable=False, ge=0)
+    source: str = Field(max_length=64, nullable=False, default="unknown")
+    last_computed_at: datetime = Field(
+        default_factory=utcnow,
+        sa_type=DateTime(timezone=True),  # type: ignore[arg-type]
+        nullable=False,
+    )
+
+
+class TenantUsageDaily(BaseDB, TenantUsageDailyBase, table=True):
+    __tablename__ = "tenant_usage_daily"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "usage_date",
+            "feature_key",
+            name="uq_tenant_usage_daily_tenant_date_feature",
+        ),
+        Index("ix_tenant_usage_daily_lookup", "tenant_id", "usage_date", "feature_key"),
+    )
+
+
+class TenantUsageDailyResponse(BaseDB, TenantUsageDailyBase):
+    pass
+
+
+class TenantComplianceRecordBase(SQLModel):
+    tenant_id: str = Field(max_length=128, nullable=False, index=True)
+    usage_date: date = Field(
+        sa_type=Date(),  # type: ignore[arg-type]
+        nullable=False,
+        index=True,
+    )
+    feature_key: str = Field(max_length=120, nullable=False, index=True)
+    feature_name: str = Field(max_length=120, nullable=False)
+    entitlement_value: str | None = Field(default=None, max_length=120)
+    entitlement_limit: int | None = Field(default=None)
+    entitlement_is_enabled: bool = Field(default=False, nullable=False)
+    usage_value: int = Field(default=0, nullable=False, ge=0)
+    overage_value: int = Field(default=0, nullable=False, ge=0)
+    status: str = Field(max_length=32, nullable=False)
+    source: str | None = Field(default=None, max_length=64)
+    plan_codes_json: str | None = Field(default=None)
+    evaluated_at: datetime = Field(
+        default_factory=utcnow,
+        sa_type=DateTime(timezone=True),  # type: ignore[arg-type]
+        nullable=False,
+    )
+
+
+class TenantComplianceRecord(BaseDB, TenantComplianceRecordBase, table=True):
+    __tablename__ = "tenant_compliance_records"  # type: ignore
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "usage_date",
+            "feature_key",
+            name="uq_tenant_compliance_records_tenant_date_feature",
+        ),
+        Index(
+            "ix_tenant_compliance_records_lookup",
+            "tenant_id",
+            "usage_date",
+            "status",
+        ),
+    )
+
+
+class TenantComplianceRecordResponse(BaseDB, TenantComplianceRecordBase):
+    pass
+
+
+class TenantComplianceMetric(SQLModel):
+    feature_key: str
+    feature_name: str
+    entitlement_value: str | None = None
+    entitlement_limit: int | None = None
+    entitlement_is_enabled: bool = False
+    usage_value: int = 0
+    overage_value: int = 0
+    status: str
+    source: str | None = None
+    plan_codes: list[str] = Field(default_factory=list)
+
+
+class TenantComplianceTenantSnapshot(SQLModel):
+    tenant_id: str
+    usage_date: date
+    has_overages: bool = False
+    overage_count: int = 0
+    metrics: list[TenantComplianceMetric] = Field(default_factory=list)
+
+
+class TenantComplianceOverviewResponse(SQLModel):
+    generated_at: datetime = Field(default_factory=utcnow)
+    usage_date: date | None = None
+    tenant_count: int = 0
+    overage_tenant_count: int = 0
+    tenants: list[TenantComplianceTenantSnapshot] = Field(default_factory=list)
+
+
+class TenantComplianceRunSummary(SQLModel):
+    usage_date: date
+    processed_at: datetime = Field(default_factory=utcnow)
+    processed_tenant_count: int = 0
+    usage_row_count: int = 0
+    compliance_row_count: int = 0
+    overage_tenant_count: int = 0

@@ -4,7 +4,6 @@ from typing import List, Annotated
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
-from app.utils.enums import UserRole
 from app.models import User, UserCreate, UserUpdate, UserResponse, AdminPasswordReset
 from app.exceptions.http import (
     BadRequestException,
@@ -17,13 +16,30 @@ from app.core import SecurityUtils
 from app.utils.funcs import utcnow
 
 
+def _normalize_optional_tenant_id(tenant_id: str | None) -> str | None:
+    if tenant_id is None:
+        return None
+    normalized = tenant_id.strip()
+    return normalized or None
+
+
 class _UserService:
     def user_to_response(self, user: User) -> UserResponse:
         return UserResponse(**user.model_dump(exclude={"password_hash"}))
 
-    def create_user(self, data: UserCreate, session: Session) -> UserResponse:
+    def create_user(
+        self,
+        data: UserCreate,
+        session: Session,
+        tenant_id: str | None = None,
+    ) -> UserResponse:
+        resolved_tenant_id = self._resolve_tenant_scope(
+            request_tenant_id=tenant_id,
+            payload_tenant_id=data.tenant_id,
+        )
         user = User(
-            **data.model_dump(exclude={"password"}),
+            **data.model_dump(exclude={"password", "tenant_id"}),
+            tenant_id=resolved_tenant_id,
             password_hash=SecurityUtils.hash_password(data.password),
             must_change_password=True,
         )
@@ -39,8 +55,14 @@ class _UserService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating user: {e}")
 
-    def read_user(self, user_id: UUID, session: Session) -> UserResponse:
+    def read_user(
+        self,
+        user_id: UUID,
+        session: Session,
+        tenant_id: str | None = None,
+    ) -> UserResponse:
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
         return self.user_to_response(user)
 
     def read_users(
@@ -50,6 +72,7 @@ class _UserService:
         role: UserRole | None = None,
         offset: int = 0,
         limit: int = 100,
+        tenant_id: str | None = None,
     ) -> List[UserResponse]:
         statement = select(User).where(User.deleted_at.is_(None))  # type: ignore
 
@@ -57,20 +80,35 @@ class _UserService:
             statement = statement.where(User.status == status)
         if role is not None:
             statement = statement.where(User.role == role)
+        normalized_tenant_id = _normalize_optional_tenant_id(tenant_id)
+        if normalized_tenant_id is not None:
+            statement = statement.where(User.tenant_id == normalized_tenant_id)
         statement = statement.offset(offset).limit(limit)
         users = session.exec(statement).all()
         return [self.user_to_response(user) for user in users]
 
     def update_user(
-        self, user_id: UUID, data: UserUpdate, session: Session
+        self,
+        user_id: UUID,
+        data: UserUpdate,
+        session: Session,
+        tenant_id: str | None = None,
     ) -> UserResponse:
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
         )
 
         if not update_data:
             return self.user_to_response(user)
+
+        if "tenant_id" in update_data:
+            update_data["tenant_id"] = self._resolve_tenant_scope(
+                request_tenant_id=tenant_id,
+                payload_tenant_id=update_data["tenant_id"],
+                current_tenant_id=user.tenant_id,
+            )
 
         for k, v in update_data.items():
             setattr(user, k, v)
@@ -88,41 +126,69 @@ class _UserService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error updating user: {e}")
 
-    def delete_user(self, user_id: UUID, session: Session) -> None:
+    def delete_user(
+        self,
+        user_id: UUID,
+        session: Session,
+        tenant_id: str | None = None,
+    ) -> None:
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
         user.soft_delete()
         session.commit()
 
-    def activate_user(self, user_id: UUID, session: Session) -> UserResponse:
+    def activate_user(
+        self,
+        user_id: UUID,
+        session: Session,
+        tenant_id: str | None = None,
+    ) -> UserResponse:
         """"""
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
         user.activate()
         session.commit()
         session.refresh(user)
         return self.user_to_response(user)
 
-    def deactivate_user(self, user_id: UUID, session: Session) -> UserResponse:
+    def deactivate_user(
+        self,
+        user_id: UUID,
+        session: Session,
+        tenant_id: str | None = None,
+    ) -> UserResponse:
         """"""
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
         user.disable()
         session.commit()
         session.refresh(user)
         return self.user_to_response(user)
 
     def set_user_role(
-        self, user_id: UUID, role: UserRole, session: Session
+        self,
+        user_id: UUID,
+        role: UserRole,
+        session: Session,
+        tenant_id: str | None = None,
     ) -> UserResponse:
         """"""
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
         user.role = role
         session.commit()
         session.refresh(user)
         return self.user_to_response(user)
 
     def reset_password(
-        self, user_id: UUID, payload: AdminPasswordReset, session: Session
+        self,
+        user_id: UUID,
+        payload: AdminPasswordReset,
+        session: Session,
+        tenant_id: str | None = None,
     ) -> dict:
         user = self._get_user(user_id, session)
+        self._assert_user_in_tenant_scope(user, tenant_id)
 
         if payload.new_password != payload.confirm_password:
             raise BadRequestException("New password and confirmation do not match")
@@ -152,6 +218,37 @@ class _UserService:
         if not user:
             raise NotFoundException("user not found")
         return user
+
+    def _assert_user_in_tenant_scope(self, user: User, tenant_id: str | None) -> None:
+        normalized_tenant_id = _normalize_optional_tenant_id(tenant_id)
+        if normalized_tenant_id is None:
+            return
+        if user.tenant_id != normalized_tenant_id:
+            raise NotFoundException("user not found")
+
+    def _resolve_tenant_scope(
+        self,
+        *,
+        request_tenant_id: str | None,
+        payload_tenant_id: str | None,
+        current_tenant_id: str | None = None,
+    ) -> str | None:
+        normalized_request_tenant_id = _normalize_optional_tenant_id(request_tenant_id)
+        normalized_payload_tenant_id = _normalize_optional_tenant_id(payload_tenant_id)
+        normalized_current_tenant_id = _normalize_optional_tenant_id(current_tenant_id)
+
+        if (
+            normalized_request_tenant_id is not None
+            and normalized_payload_tenant_id is not None
+            and normalized_request_tenant_id != normalized_payload_tenant_id
+        ):
+            raise BadRequestException("tenant_id does not match tenant scope")
+
+        if normalized_request_tenant_id is not None:
+            return normalized_request_tenant_id
+        if normalized_payload_tenant_id is not None:
+            return normalized_payload_tenant_id
+        return normalized_current_tenant_id
 
 
 def get_user_service() -> _UserService:

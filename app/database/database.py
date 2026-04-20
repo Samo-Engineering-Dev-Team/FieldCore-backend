@@ -85,6 +85,7 @@ class Database:
         if (
             "must_change_password" in user_columns
             and "credentials_updated_at" in user_columns
+            and "tenant_id" in user_columns
         ):
             return
 
@@ -138,6 +139,19 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added users.credentials_updated_at column"
+                )
+
+            if "tenant_id" not in user_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ADD COLUMN tenant_id VARCHAR(128)
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added users.tenant_id column"
                 )
 
     @classmethod

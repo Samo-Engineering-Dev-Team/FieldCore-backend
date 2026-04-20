@@ -47,6 +47,11 @@ class TokenData(BaseModel):
         description="The last name of the authenticated user",
         examples=["Doe"]
     )
+    tenant_id: str | None = Field(
+        default=None,
+        description="Optional tenant scope associated with authenticated user",
+        examples=["tenant-123"]
+    )
     must_change_password: bool = Field(
         default=False,
         description="Whether user must set a new password before accessing the app",
@@ -75,6 +80,7 @@ class TokenData(BaseModel):
                 "role": "user",
                 "name": "John",
                 "surname": "Doe",
+                "tenant_id": "tenant-123",
                 "must_change_password": False,
                 "exp": "2024-12-31T23:59:59",
                 "token_type": "access",

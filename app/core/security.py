@@ -62,6 +62,7 @@ class SecurityUtils:
         role: UserRole,
         name: str,
         surname: str,
+        tenant_id: str | None = None,
         must_change_password: bool = False,
         exp: datetime | None = None,
     ) -> Token:
@@ -89,6 +90,7 @@ class SecurityUtils:
             "role": role,
             "name": name,
             "surname": surname,
+            "tenant_id": tenant_id,
             "must_change_password": must_change_password,
             "exp": expiration,
             "iat": utcnow(),
@@ -110,6 +112,7 @@ class SecurityUtils:
         role: UserRole,
         name: str,
         surname: str,
+        tenant_id: str | None = None,
         must_change_password: bool = False,
         exp: datetime | None = None,
     ) -> Token:
@@ -137,6 +140,7 @@ class SecurityUtils:
             "role": role,
             "name": name,
             "surname": surname,
+            "tenant_id": tenant_id,
             "must_change_password": must_change_password,
             "exp": expiration,
             "iat": utcnow(),
@@ -179,6 +183,7 @@ class SecurityUtils:
             role: str | None = decoded.get("role")
             name: str | None = decoded.get("name")
             surname: str | None = decoded.get("surname")
+            tenant_id: str | None = decoded.get("tenant_id")
             must_change_password: bool = bool(decoded.get("must_change_password", False))
             exp: int | None = decoded.get("exp")
             iat: int | None = decoded.get("iat")
@@ -202,6 +207,7 @@ class SecurityUtils:
                 role=UserRole(role),
                 name=name,
                 surname=surname,
+                tenant_id=tenant_id,
                 must_change_password=must_change_password,
                 exp=expiration,
                 token_type=token_type,

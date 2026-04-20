@@ -110,7 +110,7 @@ def test_reset_password_revokes_existing_access_token() -> None:
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
+        must_change_password=user.must_change_password,
     )
 
     payload = AdminPasswordReset(

@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -12,6 +13,8 @@ from app.models import (
     LicenseProductCatalog,
     LicenseProductCreate,
     LicenseProductResponse,
+    TenantComplianceOverviewResponse,
+    TenantComplianceRunSummary,
     LicensingDashboardResponse,
     TenantLicenseAssign,
     TenantLicenseDetail,
@@ -19,6 +22,7 @@ from app.models import (
 )
 from app.services.auth import AdminOrSuperAdminUser, require_admin_or_super_admin
 from app.services.licensing import LicensingServiceDep
+from app.services.licensing_compliance import LicensingComplianceServiceDep
 
 
 router = APIRouter(
@@ -102,6 +106,28 @@ def get_licensing_dashboard(
         expiring_within_days=expiring_within_days,
         history_limit=history_limit,
     )
+
+
+@router.post("/compliance/run-daily", response_model=TenantComplianceRunSummary, status_code=200)
+def run_daily_metering(
+    service: LicensingComplianceServiceDep,
+    session: Session,
+    usage_date: date | None = Query(default=None),
+    tenant_id: str | None = Query(default=None),
+) -> TenantComplianceRunSummary:
+    """Compute daily tenant usage + compliance snapshots. Platform admin only."""
+    return service.compute_daily_metering(session, usage_date=usage_date, tenant_id=tenant_id)
+
+
+@router.get("/compliance", response_model=TenantComplianceOverviewResponse, status_code=200)
+def get_tenant_compliance_overview(
+    service: LicensingComplianceServiceDep,
+    session: Session,
+    usage_date: date | None = Query(default=None),
+    tenant_id: str | None = Query(default=None),
+) -> TenantComplianceOverviewResponse:
+    """Get compliance snapshot for admin dashboard consumption."""
+    return service.get_compliance_overview(session, usage_date=usage_date, tenant_id=tenant_id)
 
 
 @router.post("/tenant-licenses", response_model=TenantLicenseDetail, status_code=201)

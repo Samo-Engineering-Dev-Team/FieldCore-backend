@@ -31,6 +31,12 @@ class BaseUser(SQLModel, ABC):
     )
     email: EmailStr = Field(nullable=False, index=True, schema_extra={"examples": {"moses@samotelecoms.co.za"}})
     role: UserRole = Field(description="The role of the user in the system")
+    tenant_id: str | None = Field(
+        default=None,
+        max_length=128,
+        index=True,
+        description="Optional tenant scope for multi-tenant user management and seat metering",
+    )
 
 
 class User(BaseDB, BaseUser, table=True):
@@ -97,6 +103,7 @@ class UserUpdate(SQLModel):
         schema_extra={"examples": {"Kubeka", "Smith"}},
     )
     email: EmailStr | None = None
+    tenant_id: str | None = Field(default=None, max_length=128)
 
 
 class UserRoleUpdate(SQLModel):

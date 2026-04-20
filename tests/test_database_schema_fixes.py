@@ -31,6 +31,7 @@ def test_apply_schema_fixes_adds_missing_must_change_password_column(monkeypatch
     assert "ALTER TABLE users" in executed_sql
     assert "must_change_password" in executed_sql
     assert "credentials_updated_at" in executed_sql
+    assert "tenant_id" in executed_sql
 
 
 def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypatch) -> None:
@@ -39,6 +40,7 @@ def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypat
     inspector.get_columns.return_value = [
         {"name": "must_change_password"},
         {"name": "credentials_updated_at"},
+        {"name": "tenant_id"},
     ]
 
     engine = MagicMock()

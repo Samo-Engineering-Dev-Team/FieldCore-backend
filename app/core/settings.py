@@ -67,6 +67,22 @@ class AppSettings(BaseSettings):
         description="Cooldown (seconds) before retrying Redis after a connection/read failure",
     )
 
+    # Licensing / metering
+    LICENSING_METERING_JOB_ENABLED: bool = Field(
+        default=False,
+        description="Run optional in-process daily tenant metering loop",
+    )
+    LICENSING_METERING_JOB_INTERVAL_SECONDS: int = Field(
+        default=86400,
+        ge=3600,
+        description="Interval in seconds between in-process metering runs",
+    )
+    LICENSING_METERING_STARTUP_DELAY_SECONDS: int = Field(
+        default=60,
+        ge=0,
+        description="Delay before optional metering loop starts after boot",
+    )
+
     # Email / MS Exchange SMTP
     # For Exchange Online (Microsoft 365): SMTP_HOST=smtp.office365.com, SMTP_PORT=587
     # For on-premise Exchange:             SMTP_HOST=mail.yourcompany.com, SMTP_PORT=587

@@ -97,7 +97,7 @@ def test_get_current_user_rejects_token_issued_before_credentials_update() -> No
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
+        must_change_password=user.must_change_password,
     )
     decoded = SecurityUtils.verify_access_token(token.access_token)
     assert decoded.iat is not None

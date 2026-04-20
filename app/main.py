@@ -44,10 +44,40 @@ async def sla_check_background_task():
         await asyncio.sleep(15 * 60)
 
 
+async def licensing_metering_background_task():
+    """Optional background task that snapshots tenant usage/compliance once per interval."""
+    await asyncio.sleep(app_settings.LICENSING_METERING_STARTUP_DELAY_SECONDS)
+
+    from sqlmodel import Session
+    from app.services.licensing_compliance import LicensingComplianceService
+    from app.utils.funcs import utcnow
+
+    service = LicensingComplianceService()
+
+    while True:
+        try:
+            if Database.connection is None:
+                raise RuntimeError("database connection is not available")
+
+            with Session(Database.connection) as session:
+                summary = service.compute_daily_metering(session, usage_date=utcnow().date())
+                LOG.info(
+                    "Licensing metering run complete for {}: {} tenants, {} overage tenants",
+                    summary.usage_date,
+                    summary.processed_tenant_count,
+                    summary.overage_tenant_count,
+                )
+        except Exception as e:
+            LOG.error(f"Licensing metering error: {e}")
+            import traceback
+            LOG.error(f"Licensing metering traceback: {traceback.format_exc()}")
+
+        await asyncio.sleep(app_settings.LICENSING_METERING_JOB_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     LOG.info("Starting application lifespan")
-    from app.core import app_settings
     try:
         Database.connect(app_settings.database_url)
         LOG.info("Database connected")
@@ -59,6 +89,9 @@ async def lifespan(app: FastAPI):
     
     # Start SLA check background task
     # sla_task = asyncio.create_task(sla_check_background_task())
+    metering_task = None
+    if app_settings.LICENSING_METERING_JOB_ENABLED:
+        metering_task = asyncio.create_task(licensing_metering_background_task())
     
     yield
     
@@ -69,6 +102,12 @@ async def lifespan(app: FastAPI):
     #     await sla_task
     # except asyncio.CancelledError:
     #     pass
+    if metering_task is not None:
+        metering_task.cancel()
+        try:
+            await metering_task
+        except asyncio.CancelledError:
+            pass
     
     Database.disconnect()
     LOG.info("Database disconnected")

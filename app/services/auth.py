@@ -161,6 +161,7 @@ class _AuthService:
             user.role,
             user.name,
             user.surname,
+            user.tenant_id,
             user.must_change_password,
         )
 
@@ -426,6 +427,7 @@ class _AuthService:
             user.role,
             user.name,
             user.surname,
+            user.tenant_id,
             user.must_change_password,
         )
 
@@ -513,6 +515,7 @@ class _AuthService:
             user.role,
             user.name,
             user.surname,
+            user.tenant_id,
             user.must_change_password,
         )
 
@@ -525,6 +528,7 @@ class _AuthService:
             role=user.role,
             name=user.name,
             surname=user.surname,
+            tenant_id=user.tenant_id,
             must_change_password=user.must_change_password,
             exp=current_user.exp,
             token_type=current_user.token_type,
@@ -735,6 +739,7 @@ def get_current_user(token: str = Depends(oauth), session: Session = Depends(get
         role=user.role,
         name=user.name,
         surname=user.surname,
+        tenant_id=user.tenant_id,
         must_change_password=user.must_change_password,
         exp=current_user.exp,
         token_type=current_user.token_type,
