@@ -5,8 +5,18 @@ from app.database.database import Database
 
 def test_apply_schema_fixes_adds_missing_must_change_password_column(monkeypatch) -> None:
     inspector = MagicMock()
-    inspector.has_table.return_value = True
-    inspector.get_columns.return_value = [{"name": "id"}, {"name": "password_hash"}]
+    inspector.has_table.side_effect = lambda table_name: table_name in {
+        "users",
+        "webhooks",
+        "system_settings",
+    }
+
+    def get_columns(table_name: str):
+        if table_name == "users":
+            return [{"name": "id"}, {"name": "password_hash"}]
+        return [{"name": "id"}]
+
+    inspector.get_columns.side_effect = get_columns
 
     begin_connection = MagicMock()
     begin_context = MagicMock()
@@ -32,18 +42,26 @@ def test_apply_schema_fixes_adds_missing_must_change_password_column(monkeypatch
     assert "must_change_password" in executed_sql
     assert "credentials_updated_at" in executed_sql
     assert "tenant_id" in executed_sql
+    assert "ALTER TABLE webhooks" in executed_sql
+    assert "ALTER TABLE system_settings" in executed_sql
 
 
 def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypatch) -> None:
     inspector = MagicMock()
-    inspector.has_table.return_value = True
+    inspector.has_table.side_effect = lambda table_name: table_name == "users"
     inspector.get_columns.return_value = [
         {"name": "must_change_password"},
         {"name": "credentials_updated_at"},
         {"name": "tenant_id"},
     ]
 
+    begin_connection = MagicMock()
+    begin_context = MagicMock()
+    begin_context.__enter__.return_value = begin_connection
+    begin_context.__exit__.return_value = False
+
     engine = MagicMock()
+    engine.begin.return_value = begin_context
 
     monkeypatch.setattr("app.database.database.inspect", lambda _: inspector)
     Database.connection = engine
@@ -53,4 +71,4 @@ def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypat
     finally:
         Database.connection = None
 
-    engine.begin.assert_not_called()
+    begin_connection.execute.assert_not_called()

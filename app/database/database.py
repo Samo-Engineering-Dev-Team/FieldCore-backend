@@ -78,81 +78,105 @@ class Database:
 
         inspector = inspect(cls.connection)
 
-        if not inspector.has_table("users"):
-            return
-
-        user_columns = {column["name"] for column in inspector.get_columns("users")}
-        if (
-            "must_change_password" in user_columns
-            and "credentials_updated_at" in user_columns
-            and "tenant_id" in user_columns
-        ):
-            return
-
         with cls.connection.begin() as connection:
-            if "must_change_password" not in user_columns:
-                connection.execute(
-                    text(
-                        """
-                        ALTER TABLE users
-                        ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE
-                        """
-                    )
-                )
-                LOG.warning(
-                    "Applied schema compatibility fix: added users.must_change_password column"
-                )
+            if inspector.has_table("users"):
+                user_columns = {column["name"] for column in inspector.get_columns("users")}
 
-            if "credentials_updated_at" not in user_columns:
-                connection.execute(
-                    text(
-                        """
-                        ALTER TABLE users
-                        ADD COLUMN credentials_updated_at TIMESTAMPTZ
-                        """
+                if "must_change_password" not in user_columns:
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE users
+                            ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE
+                            """
+                        )
                     )
-                )
-                connection.execute(
-                    text(
-                        """
-                        UPDATE users
-                        SET credentials_updated_at = COALESCE(created_at, NOW())
-                        WHERE credentials_updated_at IS NULL
-                        """
+                    LOG.warning(
+                        "Applied schema compatibility fix: added users.must_change_password column"
                     )
-                )
-                connection.execute(
-                    text(
-                        """
-                        ALTER TABLE users
-                        ALTER COLUMN credentials_updated_at SET DEFAULT NOW()
-                        """
-                    )
-                )
-                connection.execute(
-                    text(
-                        """
-                        ALTER TABLE users
-                        ALTER COLUMN credentials_updated_at SET NOT NULL
-                        """
-                    )
-                )
-                LOG.warning(
-                    "Applied schema compatibility fix: added users.credentials_updated_at column"
-                )
 
-            if "tenant_id" not in user_columns:
-                connection.execute(
-                    text(
-                        """
-                        ALTER TABLE users
-                        ADD COLUMN tenant_id VARCHAR(128)
-                        """
+                if "credentials_updated_at" not in user_columns:
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE users
+                            ADD COLUMN credentials_updated_at TIMESTAMPTZ
+                            """
+                        )
                     )
-                )
-                LOG.warning(
-                    "Applied schema compatibility fix: added users.tenant_id column"
-                )
+                    connection.execute(
+                        text(
+                            """
+                            UPDATE users
+                            SET credentials_updated_at = COALESCE(created_at, NOW())
+                            WHERE credentials_updated_at IS NULL
+                            """
+                        )
+                    )
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE users
+                            ALTER COLUMN credentials_updated_at SET DEFAULT NOW()
+                            """
+                        )
+                    )
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE users
+                            ALTER COLUMN credentials_updated_at SET NOT NULL
+                            """
+                        )
+                    )
+                    LOG.warning(
+                        "Applied schema compatibility fix: added users.credentials_updated_at column"
+                    )
+
+                if "tenant_id" not in user_columns:
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE users
+                            ADD COLUMN tenant_id VARCHAR(128)
+                            """
+                        )
+                    )
+                    LOG.warning(
+                        "Applied schema compatibility fix: added users.tenant_id column"
+                    )
+
+            if inspector.has_table("webhooks"):
+                webhook_columns = {column["name"] for column in inspector.get_columns("webhooks")}
+                if "tenant_id" not in webhook_columns:
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE webhooks
+                            ADD COLUMN tenant_id VARCHAR(128)
+                            """
+                        )
+                    )
+                    LOG.warning(
+                        "Applied schema compatibility fix: added webhooks.tenant_id column"
+                    )
+
+            if inspector.has_table("system_settings"):
+                system_settings_columns = {
+                    column["name"] for column in inspector.get_columns("system_settings")
+                }
+                if "tenant_id" not in system_settings_columns:
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE system_settings
+                            ADD COLUMN tenant_id VARCHAR(128)
+                            """
+                        )
+                    )
+                    LOG.warning(
+                        "Applied schema compatibility fix: added system_settings.tenant_id column"
+                    )
 
     @classmethod
     def get_session(cls) -> Generator[_Session, None, None]:

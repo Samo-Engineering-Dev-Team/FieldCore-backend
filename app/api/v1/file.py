@@ -72,7 +72,8 @@ async def upload_file(
         file_content=content,
         filename=file.filename or "unnamed",
         content_type=file.content_type or "application/octet-stream",
-        folder=folder
+        folder=folder,
+        tenant_id=current_user.tenant_id,
     )
     
     return FileUploadResponse(**result)
@@ -118,7 +119,8 @@ async def upload_multiple_files(
                 file_content=content,
                 filename=file.filename or "unnamed",
                 content_type=file.content_type or "application/octet-stream",
-                folder=folder
+                folder=folder,
+                tenant_id=current_user.tenant_id,
             )
             uploaded.append(FileUploadResponse(**result))
             
@@ -133,7 +135,7 @@ async def delete_file(file_path: str, current_user: CurrentUser) -> None:
     """Delete a file from storage."""
     require_management(current_user, "Only NOC, managers, or admins can delete files.")
     file_service = FileService()
-    deleted = await file_service.delete_file(file_path)
+    deleted = await file_service.delete_file(file_path, tenant_id=current_user.tenant_id)
     
     if not deleted:
         raise HTTPException(
@@ -155,5 +157,9 @@ async def get_signed_url(
     """
     require_management(current_user, "Only NOC, managers, or admins can generate signed URLs.")
     file_service = FileService()
-    signed_url = await file_service.get_signed_url(file_path, expires_in)
+    signed_url = await file_service.get_signed_url(
+        file_path,
+        expires_in,
+        tenant_id=current_user.tenant_id,
+    )
     return {"signed_url": signed_url, "expires_in": expires_in}

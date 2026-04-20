@@ -23,6 +23,7 @@ from app.exceptions.http import (
 )
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.tenant_scope import get_tenant_noc_user_ids
 
 
 class _AccessRequestService:
@@ -92,19 +93,9 @@ class _AccessRequestService:
             # Notify all NOC operators about new access request
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
             tech_name = f"{technician.user.name} {technician.user.surname}"
             notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
+                user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, current_user.tenant_id)),
                 template=NotificationTemplates.access_request_created(
                     site_name=site.name,
                     technician_name=tech_name,

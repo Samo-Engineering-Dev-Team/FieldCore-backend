@@ -7,6 +7,12 @@ class Webhook(SQLModel, table=True):
     __tablename__ = "webhooks"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: str | None = Field(
+        default=None,
+        max_length=128,
+        index=True,
+        description="Tenant scope that owns this webhook subscription",
+    )
     url: str = Field(description="Webhook URL to send notifications to")
     event_type: str = Field(description="Type of event to trigger webhook (e.g., 'sla_breach', 'incident_created')")
     secret: Optional[str] = Field(default=None, description="Optional secret for webhook verification")

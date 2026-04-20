@@ -13,6 +13,12 @@ from app.utils.funcs import utcnow
 class SystemSettingBase(SQLModel):
     """Base model for system settings."""
     key: str = Field(max_length=100, description="Unique setting key")
+    tenant_id: str | None = Field(
+        default=None,
+        max_length=128,
+        index=True,
+        description="Optional tenant scope for tenant-specific integration settings",
+    )
     value: Any = Field(sa_column=Column(JSONB), description="Setting value stored as JSON")
     description: str | None = Field(default=None, sa_column=Column(Text), description="Setting description")
     category: str = Field(default="general", max_length=50, description="Setting category")
@@ -42,6 +48,7 @@ class SystemSetting(SystemSettingBase, table=True):
 class SystemSettingCreate(SQLModel):
     """Model for creating a new system setting."""
     key: str = Field(max_length=100)
+    tenant_id: str | None = Field(default=None, max_length=128)
     value: Any
     description: str | None = None
     category: str = "general"
@@ -56,6 +63,7 @@ class SystemSettingResponse(SQLModel):
     """Response model for system settings."""
     id: UUID
     key: str
+    tenant_id: str | None
     value: Any
     description: str | None
     category: str

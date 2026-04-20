@@ -25,6 +25,10 @@ from app.models.maintenance_schedule import MaintenanceSchedule
 from app.models.technician import Technician
 from app.utils.enums import UserRole
 from app.utils.funcs import utcnow
+from app.services.tenant_scope import (
+    get_tenant_management_user_ids,
+    get_tenant_noc_user_ids,
+)
 
 
 def _week_bounds():
@@ -55,21 +59,6 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
     is_friday = weekday == 4
     week_start, week_end = _week_bounds()
 
-    # Fetch NOC + Manager user IDs for notifications
-    noc_user_ids: list = [
-        u.id for u in session.exec(
-            select(User).where(
-                User.role.in_([UserRole.NOC, UserRole.MANAGER]),  # type: ignore
-                User.deleted_at.is_(None),
-            )
-        ).all()
-    ]
-    manager_user_ids: list = [
-        u.id for u in session.exec(
-            select(User).where(User.role == UserRole.MANAGER, User.deleted_at.is_(None))
-        ).all()
-    ]
-
     # Load all active weekly schedules grouped by technician
     weekly_schedules = session.exec(
         select(MaintenanceSchedule).where(
@@ -97,6 +86,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
 
         tech_name = f"{tech.user.name} {tech.user.surname}"
         tech_user_id = tech.user_id
+        tenant_id = tech.user.tenant_id if tech.user else None
 
         # Find which schedule types are NOT completed this week
         overdue_types: list[str] = []
@@ -134,7 +124,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
                 user_id=tech_user_id, template=template, session=session
             )
             # Notify all NOC + Managers
-            for uid in noc_user_ids:
+            for uid in get_tenant_management_user_ids(session, tenant_id):
                 notification_service.create_notification_from_template(
                     user_id=uid, template=template, session=session
                 )
@@ -153,7 +143,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             notification_service.create_notification_from_template(
                 user_id=tech_user_id, template=template, session=session
             )
-            for uid in noc_user_ids:
+            for uid in get_tenant_noc_user_ids(session, tenant_id):
                 if uid != tech_user_id:
                     notification_service.create_notification_from_template(
                         user_id=uid, template=template, session=session

@@ -11,6 +11,7 @@ from app.database import Session
 from app.utils.enums import IncidentStatus, UserRole
 from app.services.authorization import require_management
 from app.exceptions.http import ForbiddenException
+from app.services.tenant_scope import get_tenant_management_user_ids
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
@@ -32,6 +33,7 @@ def create_incident(
         tech_name=response.technician_fullname,
         description=payload.description,
         assigning_user_id=current_user.user_id,
+        tenant_id=current_user.tenant_id,
     )
     return response
 
@@ -135,6 +137,7 @@ def start_incident(
         _bg_notify_incident_started,
         site_name=response.site_name,
         tech_name=response.technician_fullname,
+        tenant_id=current_user.tenant_id,
     )
     return response
 
@@ -156,6 +159,7 @@ def resolve_incident(
         ref_no=response.ref_no or response.seacom_ref,
         severity=str(response.severity) if response.severity else "minor",
         description=response.description or "",
+        tenant_id=current_user.tenant_id,
     )
     return response
 
@@ -341,16 +345,9 @@ def send_help_alert(
         tech_name = "Unknown Technician"
 
     # Notify all NOC operators and managers
-    recipients = session.exec(
-        select(User).where(
-            User.role.in_([UserRole.NOC, UserRole.MANAGER]),
-            User.deleted_at.is_(None),
-        )
-    ).all()
-
     notification_service = _NotificationService()
     notification_service.create_notifications_from_template(
-        user_ids=(u.id for u in recipients),
+        user_ids=(user_id for user_id in get_tenant_management_user_ids(session, current_user.tenant_id)),
         template=NotificationTemplates.technician_help_alert(
             technician_name=tech_name,
             priority=payload.priority,

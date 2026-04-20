@@ -20,6 +20,11 @@ from app.models import Incident, User
 from app.utils.enums import IncidentStatus
 from app.utils.funcs import utcnow
 from app.utils.sla_utils import calculate_sla_deadlines, get_milestone_status
+from app.services.tenant_scope import (
+    get_incident_tenant_id,
+    get_tenant_management_user_ids,
+    get_tenant_notification_recipients,
+)
 
 
 def get_sla_status_for_incident(incident: Incident) -> dict:
@@ -86,15 +91,8 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
     warnings: list[dict] = []
     breaches: list[dict] = []
 
-    # Pre-fetch NOC and manager user IDs to notify on breaches
-    noc_user_ids = [
-        u.id for u in session.exec(
-            select(User).where(
-                User.role.in_(["noc", "manager"]),  # type: ignore
-                User.deleted_at.is_(None),
-            )
-        ).all()
-    ]
+    management_user_ids_by_tenant: dict[str | None, list] = {}
+    email_recipients_by_tenant: dict[str | None, list[str]] = {}
 
     statement = select(Incident).where(
         and_(
@@ -105,6 +103,15 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
     active_incidents = session.exec(statement).all()
 
     for incident in active_incidents:
+        tenant_id = get_incident_tenant_id(session, incident)
+        tenant_management_user_ids = management_user_ids_by_tenant.setdefault(
+            tenant_id,
+            get_tenant_management_user_ids(session, tenant_id),
+        )
+        tenant_recipients = email_recipients_by_tenant.setdefault(
+            tenant_id,
+            get_tenant_notification_recipients(session, tenant_id),
+        )
         severity = str(incident.severity) if incident.severity else "minor"
         start    = incident.start_time or incident.created_at
         deadlines = calculate_sla_deadlines(severity, start)
@@ -148,6 +155,7 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                         "time_remaining_minutes": minutes_remaining,
                         "event_type":             "sla_warning",
                         "timestamp":              now.isoformat(),
+                        "tenant_id":              tenant_id,
                     }
                     warnings.append(event)
 
@@ -162,7 +170,7 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                             session=session,
                         )
                     # Also warn NOC so they can follow up
-                    for noc_id in noc_user_ids:
+                    for noc_id in tenant_management_user_ids:
                         if noc_id != tech_user_id:
                             notification_service.create_notification_from_template(
                                 user_id=noc_id,
@@ -180,11 +188,18 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                         severity=severity,
                         milestone=milestone_name,
                         time_remaining=time_str,
+                        recipients=tenant_recipients,
                     )
 
                     def _send_warning(data: dict = event) -> None:
                         import asyncio
-                        asyncio.run(WebhookService.send_webhook("sla_warning", data))
+                        asyncio.run(
+                            WebhookService.send_webhook(
+                                "sla_warning",
+                                data,
+                                tenant_id=tenant_id,
+                            )
+                        )
 
                     t = threading.Thread(target=_send_warning)
                     t.daemon = True
@@ -209,6 +224,7 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                     "time_overdue": str(time_overdue_delta),
                     "event_type":   "sla_breach",
                     "timestamp":    now.isoformat(),
+                    "tenant_id":    tenant_id,
                 }
                 breaches.append(event)
 
@@ -225,7 +241,7 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                         session=session,
                     )
                 # Notify NOC and managers
-                for noc_id in noc_user_ids:
+                for noc_id in tenant_management_user_ids:
                     if noc_id != tech_user_id:
                         notification_service.create_notification_from_template(
                             user_id=noc_id,
@@ -240,11 +256,18 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                     severity=severity,
                     milestone=milestone_name,
                     time_overdue=overdue_str,
+                    recipients=tenant_recipients,
                 )
 
                 def _send_breach(data: dict = event) -> None:
                     import asyncio
-                    asyncio.run(WebhookService.send_webhook("sla_breach", data))
+                    asyncio.run(
+                        WebhookService.send_webhook(
+                            "sla_breach",
+                            data,
+                            tenant_id=tenant_id,
+                        )
+                    )
 
                 t = threading.Thread(target=_send_breach)
                 t.daemon = True

@@ -29,6 +29,10 @@ from app.services.report_support import (
     build_storage_attachment,
     create_noc_notifications,
 )
+from app.services.tenant_scope import (
+    get_technician_tenant_id,
+    get_tenant_notification_recipients,
+)
 
 
 class _IncidentReportService:
@@ -91,6 +95,7 @@ class _IncidentReportService:
         technician_name: str,
         site_name: str,
         session: Session,
+        tenant_id: str | None,
         ref_no: str | None = None,
     ) -> None:
         try:
@@ -104,6 +109,7 @@ class _IncidentReportService:
                     technician_name=technician_name,
                     site_name=site_name,
                 ),
+                tenant_id=tenant_id,
             )
             # Email NOC with report summary
             EmailService.send_incident_report_submitted(
@@ -111,6 +117,7 @@ class _IncidentReportService:
                 site_name=site_name,
                 technician_name=technician_name,
                 submitted_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
+                recipients=get_tenant_notification_recipients(session, tenant_id),
             )
         except Exception as exc:
             LOG.warning("Failed to send incident report notifications: {}", exc)
@@ -162,6 +169,7 @@ class _IncidentReportService:
             report_data["report_date"] = utcnow()
         if not report_data.get("technician_id"):
             report_data["technician_id"] = data.technician_id
+        report_tenant_id = get_technician_tenant_id(session, report_data.get("technician_id"))
 
         report = IncidentReport(**report_data)
         try:
@@ -174,6 +182,7 @@ class _IncidentReportService:
                 technician_name=data.technician_name,
                 site_name=data.site_name,
                 session=session,
+                tenant_id=report_tenant_id or current_user.tenant_id,
                 ref_no=getattr(data, "seacom_ref", None) or getattr(data, "ref_no", None),
             )
 
@@ -317,6 +326,7 @@ class _IncidentReportService:
             filename=unique_filename,
             content_type=content_type,
             folder="incident-report-photos",
+            tenant_id=get_technician_tenant_id(session, report.technician_id) or current_user.tenant_id,
         )
 
         photo_entry = build_storage_attachment(

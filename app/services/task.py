@@ -18,6 +18,11 @@ from app.exceptions.http import (
     NotFoundException,
 )
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.tenant_scope import (
+    get_task_tenant_id,
+    get_tenant_noc_user_ids,
+    get_tenant_notification_recipients,
+)
 
 
 class _TaskService:
@@ -327,21 +332,12 @@ class _TaskService:
             # Notify NOC operators that task has started
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
+            tenant_id = get_task_tenant_id(session, task)
             site_name = task.site.name if task.site else "Unknown Site"
             tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
             
             notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
+                user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, tenant_id)),
                 template=NotificationTemplates.task_started(tech_name, site_name),
                 session=session,
             )
@@ -381,14 +377,12 @@ class _TaskService:
 
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-            noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
-            ).all()
+            tenant_id = get_task_tenant_id(session, task)
             site_name = task.site.name if task.site else "Unknown Site"
             tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
             ref_no = task.seacom_ref or None
             notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
+                user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, tenant_id)),
                 template=NotificationTemplates.task_completed(tech_name, site_name, ref_no=ref_no),
                 session=session,
             )
@@ -400,6 +394,7 @@ class _TaskService:
                 technician_name=tech_name,
                 task_type="RHS — " + (feedback[:80] + "…" if len(feedback) > 80 else feedback),
                 completed_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
+                recipients=get_tenant_notification_recipients(session, tenant_id),
             )
             return self.task_to_response(task, session)
         except Exception as e:
@@ -428,22 +423,13 @@ class _TaskService:
             # Notify NOC operators that task is completed
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
+            tenant_id = get_task_tenant_id(session, task)
             site_name = task.site.name if task.site else "Unknown Site"
             tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
             
             ref_no = task.seacom_ref or None
             notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
+                user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, tenant_id)),
                 template=NotificationTemplates.task_completed(tech_name, site_name, ref_no=ref_no),
                 session=session,
             )
@@ -457,6 +443,7 @@ class _TaskService:
                 technician_name=tech_name,
                 task_type=str(task.task_type),
                 completed_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
+                recipients=get_tenant_notification_recipients(session, tenant_id),
             )
 
             # Self-heal path notification: report was missing and auto-created at completion.
@@ -489,21 +476,12 @@ class _TaskService:
             # Notify NOC operators that task has failed
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
+            tenant_id = get_task_tenant_id(session, task)
             site_name = task.site.name if task.site else "Unknown Site"
             tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
             
             notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
+                user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, tenant_id)),
                 template=NotificationTemplates.task_failed(tech_name, site_name),
                 session=session,
             )

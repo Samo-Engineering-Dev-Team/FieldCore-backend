@@ -8,18 +8,33 @@ from sqlmodel import select
 from app.database import Database
 from app.models import Webhook
 from loguru import logger as LOG
+from app.services.tenant_scope import normalize_tenant_id, require_tenant_id
 
 
 class WebhookService:
     @staticmethod
-    async def send_webhook(event_type: str, payload: Dict[str, Any]) -> None:
+    async def send_webhook(
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        tenant_id: str | None = None,
+    ) -> None:
         """Send webhook notifications for a specific event type."""
         try:
+            scoped_tenant_id = normalize_tenant_id(tenant_id or payload.get("tenant_id"))
+            if scoped_tenant_id is None:
+                LOG.warning("Skipping webhook '{}' because tenant_id is missing", event_type)
+                return
+
+            scoped_payload = dict(payload)
+            scoped_payload["tenant_id"] = scoped_tenant_id
+
             with Database.session() as session:
                 webhooks = session.exec(
                     select(Webhook).where(
                         Webhook.event_type == event_type,
-                        Webhook.is_active == True
+                        Webhook.is_active == True,
+                        Webhook.tenant_id == scoped_tenant_id,
                     )
                 ).all()
 
@@ -29,7 +44,7 @@ class WebhookService:
             async with httpx.AsyncClient(timeout=10.0) as client:
                 results = await asyncio.gather(
                     *(
-                        WebhookService._send_to_webhook(webhook, payload, client)
+                        WebhookService._send_to_webhook(webhook, scoped_payload, client)
                         for webhook in webhooks
                     ),
                     return_exceptions=True,
@@ -72,13 +87,19 @@ class WebhookService:
             LOG.error(f"Error sending webhook to {webhook.url}: {e}")
 
     @staticmethod
-    def register_webhook(url: str, event_type: str, secret: str = None) -> Webhook:
+    def register_webhook(
+        url: str,
+        event_type: str,
+        tenant_id: str | None,
+        secret: str = None,
+    ) -> Webhook:
         """Register a new webhook."""
         with Database.session() as session:
             webhook = Webhook(
+                tenant_id=require_tenant_id(tenant_id),
                 url=url,
                 event_type=event_type,
-                secret=secret
+                secret=secret,
             )
             session.add(webhook)
             session.commit()
@@ -86,19 +107,29 @@ class WebhookService:
             return webhook
 
     @staticmethod
-    def list_webhooks(event_type: str = None) -> List[Webhook]:
+    def list_webhooks(tenant_id: str | None, event_type: str = None) -> List[Webhook]:
         """List active webhooks, optionally filtered by event type."""
+        scoped_tenant_id = require_tenant_id(tenant_id)
         with Database.session() as session:
-            query = select(Webhook).where(Webhook.is_active == True)
+            query = select(Webhook).where(
+                Webhook.is_active == True,
+                Webhook.tenant_id == scoped_tenant_id,
+            )
             if event_type:
                 query = query.where(Webhook.event_type == event_type)
             return session.exec(query).all()
 
     @staticmethod
-    def deactivate_webhook(webhook_id: int) -> bool:
+    def deactivate_webhook(webhook_id: int, tenant_id: str | None) -> bool:
         """Deactivate a webhook."""
+        scoped_tenant_id = require_tenant_id(tenant_id)
         with Database.session() as session:
-            webhook = session.get(Webhook, webhook_id)
+            webhook = session.exec(
+                select(Webhook).where(
+                    Webhook.id == webhook_id,
+                    Webhook.tenant_id == scoped_tenant_id,
+                )
+            ).first()
             if webhook:
                 webhook.is_active = False
                 session.commit()

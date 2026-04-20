@@ -23,6 +23,7 @@ from app.services.report_support import (
     normalize_attachment_item,
     normalize_attachments,
 )
+from app.services.tenant_scope import get_task_tenant_id
 
 
 class _ReportService:
@@ -135,6 +136,7 @@ class _ReportService:
                         report_type=data.report_type,
                         site_name=site_name,
                     ),
+                    tenant_id=get_task_tenant_id(session, task),
                 )
             
             return self.report_to_response(report)

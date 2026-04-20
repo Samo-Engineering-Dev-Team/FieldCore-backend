@@ -6,28 +6,25 @@ from sqlmodel import Session, select
 from app.models import User
 from app.utils.enums import UserRole
 from app.utils.funcs import utcnow
+from app.services.tenant_scope import get_tenant_noc_user_ids
 
 
-def get_noc_user_ids(session: Session) -> list:
+def get_noc_user_ids(session: Session, tenant_id: str | None = None) -> list:
     """Return active NOC user ids for shared report notifications."""
-    noc_users = session.exec(
-        select(User).where(
-            and_(
-                User.role == UserRole.NOC,
-                User.deleted_at.is_(None),
-            )
-        )
-    ).all()
-    return [user.id for user in noc_users]
+    return get_tenant_noc_user_ids(session, tenant_id)
 
 
-def create_noc_notifications(session: Session, template: Any) -> None:
+def create_noc_notifications(
+    session: Session,
+    template: Any,
+    tenant_id: str | None = None,
+) -> None:
     """Send notification template to all active NOC users."""
     from app.services.notification import _NotificationService
 
     notification_service = _NotificationService()
     notification_service.create_notifications_from_template(
-        user_ids=(user_id for user_id in get_noc_user_ids(session)),
+        user_ids=(user_id for user_id in get_noc_user_ids(session, tenant_id=tenant_id)),
         template=template,
         session=session,
     )
@@ -39,6 +36,7 @@ def upload_storage_file(
     filename: str,
     content_type: str,
     folder: str,
+    tenant_id: str | None,
 ) -> dict[str, Any]:
     """Upload a file via shared storage service."""
     from app.services.file import FileService
@@ -48,6 +46,7 @@ def upload_storage_file(
         filename=filename,
         content_type=content_type,
         folder=folder,
+        tenant_id=tenant_id,
     )
 
 

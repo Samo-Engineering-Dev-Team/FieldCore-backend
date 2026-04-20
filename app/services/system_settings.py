@@ -32,7 +32,9 @@ class _SystemSettingsService:
 
     def _load_cache(self, session: Session) -> None:
         """Load all settings into cache."""
-        settings = session.exec(select(SystemSetting)).all()
+        settings = session.exec(
+            select(SystemSetting).where(SystemSetting.tenant_id.is_(None))
+        ).all()
         for setting in settings:
             self._cache[setting.key] = setting.value
         self._cache_loaded = True
@@ -56,7 +58,10 @@ class _SystemSettingsService:
 
     def get_setting_full(self, key: str, session: Session) -> SystemSettingResponse:
         """Get full setting details by key."""
-        statement = select(SystemSetting).where(SystemSetting.key == key)
+        statement = select(SystemSetting).where(
+            SystemSetting.key == key,
+            SystemSetting.tenant_id.is_(None),
+        )
         setting = session.exec(statement).first()
         
         if not setting:
@@ -66,12 +71,16 @@ class _SystemSettingsService:
 
     def get_all_settings(self, session: Session) -> list[SystemSettingResponse]:
         """Get all system settings."""
-        settings = session.exec(select(SystemSetting)).all()
+        settings = session.exec(
+            select(SystemSetting).where(SystemSetting.tenant_id.is_(None))
+        ).all()
         return [SystemSettingResponse(**s.model_dump()) for s in settings]
 
     def get_settings_grouped(self, session: Session) -> SystemSettingsResponse:
         """Get all settings grouped by category."""
-        settings = session.exec(select(SystemSetting)).all()
+        settings = session.exec(
+            select(SystemSetting).where(SystemSetting.tenant_id.is_(None))
+        ).all()
         
         grouped = SystemSettingsResponse()
         
@@ -84,13 +93,19 @@ class _SystemSettingsService:
 
     def get_settings_by_category(self, category: str, session: Session) -> list[SystemSettingResponse]:
         """Get all settings in a specific category."""
-        statement = select(SystemSetting).where(SystemSetting.category == category)
+        statement = select(SystemSetting).where(
+            SystemSetting.category == category,
+            SystemSetting.tenant_id.is_(None),
+        )
         settings = session.exec(statement).all()
         return [SystemSettingResponse(**s.model_dump()) for s in settings]
 
     def update_setting(self, key: str, data: SystemSettingUpdate, session: Session) -> SystemSettingResponse:
         """Update a single setting value."""
-        statement = select(SystemSetting).where(SystemSetting.key == key)
+        statement = select(SystemSetting).where(
+            SystemSetting.key == key,
+            SystemSetting.tenant_id.is_(None),
+        )
         setting = session.exec(statement).first()
         
         if not setting:
@@ -119,7 +134,10 @@ class _SystemSettingsService:
     def bulk_update_settings(self, data: SystemSettingsBulkUpdate, session: Session) -> SystemSettingsResponse:
         """Update multiple settings at once."""
         for key, value in data.settings.items():
-            statement = select(SystemSetting).where(SystemSetting.key == key)
+            statement = select(SystemSetting).where(
+                SystemSetting.key == key,
+                SystemSetting.tenant_id.is_(None),
+            )
             setting = session.exec(statement).first()
             
             if setting:

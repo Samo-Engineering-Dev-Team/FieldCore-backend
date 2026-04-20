@@ -14,6 +14,7 @@ from app.database import Session
 from app.utils.enums import UserRole
 from app.exceptions.http import UnauthorizedException
 from app.core.settings import app_settings
+from app.services.tenant_scope import get_tenant_notification_recipients
 
 router = APIRouter(prefix="/settings", tags=["System Settings"])
 
@@ -112,6 +113,7 @@ def bulk_update_settings(
 @router.post("/email/test", response_model=dict, status_code=200)
 async def test_email(
     current_user: CurrentUser,
+    session: Session,
 ) -> dict:
     """
     Send a test email to the NOC distribution list to verify SMTP config.
@@ -127,10 +129,12 @@ async def test_email(
             "recipients": [],
         }
 
-    if not app_settings.noc_email_list:
+    recipients = get_tenant_notification_recipients(session, current_user.tenant_id)
+
+    if not recipients:
         return {
             "ok": False,
-            "message": "NOC_EMAIL_ADDRESSES is empty — no recipients to send to.",
+            "message": "No tenant-scoped outbound email recipients are configured.",
             "smtp_host": app_settings.SMTP_HOST,
             "recipients": [],
         }
@@ -142,6 +146,7 @@ async def test_email(
         technician_name="System Administrator",
         task_type="email_test",
         completed_at="Now",
+        recipients=recipients,
     )
 
     return {
@@ -150,7 +155,7 @@ async def test_email(
         "smtp_host": app_settings.SMTP_HOST,
         "smtp_port": app_settings.SMTP_PORT,
         "from": f"{app_settings.SMTP_FROM_NAME} <{app_settings.SMTP_USER}>",
-        "recipients": app_settings.noc_email_list,
+        "recipients": recipients,
     }
 
 

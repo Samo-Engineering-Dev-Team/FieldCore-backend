@@ -18,6 +18,10 @@ from app.exceptions.http import (
     NotFoundException,
 )
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.tenant_scope import (
+    get_tenant_noc_user_ids,
+    get_tenant_notification_recipients,
+)
 
 
 # ── Background notification helpers ───────────────────────────────────────────
@@ -30,6 +34,7 @@ def _bg_notify_incident_created(
     tech_name: str,
     description: str,
     assigning_user_id: UUID | None,
+    tenant_id: str | None,
 ) -> None:
     """Background task: notify technician + NOC when a new incident is assigned."""
     try:
@@ -50,11 +55,8 @@ def _bg_notify_incident_created(
                     ),
                     session=session,
                 )
-            noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
-            ).all()
             notification_service.create_notifications_from_template(
-                user_ids=[u.id for u in noc_users],
+                user_ids=get_tenant_noc_user_ids(session, tenant_id),
                 template=NotificationTemplates.incident_created_for_noc(
                     site_name=site_name,
                     technician_name=tech_name,
@@ -66,18 +68,15 @@ def _bg_notify_incident_created(
         LOG.warning("Background incident-created notifications failed: {}", e)
 
 
-def _bg_notify_incident_started(site_name: str, tech_name: str) -> None:
+def _bg_notify_incident_started(site_name: str, tech_name: str, tenant_id: str | None) -> None:
     """Background task: notify NOC when a technician starts working on an incident."""
     try:
         from app.database import Database
         from app.services.notification import _NotificationService, NotificationTemplates
         with Database.session() as session:
             notification_service = _NotificationService()
-            noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
-            ).all()
             notification_service.create_notifications_from_template(
-                user_ids=[u.id for u in noc_users],
+                user_ids=get_tenant_noc_user_ids(session, tenant_id),
                 template=NotificationTemplates.incident_in_progress(tech_name, site_name),
                 session=session,
             )
@@ -91,6 +90,7 @@ def _bg_notify_incident_resolved(
     ref_no: str | None,
     severity: str,
     description: str,
+    tenant_id: str | None,
 ) -> None:
     """Background task: notify NOC + send email when an incident is resolved."""
     try:
@@ -98,11 +98,8 @@ def _bg_notify_incident_resolved(
         from app.services.notification import _NotificationService, NotificationTemplates
         with Database.session() as session:
             notification_service = _NotificationService()
-            noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
-            ).all()
             notification_service.create_notifications_from_template(
-                user_ids=[u.id for u in noc_users],
+                user_ids=get_tenant_noc_user_ids(session, tenant_id),
                 template=NotificationTemplates.incident_resolved(tech_name, site_name, ref_no=ref_no),
                 session=session,
             )
@@ -110,8 +107,11 @@ def _bg_notify_incident_resolved(
         LOG.warning("Background incident-resolved notifications failed: {}", e)
 
     try:
+        from app.database import Database
         from app.services.email import EmailService
         from app.utils.funcs import utcnow as _utcnow
+        with Database.session() as session:
+            recipients = get_tenant_notification_recipients(session, tenant_id)
         EmailService.send_incident_resolved(
             ref_no=ref_no or "N/A",
             site_name=site_name,
@@ -119,6 +119,7 @@ def _bg_notify_incident_resolved(
             severity=severity,
             resolved_at=_utcnow().strftime("%d %b %Y %H:%M UTC"),
             description=description,
+            recipients=recipients,
         )
     except Exception as e:
         LOG.warning("Background incident-resolved email failed: {}", e)

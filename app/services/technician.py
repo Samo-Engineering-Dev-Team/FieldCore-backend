@@ -16,8 +16,10 @@ from app.exceptions.http import (
     NotFoundException,
 )
 from app.utils.funcs import utcnow
+from app.utils.enums import UserRole
 from app.models.auth import TokenData
 from app.services.authorization import assert_technician_self_or_roles, is_management
+from app.services.tenant_scope import list_tenant_user_ids
 
 
 class _TechnicianService:
@@ -333,12 +335,11 @@ class _TechnicianService:
         if not technician:
             raise NotFoundException("Technician not found")
         
-        # Get management users to notify
-        management_statement = select(User).where(
-            User.role.in_(["ADMIN", "MANAGER"]),  # Assuming these are management roles
-            User.deleted_at.is_(None)
+        manager_ids = list_tenant_user_ids(
+            session,
+            (UserRole.ADMIN, UserRole.MANAGER),
+            technician.user.tenant_id if technician.user else None,
         )
-        management_users = session.exec(management_statement).all()
         
         notifications_created = []
         
@@ -349,10 +350,10 @@ class _TechnicianService:
             priority=priority,
             reason=reason,
         )
-        for manager in management_users:
+        for manager_id in manager_ids:
             try:
                 created = notification_service.create_notification_from_template(
-                    user_id=manager.id,
+                    user_id=manager_id,
                     template=template,
                     session=session,
                 )
@@ -360,7 +361,7 @@ class _TechnicianService:
                     notifications_created.append(created.id)
             except Exception as e:
                 # Log error but continue with other notifications
-                LOG.warning("Failed to create notification for {}: {}", manager.email, e)
+                LOG.warning("Failed to create notification for {}: {}", manager_id, e)
         
         # Log the escalation in the database (you might want to create an escalation_log table)
         # For now, we'll just return success info

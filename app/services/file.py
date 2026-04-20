@@ -4,6 +4,11 @@ from typing import BinaryIO
 from fastapi import HTTPException, status
 
 from app.core.settings import app_settings
+from app.services.tenant_scope import (
+    assert_storage_path_in_tenant,
+    build_tenant_storage_key,
+    require_tenant_id,
+)
 
 
 class FileService:
@@ -36,18 +41,19 @@ class FileService:
                 detail="File storage not configured. Please set SUPABASE_URL and SUPABASE_SERVICE_KEY.",
             )
 
-    def _build_file_path(self, filename: str, folder: str) -> str:
-        # Generate unique filename to avoid collisions.
+    def _build_file_path(self, filename: str, folder: str, tenant_id: str) -> str:
+        # Generate unique filename to avoid collisions and scope every object to one tenant.
         file_ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
         unique_name = f"{uuid.uuid4()}.{file_ext}" if file_ext else str(uuid.uuid4())
-        return f"{folder}/{unique_name}"
+        return build_tenant_storage_key(tenant_id, unique_name, folder)
     
     async def upload_file(
         self, 
         file_content: bytes,
         filename: str,
         content_type: str,
-        folder: str = "incidents"
+        folder: str = "incidents",
+        tenant_id: str | None = None,
     ) -> dict:
         """
         Upload a file to Supabase Storage.
@@ -62,7 +68,8 @@ class FileService:
             dict with file_path and public_url
         """
         self._require_storage_config()
-        file_path = self._build_file_path(filename, folder)
+        scoped_tenant_id = require_tenant_id(tenant_id)
+        file_path = self._build_file_path(filename, folder, scoped_tenant_id)
         
         upload_url = self._get_storage_url(f"object/{self.bucket}/{file_path}")
         
@@ -86,7 +93,11 @@ class FileService:
         public_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         signed_url = None
         try:
-            signed_url = await self.get_signed_url(file_path, expires_in=86400)
+            signed_url = await self.get_signed_url(
+                file_path,
+                expires_in=86400,
+                tenant_id=scoped_tenant_id,
+            )
         except Exception:
             # Bucket may be public or signed URL endpoint may be disabled; keep upload successful.
             signed_url = None
@@ -107,12 +118,14 @@ class FileService:
         filename: str,
         content_type: str,
         folder: str = "incidents",
+        tenant_id: str | None = None,
     ) -> dict:
         """
         Synchronous variant used by synchronous services (e.g., PDF export flow).
         """
         self._require_storage_config()
-        file_path = self._build_file_path(filename, folder)
+        scoped_tenant_id = require_tenant_id(tenant_id)
+        file_path = self._build_file_path(filename, folder, scoped_tenant_id)
         upload_url = self._get_storage_url(f"object/{self.bucket}/{file_path}")
 
         with httpx.Client() as client:
@@ -134,7 +147,11 @@ class FileService:
         public_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         signed_url = None
         try:
-            signed_url = self.get_signed_url_sync(file_path, expires_in=86400)
+            signed_url = self.get_signed_url_sync(
+                file_path,
+                expires_in=86400,
+                tenant_id=scoped_tenant_id,
+            )
         except Exception:
             signed_url = None
 
@@ -148,7 +165,7 @@ class FileService:
             "size": len(file_content),
         }
     
-    async def delete_file(self, file_path: str) -> bool:
+    async def delete_file(self, file_path: str, tenant_id: str | None) -> bool:
         """
         Delete a file from Supabase Storage.
         
@@ -158,6 +175,7 @@ class FileService:
         Returns:
             True if deleted successfully
         """
+        assert_storage_path_in_tenant(file_path, tenant_id)
         if not self.supabase_url or not self.service_key:
             return False
             
@@ -183,7 +201,12 @@ class FileService:
         """
         return f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
     
-    async def get_signed_url(self, file_path: str, expires_in: int = 3600) -> str:
+    async def get_signed_url(
+        self,
+        file_path: str,
+        expires_in: int = 3600,
+        tenant_id: str | None = None,
+    ) -> str:
         """
         Get a signed URL for private file access.
         
@@ -194,6 +217,7 @@ class FileService:
         Returns:
             Signed URL string
         """
+        assert_storage_path_in_tenant(file_path, tenant_id)
         if not self.supabase_url or not self.service_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -218,8 +242,14 @@ class FileService:
             data = response.json()
             return f"{self.supabase_url}/storage/v1{data['signedURL']}"
 
-    def get_signed_url_sync(self, file_path: str, expires_in: int = 3600) -> str:
+    def get_signed_url_sync(
+        self,
+        file_path: str,
+        expires_in: int = 3600,
+        tenant_id: str | None = None,
+    ) -> str:
         """Synchronous variant for signed URL generation."""
+        assert_storage_path_in_tenant(file_path, tenant_id)
         if not self.supabase_url or not self.service_key:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

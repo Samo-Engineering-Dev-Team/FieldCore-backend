@@ -12,6 +12,7 @@ from app.exceptions.http import (
     NotFoundException,
     ForbiddenException
 )
+from app.services.tenant_scope import get_task_tenant_id, get_tenant_noc_user_ids
 
 
 class _RoutineInspectionService:
@@ -49,23 +50,13 @@ class _RoutineInspectionService:
                 from app.utils.enums import UserRole
                 
                 notification_service = _NotificationService()
-                
-                # Notify all NOC operators
-                noc_users = session.exec(
-                    select(User).where(
-                        and_(
-                            User.role == UserRole.NOC,
-                            User.deleted_at.is_(None)
-                        )
-                    )
-                ).all()
-                
+                tenant_id = get_task_tenant_id(session, task)
                 # Get site name safely
                 site_name = task.site.name if task.site else "Unknown Site"
                 technician_name = technician.user.name if technician.user else "Unknown Technician"
                 
                 notification_service.create_notifications_from_template(
-                    user_ids=(noc_user.id for noc_user in noc_users),
+                    user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, tenant_id)),
                     template=NotificationTemplates.inspection_started(site_name, technician_name),
                     session=session,
                 )
@@ -162,18 +153,9 @@ class _RoutineInspectionService:
             site_name = task.site.name if task and task.site else "Unknown Site"
             
             notification_service = _NotificationService()
-            
-            noc_users = session.exec(
-                select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
-                )
-            ).all()
-            
+            tenant_id = get_task_tenant_id(session, task)
             notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
+                user_ids=(user_id for user_id in get_tenant_noc_user_ids(session, tenant_id)),
                 template=NotificationTemplates.inspection_completed(site_name),
                 session=session,
             )

@@ -43,7 +43,7 @@ router.include_router(routine_inspection_router, dependencies=[Depends(get_curre
 router.include_router(management_dashboard_router, dependencies=[Depends(get_current_user)])
 router.include_router(file_router, dependencies=[Depends(get_current_user)])
 router.include_router(client_router, dependencies=[Depends(get_current_user)])
-router.include_router(webhook_router)
+router.include_router(webhook_router, dependencies=[Depends(get_current_user)])
 router.include_router(sessions_router, dependencies=[Depends(get_current_user)])
 router.include_router(system_settings_router, dependencies=[Depends(get_current_user)])
 router.include_router(incident_report_router, dependencies=[Depends(get_current_user)])
