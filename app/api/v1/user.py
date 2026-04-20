@@ -12,10 +12,12 @@ from app.services.authorization import ADMIN_MANAGER_ROLES, assert_self_or_roles
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-def _resolve_tenant_scope(request: Request, tenant_id: str | None) -> str | None:
+def _resolve_tenant_scope(request: Request | None, tenant_id: str | None) -> str | None:
     query_tenant_id = tenant_id.strip() if tenant_id and tenant_id.strip() else None
-    header_tenant_id = request.headers.get("X-Tenant-ID")
-    header_tenant_id = header_tenant_id.strip() if header_tenant_id and header_tenant_id.strip() else None
+    header_tenant_id = None
+    if request is not None:
+        header_tenant_id = request.headers.get("X-Tenant-ID")
+        header_tenant_id = header_tenant_id.strip() if header_tenant_id and header_tenant_id.strip() else None
 
     if (
         query_tenant_id is not None
@@ -30,12 +32,12 @@ def _resolve_tenant_scope(request: Request, tenant_id: str | None) -> str | None
 @router.post("", response_model=UserResponse, status_code=201, include_in_schema=False)
 @router.post("/", response_model=UserResponse, status_code=201)
 def create_user(
-    request: Request,
     payload: UserCreate,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> UserResponse:
     """Create a new user. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -46,7 +48,6 @@ def create_user(
 @router.get("", response_model=List[UserResponse], status_code=200, include_in_schema=False)
 @router.get("/", response_model=List[UserResponse], status_code=200)
 def read_users(
-    request: Request,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
@@ -55,6 +56,7 @@ def read_users(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000),
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> List[UserResponse]:
     """Get all users. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -71,12 +73,12 @@ def read_users(
 
 @router.get("/{user_id}", response_model=UserResponse, status_code=200)
 def read_user(
-    request: Request,
     user_id: UUID,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> UserResponse:
     """"""
     assert_self_or_roles(
@@ -90,13 +92,13 @@ def read_user(
 
 @router.patch("/{user_id}", response_model=UserResponse, status_code=200)
 def update_user(
-    request: Request,
     user_id: UUID,
     payload: UserUpdate,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> UserResponse:
     """"""
     assert_self_or_roles(
@@ -115,13 +117,13 @@ def update_user(
 
 @router.patch("/{user_id}/role", response_model=UserResponse, status_code=200)
 def set_user_role(
-    request: Request,
     user_id: UUID,
     payload: UserRoleUpdate,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> UserResponse:
     """"""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -136,13 +138,13 @@ def set_user_role(
 
 @router.post("/{user_id}/reset-password", status_code=200)
 def reset_user_password(
-    request: Request,
     user_id: UUID,
     payload: AdminPasswordReset,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> dict:
     """Reset a user's password. Only accessible to admins."""
     if current_user.role != UserRole.ADMIN:
@@ -157,12 +159,12 @@ def reset_user_password(
 
 @router.patch("/{user_id}/status/activate", response_model=UserResponse, status_code=200)
 def activate_user(
-    request: Request,
     user_id: UUID,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> UserResponse:
     """"""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -176,12 +178,12 @@ def activate_user(
 
 @router.patch("/{user_id}/status/deactivate", response_model=UserResponse, status_code=200)
 def deactivate_user(
-    request: Request,
     user_id: UUID,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> UserResponse:
     """"""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -195,12 +197,12 @@ def deactivate_user(
 
 @router.delete("/{user_id}", status_code=204)
 def delete_user(
-    request: Request,
     user_id: UUID,
     service: UserService,
     session: Session,
     current_user: CurrentUser,
     tenant_id: str | None = Query(default=None),
+    request: Request = None,
 ) -> None:
     """Soft delete a user. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
