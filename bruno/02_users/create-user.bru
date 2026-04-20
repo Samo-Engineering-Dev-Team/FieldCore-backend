@@ -22,3 +22,9 @@ body:json {
 auth:bearer {
   token: {{token}}
 }
+
+script:post-response {
+  if (res.status === 201 && res.body?.id) {
+    bru.setEnvVar("user_id", res.body.id);
+  }
+}
