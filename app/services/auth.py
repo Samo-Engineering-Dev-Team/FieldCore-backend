@@ -749,6 +749,13 @@ def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenD
     return current_user
 
 
+def require_admin_or_super_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    """Dependency that ensures the current user is an admin or super admin."""
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
+        raise ForbiddenException("Admin or Super Admin access required")
+    return current_user
+
+
 def require_noc_or_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
     """Dependency that ensures the current user is NOC or admin."""
     if current_user.role not in (UserRole.ADMIN, UserRole.NOC):
@@ -773,6 +780,7 @@ def require_noc_or_manager_or_admin(current_user: TokenData = Depends(get_curren
 AuthService = Annotated[_AuthService, Depends(get_auth_service)]
 CurrentUser = Annotated[TokenData, Depends(get_current_user)]
 AdminUser = Annotated[TokenData, Depends(require_admin)]
+AdminOrSuperAdminUser = Annotated[TokenData, Depends(require_admin_or_super_admin)]
 NocOrAdminUser = Annotated[TokenData, Depends(require_noc_or_admin)]
 ManagerOrAdminUser = Annotated[TokenData, Depends(require_manager_or_admin)]
 NocOrManagerOrAdminUser = Annotated[TokenData, Depends(require_noc_or_manager_or_admin)]

@@ -12,18 +12,19 @@ from app.models import (
     LicenseProductCatalog,
     LicenseProductCreate,
     LicenseProductResponse,
+    LicensingDashboardResponse,
     TenantLicenseAssign,
     TenantLicenseDetail,
     TenantLicenseUnassign,
 )
-from app.services.auth import AdminUser, require_admin
+from app.services.auth import AdminOrSuperAdminUser, require_admin_or_super_admin
 from app.services.licensing import LicensingServiceDep
 
 
 router = APIRouter(
     prefix="/licensing",
     tags=["Licensing"],
-    dependencies=[Depends(require_admin)],
+    dependencies=[Depends(require_admin_or_super_admin)],
 )
 
 
@@ -88,10 +89,25 @@ def list_entitlements(
     return service.list_entitlements(session, license_plan_id)
 
 
+@router.get("/dashboard", response_model=LicensingDashboardResponse, status_code=200)
+def get_licensing_dashboard(
+    service: LicensingServiceDep,
+    session: Session,
+    expiring_within_days: int = Query(default=30, ge=0, le=365),
+    history_limit: int = Query(default=20, ge=1, le=100),
+) -> LicensingDashboardResponse:
+    """Get aggregate licensing oversight data for platform admins."""
+    return service.get_dashboard_overview(
+        session,
+        expiring_within_days=expiring_within_days,
+        history_limit=history_limit,
+    )
+
+
 @router.post("/tenant-licenses", response_model=TenantLicenseDetail, status_code=201)
 def assign_tenant_license(
     payload: TenantLicenseAssign,
-    current_user: AdminUser,
+    current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
 ) -> TenantLicenseDetail:
@@ -118,7 +134,7 @@ def list_tenant_licenses(
 def unassign_tenant_license(
     tenant_license_id: UUID,
     payload: TenantLicenseUnassign,
-    current_user: AdminUser,
+    current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
 ) -> TenantLicenseDetail:

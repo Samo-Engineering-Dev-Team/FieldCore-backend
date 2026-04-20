@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import UUID
 
@@ -12,6 +12,8 @@ from app.models import (
     EntitlementCreate,
     EntitlementResponse,
     LicenseHistory,
+    LicenseHistoryDetail,
+    LicenseHistoryResponse,
     LicensePlan,
     LicensePlanCreate,
     LicensePlanDetail,
@@ -20,8 +22,11 @@ from app.models import (
     LicenseProductCatalog,
     LicenseProductCreate,
     LicenseProductResponse,
+    LicensingDashboardMetrics,
+    LicensingDashboardResponse,
     TenantLicense,
     TenantLicenseAssign,
+    TenantLicenseDashboardSummary,
     TenantLicenseDetail,
     TenantLicenseResponse,
     TenantLicenseUnassign,
@@ -409,6 +414,195 @@ class LicensingService:
             for tenant_license, plan, product in rows
         ]
 
+    def get_dashboard_overview(
+        self,
+        session: Session,
+        *,
+        expiring_within_days: int = 30,
+        history_limit: int = 20,
+    ) -> LicensingDashboardResponse:
+        window_days = max(expiring_within_days, 0)
+        limited_history = min(max(history_limit, 1), 100)
+        now = _as_utc(utcnow())
+        expiring_cutoff = now + timedelta(days=window_days)
+
+        assignments = self.list_tenant_licenses(session, active_only=False)
+        plan_ids = sorted({assignment.license_plan_id for assignment in assignments})
+
+        entitlement_counts_by_plan: dict[UUID, int] = {}
+        if plan_ids:
+            entitlement_counts = session.exec(
+                select(Entitlement.license_plan_id, func.count(Entitlement.id))
+                .where(
+                    Entitlement.deleted_at.is_(None),
+                    Entitlement.is_enabled == True,  # noqa: E712
+                    Entitlement.license_plan_id.in_(plan_ids),
+                )
+                .group_by(Entitlement.license_plan_id)
+            ).all()
+            entitlement_counts_by_plan = {
+                license_plan_id: entitlement_count
+                for license_plan_id, entitlement_count in entitlement_counts
+            }
+
+        latest_history_by_tenant: dict[str, LicenseHistory] = {}
+        history_rows = list(
+            session.exec(
+                select(LicenseHistory)
+                .where(LicenseHistory.deleted_at.is_(None))
+                .order_by(LicenseHistory.effective_at.desc(), LicenseHistory.created_at.desc())
+            ).all()
+        )
+        for history in history_rows:
+            latest_history_by_tenant.setdefault(history.tenant_id, history)
+
+        changes_last_30_days = session.exec(
+            select(func.count(LicenseHistory.id)).where(
+                LicenseHistory.deleted_at.is_(None),
+                LicenseHistory.effective_at >= now - timedelta(days=30),
+            )
+        ).one()
+
+        summary_map: dict[str, dict[str, object]] = {}
+        active_assignments = 0
+        active_entitlements = 0
+        expiring_soon_assignments = 0
+        expired_assignments = 0
+        scheduled_assignments = 0
+
+        for assignment in assignments:
+            summary = summary_map.setdefault(
+                assignment.tenant_id,
+                {
+                    "tenant_id": assignment.tenant_id,
+                    "total_license_count": 0,
+                    "active_license_count": 0,
+                    "scheduled_license_count": 0,
+                    "expired_license_count": 0,
+                    "active_entitlement_count": 0,
+                    "product_skus": set(),
+                    "plan_codes": set(),
+                    "plan_names": set(),
+                    "next_expiry_at": None,
+                },
+            )
+
+            summary["total_license_count"] = int(summary["total_license_count"]) + 1
+            cast_product_skus = summary["product_skus"]
+            cast_plan_codes = summary["plan_codes"]
+            cast_plan_names = summary["plan_names"]
+            if isinstance(cast_product_skus, set):
+                cast_product_skus.add(assignment.product_sku)
+            if isinstance(cast_plan_codes, set):
+                cast_plan_codes.add(assignment.plan_code)
+            if isinstance(cast_plan_names, set):
+                cast_plan_names.add(assignment.plan_name)
+
+            starts_at = _as_utc(assignment.starts_at)
+            ends_at = _as_utc(assignment.ends_at) if assignment.ends_at is not None else None
+            is_active = starts_at <= now and (ends_at is None or ends_at > now)
+            is_scheduled = starts_at > now
+            is_expired = ends_at is not None and ends_at <= now
+
+            if is_active:
+                summary["active_license_count"] = int(summary["active_license_count"]) + 1
+                entitlement_count = entitlement_counts_by_plan.get(assignment.license_plan_id, 0)
+                summary["active_entitlement_count"] = (
+                    int(summary["active_entitlement_count"]) + entitlement_count
+                )
+                active_assignments += 1
+                active_entitlements += entitlement_count
+                if ends_at is not None:
+                    current_expiry = summary["next_expiry_at"]
+                    if current_expiry is None or ends_at < current_expiry:
+                        summary["next_expiry_at"] = ends_at
+                    if ends_at <= expiring_cutoff:
+                        expiring_soon_assignments += 1
+                continue
+
+            if is_scheduled:
+                summary["scheduled_license_count"] = int(summary["scheduled_license_count"]) + 1
+                scheduled_assignments += 1
+                continue
+
+            if is_expired:
+                summary["expired_license_count"] = int(summary["expired_license_count"]) + 1
+                expired_assignments += 1
+
+        summaries: list[TenantLicenseDashboardSummary] = []
+        for tenant_id, raw_summary in summary_map.items():
+            latest_history = latest_history_by_tenant.get(tenant_id)
+            active_license_count = int(raw_summary["active_license_count"])
+            scheduled_license_count = int(raw_summary["scheduled_license_count"])
+            expired_license_count = int(raw_summary["expired_license_count"])
+            next_expiry_at = raw_summary["next_expiry_at"]
+
+            if active_license_count > 0 and next_expiry_at is not None and next_expiry_at <= expiring_cutoff:
+                status = "expiring_soon"
+            elif active_license_count > 0:
+                status = "active"
+            elif scheduled_license_count > 0:
+                status = "scheduled"
+            elif expired_license_count > 0:
+                status = "expired"
+            else:
+                status = "inactive"
+
+            summaries.append(
+                TenantLicenseDashboardSummary(
+                    tenant_id=tenant_id,
+                    status=status,
+                    total_license_count=int(raw_summary["total_license_count"]),
+                    active_license_count=active_license_count,
+                    scheduled_license_count=scheduled_license_count,
+                    expired_license_count=expired_license_count,
+                    active_entitlement_count=int(raw_summary["active_entitlement_count"]),
+                    product_skus=sorted(raw_summary["product_skus"]),
+                    plan_codes=sorted(raw_summary["plan_codes"]),
+                    plan_names=sorted(raw_summary["plan_names"]),
+                    next_expiry_at=next_expiry_at,
+                    last_action=latest_history.action if latest_history else None,
+                    last_action_at=latest_history.effective_at if latest_history else None,
+                )
+            )
+        summaries.sort(key=lambda summary: summary.tenant_id)
+
+        recent_history_rows = session.exec(
+            select(LicenseHistory, LicensePlan, LicenseProduct)
+            .join(LicensePlan, LicenseHistory.license_plan_id == LicensePlan.id)
+            .join(LicenseProduct, LicensePlan.license_product_id == LicenseProduct.id)
+            .where(
+                LicenseHistory.deleted_at.is_(None),
+                LicensePlan.deleted_at.is_(None),
+                LicenseProduct.deleted_at.is_(None),
+            )
+            .order_by(LicenseHistory.effective_at.desc(), LicenseHistory.created_at.desc())
+            .limit(limited_history)
+        ).all()
+
+        return LicensingDashboardResponse(
+            generated_at=now,
+            metrics=LicensingDashboardMetrics(
+                tracked_tenants=len(summaries),
+                licensed_tenants=sum(
+                    1
+                    for summary in summaries
+                    if summary.active_license_count > 0
+                ),
+                active_assignments=active_assignments,
+                active_entitlements=active_entitlements,
+                expiring_soon_assignments=expiring_soon_assignments,
+                expired_assignments=expired_assignments,
+                scheduled_assignments=scheduled_assignments,
+                changes_last_30_days=changes_last_30_days,
+            ),
+            tenant_summaries=summaries,
+            recent_history=[
+                self._serialize_history_detail(history, plan, product)
+                for history, plan, product in recent_history_rows
+            ],
+        )
+
     def unassign_tenant_license(
         self,
         tenant_license_id: UUID,
@@ -520,6 +714,21 @@ class LicensingService:
         return TenantLicenseDetail(
             **response.model_dump(),
             license_product_id=product.id,
+            product_sku=product.sku,
+            product_name=product.name,
+            plan_code=plan.code,
+            plan_name=plan.name,
+        )
+
+    def _serialize_history_detail(
+        self,
+        history: LicenseHistory,
+        plan: LicensePlan,
+        product: LicenseProduct,
+    ) -> LicenseHistoryDetail:
+        response = LicenseHistoryResponse.model_validate(history)
+        return LicenseHistoryDetail(
+            **response.model_dump(),
             product_sku=product.sku,
             product_name=product.name,
             plan_code=plan.code,

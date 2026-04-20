@@ -182,6 +182,13 @@ class LicenseHistoryResponse(BaseDB, LicenseHistoryBase):
     pass
 
 
+class LicenseHistoryDetail(LicenseHistoryResponse):
+    product_sku: str
+    product_name: str
+    plan_code: str
+    plan_name: str
+
+
 class LicensePlanDetail(LicensePlanResponse):
     entitlements: list[EntitlementResponse] = Field(default_factory=list)
 
@@ -196,3 +203,37 @@ class TenantLicenseDetail(TenantLicenseResponse):
     product_name: str
     plan_code: str
     plan_name: str
+
+
+class TenantLicenseDashboardSummary(SQLModel):
+    tenant_id: str
+    status: str
+    total_license_count: int = 0
+    active_license_count: int = 0
+    scheduled_license_count: int = 0
+    expired_license_count: int = 0
+    active_entitlement_count: int = 0
+    product_skus: list[str] = Field(default_factory=list)
+    plan_codes: list[str] = Field(default_factory=list)
+    plan_names: list[str] = Field(default_factory=list)
+    next_expiry_at: datetime | None = None
+    last_action: LicenseHistoryAction | None = None
+    last_action_at: datetime | None = None
+
+
+class LicensingDashboardMetrics(SQLModel):
+    tracked_tenants: int = 0
+    licensed_tenants: int = 0
+    active_assignments: int = 0
+    active_entitlements: int = 0
+    expiring_soon_assignments: int = 0
+    expired_assignments: int = 0
+    scheduled_assignments: int = 0
+    changes_last_30_days: int = 0
+
+
+class LicensingDashboardResponse(SQLModel):
+    generated_at: datetime = Field(default_factory=utcnow)
+    metrics: LicensingDashboardMetrics
+    tenant_summaries: list[TenantLicenseDashboardSummary] = Field(default_factory=list)
+    recent_history: list[LicenseHistoryDetail] = Field(default_factory=list)

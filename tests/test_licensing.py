@@ -18,7 +18,7 @@ from app.models import (
     TenantLicenseAssign,
     TenantLicenseUnassign,
 )
-from app.services.auth import require_admin
+from app.services.auth import require_admin_or_super_admin
 from app.services.licensing import LicensingService, tenant_has_entitlement
 from app.utils.enums import LicenseHistoryAction
 from app.utils.funcs import utcnow
@@ -41,9 +41,9 @@ def session() -> Session:
         yield session
 
 
-def test_licensing_router_requires_admin() -> None:
+def test_licensing_router_requires_platform_admin() -> None:
     assert any(
-        getattr(dependency, "dependency", None) == require_admin
+        getattr(dependency, "dependency", None) == require_admin_or_super_admin
         for dependency in licensing_router.dependencies
     )
 
@@ -153,3 +153,103 @@ def test_assign_tenant_license_rejects_overlap(session: Session) -> None:
             session,
             actor_user_id=uuid4(),
         )
+
+
+def test_dashboard_overview_summarizes_licenses_and_history(session: Session) -> None:
+    service = LicensingService()
+    actor_user_id = uuid4()
+    now = utcnow()
+
+    product = service.create_product(
+        LicenseProductCreate(
+            sku="FIELDCORE-ENTERPRISE",
+            name="FieldCore Enterprise",
+        ),
+        session,
+    )
+    plan = service.create_plan(
+        LicensePlanCreate(
+            license_product_id=product.id,
+            code="ENT-MONTHLY",
+            name="Enterprise Monthly",
+        ),
+        session,
+    )
+    service.create_entitlement(
+        EntitlementCreate(
+            license_plan_id=plan.id,
+            feature_key="reports.export",
+            feature_name="Report export",
+        ),
+        session,
+    )
+    service.create_entitlement(
+        EntitlementCreate(
+            license_plan_id=plan.id,
+            feature_key="dashboards.executive",
+            feature_name="Executive dashboards",
+        ),
+        session,
+    )
+
+    service.assign_tenant_license(
+        TenantLicenseAssign(
+            tenant_id="tenant-active",
+            license_plan_id=plan.id,
+            starts_at=now - timedelta(days=5),
+            ends_at=now + timedelta(days=7),
+            note="Renewed for April",
+        ),
+        session,
+        actor_user_id=actor_user_id,
+    )
+    service.assign_tenant_license(
+        TenantLicenseAssign(
+            tenant_id="tenant-scheduled",
+            license_plan_id=plan.id,
+            starts_at=now + timedelta(days=2),
+            ends_at=now + timedelta(days=32),
+            note="Starts next cycle",
+        ),
+        session,
+        actor_user_id=actor_user_id,
+    )
+    service.assign_tenant_license(
+        TenantLicenseAssign(
+            tenant_id="tenant-expired",
+            license_plan_id=plan.id,
+            starts_at=now - timedelta(days=20),
+            ends_at=now - timedelta(days=2),
+            note="Expired last week",
+        ),
+        session,
+        actor_user_id=actor_user_id,
+    )
+
+    overview = service.get_dashboard_overview(
+        session,
+        expiring_within_days=30,
+        history_limit=10,
+    )
+
+    assert overview.metrics.tracked_tenants == 3
+    assert overview.metrics.licensed_tenants == 1
+    assert overview.metrics.active_assignments == 1
+    assert overview.metrics.active_entitlements == 2
+    assert overview.metrics.expiring_soon_assignments == 1
+    assert overview.metrics.expired_assignments == 1
+    assert overview.metrics.scheduled_assignments == 1
+    assert overview.metrics.changes_last_30_days == 3
+
+    summaries = {summary.tenant_id: summary for summary in overview.tenant_summaries}
+    assert summaries["tenant-active"].status == "expiring_soon"
+    assert summaries["tenant-active"].active_license_count == 1
+    assert summaries["tenant-active"].active_entitlement_count == 2
+    assert summaries["tenant-scheduled"].status == "scheduled"
+    assert summaries["tenant-scheduled"].scheduled_license_count == 1
+    assert summaries["tenant-expired"].status == "expired"
+    assert summaries["tenant-expired"].expired_license_count == 1
+
+    assert len(overview.recent_history) == 3
+    assert overview.recent_history[0].product_sku == "FIELDCORE-ENTERPRISE"
+    assert overview.recent_history[0].plan_code == "ENT-MONTHLY"
