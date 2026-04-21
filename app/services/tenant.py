@@ -34,6 +34,8 @@ from app.models import (
     TenantRowAction,
     TenantSettingImportItem,
     TenantStatus,
+    TenantSubscription,
+    TenantSubscriptionState,
     TenantUsageDaily,
     User,
     Webhook,
@@ -680,6 +682,11 @@ class _TenantService:
                 action=action if mode == TenantOffboardMode.DELETE else "deactivate",
             ),
             TenantRowAction(
+                table="tenant_subscriptions",
+                rows=self._count_model(session, TenantSubscription, TenantSubscription.tenant_id == tenant_id),
+                action=action if mode == TenantOffboardMode.DELETE else "cancel",
+            ),
+            TenantRowAction(
                 table="tenant_licenses",
                 rows=self._count_model(session, TenantLicense, TenantLicense.tenant_id == tenant_id),
                 action=action if mode == TenantOffboardMode.DELETE else "end_active_assignments",
@@ -769,6 +776,16 @@ class _TenantService:
                 )
             )
 
+        if self._table_exists(session, TenantSubscription.__tablename__):
+            session.execute(
+                update(TenantSubscription)
+                .where(
+                    TenantSubscription.tenant_id == tenant.id,
+                    TenantSubscription.state != TenantSubscriptionState.CANCELLED,
+                )
+                .values(state=TenantSubscriptionState.CANCELLED, updated_at=now)
+            )
+
     def _delete_tenant_rows(self, session: Session, tenant_id: str) -> None:
         user_ids = list(
             session.exec(select(User.id).where(User.tenant_id == tenant_id)).all()
@@ -778,6 +795,7 @@ class _TenantService:
         self._delete_model_by_tenant(session, TenantComplianceRecord, tenant_id)
         self._delete_model_by_tenant(session, TenantUsageDaily, tenant_id)
         self._delete_model_by_tenant(session, TenantFeatureUsageEvent, tenant_id)
+        self._delete_model_by_tenant(session, TenantSubscription, tenant_id)
         self._delete_model_by_tenant(session, TenantLicense, tenant_id)
         self._delete_model_by_tenant(session, Webhook, tenant_id)
         self._delete_model_by_tenant(session, SystemSetting, tenant_id)

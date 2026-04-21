@@ -137,6 +137,10 @@ class AppSettings(BaseSettings):
         ge=0,
         description="Delay before optional metering loop starts after boot",
     )
+    BILLING_WEBHOOK_SECRET: str | None = Field(
+        default=None,
+        description="Optional shared secret for mock billing webhook ingestion",
+    )
 
     # Email / MS Exchange SMTP
     # For Exchange Online (Microsoft 365): SMTP_HOST=smtp.office365.com, SMTP_PORT=587

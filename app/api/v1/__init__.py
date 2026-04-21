@@ -20,6 +20,7 @@ from .system_settings import router as system_settings_router
 from .incident_report import router as incident_report_router
 from .maintenance_schedule import router as maintenance_schedule_router
 from .route_patrol import router as route_patrol_router
+from .billing import router as billing_router
 from .licensing import router as licensing_router
 from .tenant import router as tenant_router
 from .audit import router as audit_router
@@ -33,6 +34,7 @@ if _allow_dev:
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
+router.include_router(billing_router)
 router.include_router(user_router, dependencies=[Depends(get_current_user)])
 router.include_router(technician_router, dependencies=[Depends(get_current_user)])
 router.include_router(site_router, dependencies=[Depends(get_current_user)])

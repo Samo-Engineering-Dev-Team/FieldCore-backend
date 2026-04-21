@@ -20,6 +20,7 @@ from .route_patrol import RoutePatrolService, get_route_patrol_service
 from .pdf import PDFService, get_pdf_service
 from .licensing import LicensingService, tenant_has_entitlement
 from .licensing_compliance import LicensingComplianceService, get_licensing_compliance_service
+from .billing import BillingSubscriptionService, get_billing_subscription_service
 from .system_settings import SystemSettingsService, get_system_settings_service
 from .tenant import TenantServiceDep, get_tenant_service
 
@@ -30,6 +31,7 @@ __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
            "WebhookService", "PresenceService", "IncidentReportService", "get_incident_report_service",
            "LicensingService", "tenant_has_entitlement",
            "LicensingComplianceService", "get_licensing_compliance_service",
+           "BillingSubscriptionService", "get_billing_subscription_service",
            "PDFService", "get_pdf_service",
            "SystemSettingsService", "get_system_settings_service",
            "TenantServiceDep", "get_tenant_service",
