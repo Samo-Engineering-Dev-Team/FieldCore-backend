@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import Text
+from sqlalchemy import JSON, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from typing import Any
@@ -8,6 +8,8 @@ from pydantic import field_validator
 import json
 
 from app.utils.funcs import utcnow
+
+JSON_VARIANT = JSON().with_variant(JSONB, "postgresql")
 
 
 class SystemSettingBase(SQLModel):
@@ -19,7 +21,7 @@ class SystemSettingBase(SQLModel):
         index=True,
         description="Optional tenant scope for tenant-specific integration settings",
     )
-    value: Any = Field(sa_column=Column(JSONB), description="Setting value stored as JSON")
+    value: Any = Field(sa_column=Column(JSON_VARIANT), description="Setting value stored as JSON")
     description: str | None = Field(default=None, sa_column=Column(Text), description="Setting description")
     category: str = Field(default="general", max_length=50, description="Setting category")
 

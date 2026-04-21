@@ -178,6 +178,34 @@ class Database:
                         "Applied schema compatibility fix: added system_settings.tenant_id column"
                     )
 
+                if cls.connection.dialect.name == "postgresql":
+                    connection.execute(
+                        text(
+                            """
+                            ALTER TABLE system_settings
+                            DROP CONSTRAINT IF EXISTS system_settings_key_key
+                            """
+                        )
+                    )
+                    connection.execute(
+                        text(
+                            """
+                            CREATE UNIQUE INDEX IF NOT EXISTS uq_system_settings_global_key
+                            ON system_settings (key)
+                            WHERE tenant_id IS NULL
+                            """
+                        )
+                    )
+                    connection.execute(
+                        text(
+                            """
+                            CREATE UNIQUE INDEX IF NOT EXISTS uq_system_settings_tenant_key
+                            ON system_settings (tenant_id, key)
+                            WHERE tenant_id IS NOT NULL
+                            """
+                        )
+                    )
+
     @classmethod
     def get_session(cls) -> Generator[_Session, None, None]:
         """Get a database session for request handling."""

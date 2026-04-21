@@ -21,6 +21,7 @@ from .pdf import PDFService, get_pdf_service
 from .licensing import LicensingService, tenant_has_entitlement
 from .licensing_compliance import LicensingComplianceService, get_licensing_compliance_service
 from .system_settings import SystemSettingsService, get_system_settings_service
+from .tenant import TenantServiceDep, get_tenant_service
 
 __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
            "SiteService", "TaskService", "IncidentService", "ReportService",
@@ -31,6 +32,7 @@ __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
            "LicensingComplianceService", "get_licensing_compliance_service",
            "PDFService", "get_pdf_service",
            "SystemSettingsService", "get_system_settings_service",
+           "TenantServiceDep", "get_tenant_service",
            "FaultUpdateService", "get_fault_update_service",
            "MaintenanceScheduleService", "get_maintenance_schedule_service",
            "RoutePatrolService", "get_route_patrol_service",
