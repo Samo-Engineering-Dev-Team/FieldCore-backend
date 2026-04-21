@@ -121,7 +121,7 @@ def export_report_pdf(
     if current_user.role not in allowed_roles:
         raise ForbiddenException("You do not have permission to export reports.")
     
-    pdf_buffer, filename = service.export_report_pdf(report_id, session)
+    pdf_buffer, filename = service.export_report_pdf(report_id, session, current_user)
     
     # Get the PDF bytes from the buffer
     pdf_bytes = pdf_buffer.getvalue()

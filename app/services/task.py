@@ -19,6 +19,9 @@ from app.exceptions.http import (
 )
 from app.services.authorization import get_technician_id_for_user, is_management
 from app.services.tenant_scope import (
+    assert_tenant_access,
+    get_current_user_tenant_scope,
+    get_technician_tenant_id,
     get_task_tenant_id,
     get_tenant_noc_user_ids,
     get_tenant_notification_recipients,
@@ -112,11 +115,27 @@ class _TaskService:
         action: str,
     ) -> None:
         if is_management(current_user):
+            assert_tenant_access(
+                get_task_tenant_id(session, task),
+                current_user,
+                f"You do not have permission to {action} this task.",
+            )
             return
 
         technician_id = get_technician_id_for_user(current_user.user_id, session)
         if task.technician_id != technician_id:
             raise ForbiddenException(f"You do not have permission to {action} this task.")
+
+    def _scope_task_statement_to_current_tenant(self, statement, current_user: TokenData):
+        scoped_tenant_id = get_current_user_tenant_scope(current_user)
+        if scoped_tenant_id is None:
+            return statement
+        return (
+            statement
+            .join(Technician, Task.technician_id == Technician.id)
+            .join(User, Technician.user_id == User.id)
+            .where(User.tenant_id == scoped_tenant_id)
+        )
 
     def _ensure_auto_report_for_task(
         self,
@@ -178,6 +197,11 @@ class _TaskService:
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician not found")
+        assert_tenant_access(
+            get_technician_tenant_id(session, technician.id),
+            current_user,
+            "You do not have permission to assign tasks outside your tenant.",
+        )
 
         # Look up assigning user name
         assigned_by_user_id = None
@@ -247,6 +271,7 @@ class _TaskService:
         if is_management(current_user):
             if technician_id is not None:
                 statement = statement.where(Task.technician_id == technician_id)
+            statement = self._scope_task_statement_to_current_tenant(statement, current_user)
         else:
             technician_id = get_technician_id_for_user(current_user.user_id, session)
             statement = statement.where(Task.technician_id == technician_id)
@@ -266,12 +291,24 @@ class _TaskService:
             raise ForbiddenException("Only NOC, managers, or admins can update tasks.")
 
         task = self._get_task(task_id, session)
+        assert_tenant_access(
+            get_task_tenant_id(session, task),
+            current_user,
+            "You do not have permission to update this task.",
+        )
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
         )
 
         if not update_data:
             return self.task_to_response(task, session)
+
+        if "technician_id" in update_data:
+            assert_tenant_access(
+                get_technician_tenant_id(session, update_data["technician_id"]),
+                current_user,
+                "You do not have permission to assign tasks outside your tenant.",
+            )
 
         for k, v in update_data.items():
             setattr(task, k, v)
@@ -294,6 +331,11 @@ class _TaskService:
             raise ForbiddenException("Only NOC, managers, or admins can delete tasks.")
 
         task = self._get_task(task_id, session)
+        assert_tenant_access(
+            get_task_tenant_id(session, task),
+            current_user,
+            "You do not have permission to delete this task.",
+        )
 
         # Notify the assigned technician before deleting so they don't travel to the site.
         try:

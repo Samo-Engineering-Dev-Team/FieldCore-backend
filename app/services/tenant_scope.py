@@ -33,6 +33,34 @@ def require_tenant_id(
     return normalized
 
 
+def is_platform_scope(current_user: Any) -> bool:
+    role = getattr(current_user, "role", None)
+    tenant_id = normalize_tenant_id(getattr(current_user, "tenant_id", None))
+    return role == UserRole.SUPER_ADMIN or (role == UserRole.ADMIN and tenant_id is None)
+
+
+def get_current_user_tenant_scope(
+    current_user: Any,
+    message: str = "authenticated user is missing tenant scope",
+) -> str | None:
+    if is_platform_scope(current_user):
+        return None
+    return require_tenant_id(getattr(current_user, "tenant_id", None), message)
+
+
+def assert_tenant_access(
+    resource_tenant_id: str | None,
+    current_user: Any,
+    message: str = "resource is outside current tenant scope",
+) -> None:
+    scoped_user_tenant_id = get_current_user_tenant_scope(current_user)
+    if scoped_user_tenant_id is None:
+        return
+
+    if normalize_tenant_id(resource_tenant_id) != scoped_user_tenant_id:
+        raise ForbiddenException(message)
+
+
 def _split_storage_segments(path: str) -> list[str]:
     if not isinstance(path, str):
         raise BadRequestException("storage path must be a string")

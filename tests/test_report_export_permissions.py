@@ -13,7 +13,7 @@ class StubReportService:
     def __init__(self) -> None:
         self.called = False
 
-    def export_report_pdf(self, report_id, session):
+    def export_report_pdf(self, report_id, session, current_user=None):
         self.called = True
         return BytesIO(b"%PDF-1.4 test"), f"report_{report_id}.pdf"
 

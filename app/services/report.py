@@ -9,7 +9,7 @@ from loguru import logger as LOG
 import time
 
 from app.utils.enums import ReportType, ReportStatus, UserRole
-from app.models import Report, ReportCreate, ReportUpdate, ReportResponse, Task, Technician
+from app.models import Report, ReportCreate, ReportUpdate, ReportResponse, Task, Technician, User
 from app.models.auth import TokenData
 from app.exceptions.http import (
     ConflictException,
@@ -23,7 +23,12 @@ from app.services.report_support import (
     normalize_attachment_item,
     normalize_attachments,
 )
-from app.services.tenant_scope import get_task_tenant_id
+from app.services.tenant_scope import (
+    assert_tenant_access,
+    get_current_user_tenant_scope,
+    get_task_tenant_id,
+    get_technician_tenant_id,
+)
 
 
 class _ReportService:
@@ -91,11 +96,27 @@ class _ReportService:
         action: str,
     ) -> None:
         if current_user.role != UserRole.TECHNICIAN:
+            assert_tenant_access(
+                get_technician_tenant_id(session, report.technician_id),
+                current_user,
+                f"You do not have permission to {action} this report",
+            )
             return
 
         technician = self._get_technician_by_user(current_user.user_id, session)
         if report.technician_id != technician.id:
             raise ForbiddenException(f"Technicians can only {action} their own reports")
+
+    def _scope_report_statement_to_current_tenant(self, statement, current_user: TokenData):
+        scoped_tenant_id = get_current_user_tenant_scope(current_user)
+        if scoped_tenant_id is None:
+            return statement
+        return (
+            statement
+            .join(Technician, Report.technician_id == Technician.id)
+            .join(User, Technician.user_id == User.id)
+            .where(User.tenant_id == scoped_tenant_id)
+        )
 
     def create_report(
         self,
@@ -108,6 +129,12 @@ class _ReportService:
             if data.technician_id != technician.id:
                 raise ForbiddenException("Technicians can only create reports for themselves")
             data = data.model_copy(update={"technician_id": technician.id})
+        else:
+            assert_tenant_access(
+                get_technician_tenant_id(session, data.technician_id),
+                current_user,
+                "You do not have permission to create reports outside your tenant",
+            )
 
         report_data = data.model_dump()
         report_data["attachments"] = self._normalize_attachments(report_data.get("attachments"))
@@ -179,8 +206,10 @@ class _ReportService:
         if current_user.role == UserRole.TECHNICIAN:
             technician = self._get_technician_by_user(current_user.user_id, session)
             statement = statement.where(Report.technician_id == technician.id)
-        elif technician_id is not None:
-            statement = statement.where(Report.technician_id == technician_id)
+        else:
+            if technician_id is not None:
+                statement = statement.where(Report.technician_id == technician_id)
+            statement = self._scope_report_statement_to_current_tenant(statement, current_user)
 
         if report_type is not None:
             statement = statement.where(Report.report_type == report_type)
@@ -400,7 +429,12 @@ class _ReportService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error completing report: {e}")
 
-    def export_report_pdf(self, report_id: UUID, session: Session) -> tuple[BytesIO, str]:
+    def export_report_pdf(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData | None = None,
+    ) -> tuple[BytesIO, str]:
         """
         Export a completed report as a PDF document.
         
@@ -416,6 +450,8 @@ class _ReportService:
             ForbiddenException: If report is not completed
         """
         report = self._get_report(report_id, session)
+        if current_user is not None:
+            self._assert_can_access_report(report, current_user, session, "export")
         
         if report.status != ReportStatus.COMPLETED:
             raise ForbiddenException("Only completed reports can be exported as PDF")
