@@ -107,13 +107,13 @@ class PasswordChange(BaseModel):
     )
     new_password: str = Field(
         min_length=8,
-        max_length=16,
-        description="The new password (8-16 characters)",
+        max_length=128,
+        description="The new password (8-128 characters)",
         examples=["NewPassword456"]
     )
     confirm_password: str = Field(
         min_length=8,
-        max_length=16,
+        max_length=128,
         description="Confirm the new password",
         examples=["NewPassword456"]
     )
@@ -124,13 +124,13 @@ class AdminPasswordReset(BaseModel):
 
     new_password: str = Field(
         min_length=8,
-        max_length=16,
-        description="The replacement password (8-16 characters)",
+        max_length=128,
+        description="The replacement password (8-128 characters)",
         examples=["ResetPassword456"]
     )
     confirm_password: str = Field(
         min_length=8,
-        max_length=16,
+        max_length=128,
         description="Confirm the replacement password",
         examples=["ResetPassword456"]
     )
@@ -141,13 +141,13 @@ class PasswordResetCompletion(BaseModel):
 
     new_password: str = Field(
         min_length=8,
-        max_length=16,
-        description="The user's final replacement password (8-16 characters)",
+        max_length=128,
+        description="The user's final replacement password (8-128 characters)",
         examples=["FinalPassword456"]
     )
     confirm_password: str = Field(
         min_length=8,
-        max_length=16,
+        max_length=128,
         description="Confirm the user's final replacement password",
         examples=["FinalPassword456"]
     )

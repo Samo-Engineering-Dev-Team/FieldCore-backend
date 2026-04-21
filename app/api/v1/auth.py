@@ -18,8 +18,17 @@ from app.services import AuthService, CurrentUser
 from app.services.auth import NocOrManagerOrAdminUser
 from app.database import Session
 from app.core.rate_limiter import limiter
+from app.core.settings import app_settings
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+def _client_ip(request: Request) -> str | None:
+    if app_settings.TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 @router.post("/login", response_model=Token, status_code=201)
@@ -31,7 +40,7 @@ def login(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     ) -> Token:
     """Authenticate user and return JWT access token. Rate limited to 5 requests per minute."""
-    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    ip = _client_ip(request)
     ua = request.headers.get("User-Agent")
     return service.authenticate(
         LoginForm(email=form.username, password=form.password),
@@ -61,7 +70,7 @@ def verify_passkey_login(
     session: Session,
 ) -> Token:
     """Verify WebAuthn authentication and issue JWT token."""
-    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    ip = _client_ip(request)
     ua = request.headers.get("User-Agent")
     return service.finish_passkey_authentication(
         payload,

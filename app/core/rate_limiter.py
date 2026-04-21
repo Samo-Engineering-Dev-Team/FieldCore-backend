@@ -164,7 +164,7 @@ class TenantRateLimiter:
             return None
 
     def _client_host(self, request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
+        forwarded = request.headers.get("X-Forwarded-For") if app_settings.TRUST_PROXY_HEADERS else None
         if forwarded:
             return forwarded.split(",")[0].strip()
         if request.client:

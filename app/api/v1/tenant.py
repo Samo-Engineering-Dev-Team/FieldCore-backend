@@ -9,7 +9,7 @@ from app.models import (
     TenantOperationalImportRequest,
     TenantOperationalImportResponse,
 )
-from app.services.auth import AdminOrSuperAdminUser, require_admin_or_super_admin
+from app.services.auth import PlatformAdminUser, require_platform_admin
 from app.services.audit import request_id_from_headers
 from app.services.tenant import TenantServiceDep
 
@@ -17,7 +17,7 @@ from app.services.tenant import TenantServiceDep
 router = APIRouter(
     prefix="/tenants",
     tags=["Tenants"],
-    dependencies=[Depends(require_admin_or_super_admin)],
+    dependencies=[Depends(require_platform_admin)],
 )
 
 
@@ -25,7 +25,7 @@ router = APIRouter(
 def bootstrap_tenant(
     payload: TenantBootstrapRequest,
     request: Request,
-    current_user: AdminOrSuperAdminUser,
+    current_user: PlatformAdminUser,
     service: TenantServiceDep,
     session: Session,
 ) -> TenantBootstrapResponse:
@@ -47,7 +47,7 @@ def import_tenant_operational_data(
     tenant_id: str,
     payload: TenantOperationalImportRequest,
     request: Request,
-    current_user: AdminOrSuperAdminUser,
+    current_user: PlatformAdminUser,
     service: TenantServiceDep,
     session: Session,
 ) -> TenantOperationalImportResponse:
@@ -70,7 +70,7 @@ def offboard_tenant(
     tenant_id: str,
     payload: TenantOffboardRequest,
     request: Request,
-    current_user: AdminOrSuperAdminUser,
+    current_user: PlatformAdminUser,
     service: TenantServiceDep,
     session: Session,
 ) -> TenantOffboardResponse:

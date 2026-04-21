@@ -20,9 +20,12 @@ router = APIRouter(prefix="/settings", tags=["System Settings"])
 
 
 def _require_admin(current_user):
-    """Check if user has admin privileges."""
-    if current_user.role != UserRole.ADMIN:
-        raise UnauthorizedException("Only administrators can access system settings")
+    """Check if user can administer platform-wide system settings."""
+    if current_user.role == UserRole.SUPER_ADMIN:
+        return
+    if current_user.role == UserRole.ADMIN and current_user.tenant_id is None:
+        return
+    raise UnauthorizedException("Only platform administrators can access system settings")
 
 
 @router.get("/", response_model=SystemSettingsResponse, status_code=200)

@@ -749,7 +749,7 @@ def get_current_user(token: str = Depends(oauth), session: Session = Depends(get
 
 def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
     """Dependency that ensures the current user is an admin."""
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in (UserRole.ADMIN, UserRole.SUPER_ADMIN):
         raise ForbiddenException("Admin access required")
     return current_user
 

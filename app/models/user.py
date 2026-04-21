@@ -84,7 +84,7 @@ class User(BaseDB, BaseUser, table=True):
 class UserCreate(BaseUser):
     """"""
 
-    password: str = Field(min_length=8, max_length=16)
+    password: str = Field(min_length=8, max_length=128)
 
 
 class UserUpdate(SQLModel):

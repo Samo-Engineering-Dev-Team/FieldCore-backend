@@ -39,6 +39,27 @@ class AppSettings(BaseSettings):
     SUPABASE_STORAGE_BUCKET: str = "attachments"
 
     # Security
+    ENVIRONMENT: str = Field(default="development")
+    ENABLE_API_DOCS: bool | None = Field(
+        default=None,
+        description="Enable Swagger/ReDoc/OpenAPI. Defaults to false in production.",
+    )
+    ENABLE_METRICS_ENDPOINT: bool = Field(
+        default=False,
+        description="Expose /metrics. Keep disabled unless scraped from a trusted network.",
+    )
+    METRICS_BEARER_TOKEN: str | None = Field(
+        default=None,
+        description="Optional bearer token required by /metrics when enabled.",
+    )
+    TRUSTED_HOSTS: str = Field(
+        default="",
+        description="Comma-separated hosts allowed by TrustedHostMiddleware in production.",
+    )
+    TRUST_PROXY_HEADERS: bool = Field(
+        default=False,
+        description="Trust X-Forwarded-* headers from a known reverse proxy.",
+    )
     JWT_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     JWT_SECRET_KEY: str = Field(..., min_length=32)
@@ -147,6 +168,23 @@ class AppSettings(BaseSettings):
                 "Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
             )
         return v
+
+    @property
+    def is_production(self) -> bool:
+        """Whether the app is running in a production-like environment."""
+        return self.ENVIRONMENT.strip().lower() in {"prod", "production"}
+
+    @property
+    def api_docs_enabled(self) -> bool:
+        """Expose API documentation unless explicitly disabled, or production by default."""
+        if self.ENABLE_API_DOCS is not None:
+            return self.ENABLE_API_DOCS
+        return not self.is_production
+
+    @property
+    def trusted_hosts(self) -> list[str]:
+        """Parse trusted hosts from a comma-separated string."""
+        return [host.strip() for host in self.TRUSTED_HOSTS.split(",") if host.strip()]
 
     @property
     def allowed_origins(self) -> list[str]:

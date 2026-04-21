@@ -8,11 +8,23 @@ from app.database import Session
 from app.utils.enums import UserRole, UserStatus
 from app.exceptions.http import UnauthorizedException
 from app.services.authorization import ADMIN_MANAGER_ROLES, assert_self_or_roles
+from app.models.auth import TokenData
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-def _resolve_tenant_scope(request: Request | None, tenant_id: str | None) -> str | None:
+def _is_platform_admin(current_user: TokenData) -> bool:
+    return (
+        current_user.role == UserRole.SUPER_ADMIN
+        or (current_user.role == UserRole.ADMIN and current_user.tenant_id is None)
+    )
+
+
+def _resolve_tenant_scope(
+    request: Request | None,
+    tenant_id: str | None,
+    current_user: TokenData,
+) -> str | None:
     query_tenant_id = tenant_id.strip() if tenant_id and tenant_id.strip() else None
     header_tenant_id = None
     if request is not None:
@@ -26,7 +38,19 @@ def _resolve_tenant_scope(request: Request | None, tenant_id: str | None) -> str
     ):
         raise UnauthorizedException("Tenant scope mismatch between header and query parameter")
 
-    return query_tenant_id or header_tenant_id
+    requested_tenant_id = query_tenant_id or header_tenant_id
+
+    if _is_platform_admin(current_user):
+        return requested_tenant_id
+
+    user_tenant_id = current_user.tenant_id.strip() if current_user.tenant_id else None
+    if not user_tenant_id:
+        raise UnauthorizedException("Tenant-scoped account is missing tenant scope")
+
+    if requested_tenant_id is not None and requested_tenant_id != user_tenant_id:
+        raise UnauthorizedException("Tenant scope does not match authenticated user")
+
+    return user_tenant_id
 
 
 @router.post("", response_model=UserResponse, status_code=201, include_in_schema=False)
@@ -42,7 +66,11 @@ def create_user(
     """Create a new user. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to create users.")
-    return service.create_user(payload, session, tenant_id=_resolve_tenant_scope(request, tenant_id))
+    return service.create_user(
+        payload,
+        session,
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
+    )
 
 
 @router.get("", response_model=List[UserResponse], status_code=200, include_in_schema=False)
@@ -67,7 +95,7 @@ def read_users(
         role,
         offset,
         limit,
-        tenant_id=_resolve_tenant_scope(request, tenant_id),
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
     )
 
 
@@ -87,7 +115,11 @@ def read_user(
         ADMIN_MANAGER_ROLES,
         "You do not have permission to view this user.",
     )
-    return service.read_user(user_id, session, tenant_id=_resolve_tenant_scope(request, tenant_id))
+    return service.read_user(
+        user_id,
+        session,
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
+    )
 
 
 @router.patch("/{user_id}", response_model=UserResponse, status_code=200)
@@ -111,7 +143,7 @@ def update_user(
         user_id,
         payload,
         session,
-        tenant_id=_resolve_tenant_scope(request, tenant_id),
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
     )
 
 
@@ -132,7 +164,7 @@ def set_user_role(
         user_id,
         payload.new_role,
         session,
-        tenant_id=_resolve_tenant_scope(request, tenant_id),
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
     )
 
 
@@ -153,7 +185,7 @@ def reset_user_password(
         user_id,
         payload,
         session,
-        tenant_id=_resolve_tenant_scope(request, tenant_id),
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
     )
 
 
@@ -172,7 +204,7 @@ def activate_user(
     return service.activate_user(
         user_id,
         session,
-        tenant_id=_resolve_tenant_scope(request, tenant_id),
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
     )
 
 
@@ -191,7 +223,7 @@ def deactivate_user(
     return service.deactivate_user(
         user_id,
         session,
-        tenant_id=_resolve_tenant_scope(request, tenant_id),
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
     )
 
 
@@ -207,4 +239,8 @@ def delete_user(
     """Soft delete a user. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to delete users.")
-    service.delete_user(user_id, session, tenant_id=_resolve_tenant_scope(request, tenant_id))
+    service.delete_user(
+        user_id,
+        session,
+        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
+    )

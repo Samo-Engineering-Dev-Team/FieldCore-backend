@@ -110,7 +110,7 @@ class TenantBootstrapRequest(SQLModel):
     admin_email: EmailStr
     admin_name: str = Field(min_length=1, max_length=100)
     admin_surname: str = Field(min_length=1, max_length=100)
-    admin_password: str = Field(min_length=8, max_length=16)
+    admin_password: str = Field(min_length=8, max_length=128)
     settings: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("slug")

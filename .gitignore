@@ -11,4 +11,4 @@ wheels/
 
 # Secret
 .env
-.env.example
+!.env.example

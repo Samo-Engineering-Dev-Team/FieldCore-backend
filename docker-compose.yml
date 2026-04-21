@@ -5,16 +5,16 @@ services:
     image: postgis/postgis:16-3.4
     container_name: seacom_db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: experimental123
-      POSTGRES_DB: seacom_experimental_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-fieldcore}
     ports:
       - "5433:5432"
     volumes:
       - seacom_db_data:/var/lib/postgresql/data
       - ./scripts/init-postgis.sql:/docker-entrypoint-initdb.d/init-postgis.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d seacom_experimental_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-fieldcore}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,9 +36,9 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: postgres
-      DB_PASSWORD: experimental123
-      DB_NAME: seacom_experimental_db
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      DB_NAME: ${POSTGRES_DB:-fieldcore}
       REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"

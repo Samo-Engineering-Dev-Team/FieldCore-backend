@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from contextlib import asynccontextmanager
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -14,6 +15,7 @@ from app.core import app_settings
 from app.core.metrics import TenantMetricsMiddleware, tenant_metrics
 from app.core.rate_limiter import TenantRateLimitMiddleware, limiter
 from app.core.debug_middleware import DebugMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.api import router
 from app.graphql.schema import schema
 
@@ -118,7 +120,10 @@ app: FastAPI = FastAPI(
     title="Seacom-App",
     version="0.1.0",
     description="Backend API for Seacom field technician management system",
-    lifespan=lifespan
+    lifespan=lifespan,
+    docs_url="/docs" if app_settings.api_docs_enabled else None,
+    redoc_url="/redoc" if app_settings.api_docs_enabled else None,
+    openapi_url="/openapi.json" if app_settings.api_docs_enabled else None,
 )
 
 app.state.limiter = limiter
@@ -132,10 +137,13 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 # Middleware order: last added = outermost (processes request first)
 # CORS must be outermost so preflight OPTIONS requests are handled before anything else
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(DebugMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TenantRateLimitMiddleware)
 app.add_middleware(TenantMetricsMiddleware)
+if app_settings.trusted_hosts:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=app_settings.trusted_hosts)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.allowed_origins,
@@ -152,17 +160,28 @@ app.include_router(router)
 
 
 @app.get("/", include_in_schema=False, status_code=307)
-def root() -> RedirectResponse:
+def root() -> RedirectResponse | JSONResponse:
     """"""
-    return RedirectResponse(app.docs_url or "/docs")
+    if app.docs_url:
+        return RedirectResponse(app.docs_url)
+    return JSONResponse({"status": "ok"})
 
 
-@app.get("/metrics", include_in_schema=False)
-def metrics() -> PlainTextResponse:
-    return PlainTextResponse(
-        tenant_metrics.render_prometheus(),
-        media_type="text/plain; version=0.0.4; charset=utf-8",
-    )
+if app_settings.ENABLE_METRICS_ENDPOINT:
+    @app.get("/metrics", include_in_schema=False)
+    def metrics(request: Request) -> PlainTextResponse:
+        expected_token = app_settings.METRICS_BEARER_TOKEN
+        if expected_token:
+            authorization = request.headers.get("Authorization", "")
+            if authorization != f"Bearer {expected_token}":
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+        elif app_settings.is_production:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+        return PlainTextResponse(
+            tenant_metrics.render_prometheus(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
 
 @app.exception_handler(RequestValidationError)
