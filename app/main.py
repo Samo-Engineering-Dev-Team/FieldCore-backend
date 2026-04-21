@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, PlainTextResponse
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
 from slowapi.errors import RateLimitExceeded
@@ -11,7 +11,8 @@ from loguru import logger as LOG
 
 from app.database import Database
 from app.core import app_settings
-from app.core.rate_limiter import limiter
+from app.core.metrics import TenantMetricsMiddleware, tenant_metrics
+from app.core.rate_limiter import TenantRateLimitMiddleware, limiter
 from app.core.debug_middleware import DebugMiddleware
 from app.api import router
 from app.graphql.schema import schema
@@ -133,6 +134,8 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 # CORS must be outermost so preflight OPTIONS requests are handled before anything else
 app.add_middleware(DebugMiddleware)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(TenantRateLimitMiddleware)
+app.add_middleware(TenantMetricsMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.allowed_origins,
@@ -152,6 +155,14 @@ app.include_router(router)
 def root() -> RedirectResponse:
     """"""
     return RedirectResponse(app.docs_url or "/docs")
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> PlainTextResponse:
+    return PlainTextResponse(
+        tenant_metrics.render_prometheus(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @app.exception_handler(RequestValidationError)

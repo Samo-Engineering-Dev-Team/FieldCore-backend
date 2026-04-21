@@ -24,6 +24,7 @@ from .licensing import router as licensing_router
 from .tenant import router as tenant_router
 from .audit import router as audit_router
 from .template import router as template_router
+from .support import router as support_router
 from app.services.auth import get_current_user
 from os import getenv
 _allow_dev = getenv("ALLOW_DEV_ENDPOINTS", "false").lower() == "true"
@@ -56,5 +57,6 @@ router.include_router(licensing_router, dependencies=[Depends(get_current_user)]
 router.include_router(tenant_router, dependencies=[Depends(get_current_user)])
 router.include_router(audit_router, dependencies=[Depends(get_current_user)])
 router.include_router(template_router, dependencies=[Depends(get_current_user)])
+router.include_router(support_router, dependencies=[Depends(get_current_user)])
 if _allow_dev:
 	router.include_router(dev_client_router)

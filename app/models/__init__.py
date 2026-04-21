@@ -101,6 +101,7 @@ from .template import (
     TenantTemplateResolved,
     TenantTemplateResponse,
 )
+from .support import TenantDiagnosticsResponse, TenantHealthCheck
 
 __all__ = [
     "BaseDB",
@@ -247,4 +248,6 @@ __all__ = [
     "TenantTemplatePreviewResponse",
     "TenantTemplateResolved",
     "TenantTemplateResponse",
+    "TenantDiagnosticsResponse",
+    "TenantHealthCheck",
 ]

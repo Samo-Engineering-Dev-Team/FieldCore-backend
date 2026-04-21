@@ -67,6 +67,40 @@ class AppSettings(BaseSettings):
         description="Cooldown (seconds) before retrying Redis after a connection/read failure",
     )
 
+    # SaaS operations
+    TENANT_RATE_LIMIT_ENABLED: bool = Field(
+        default=True,
+        description="Enable per-tenant API rate limits for authenticated requests",
+    )
+    TENANT_RATE_LIMIT_REQUESTS: int = Field(
+        default=600,
+        ge=1,
+        description="Allowed requests per tenant/user key in each rate-limit window",
+    )
+    TENANT_RATE_LIMIT_WINDOW_SECONDS: int = Field(
+        default=60,
+        ge=1,
+        description="Per-tenant rate-limit window length in seconds",
+    )
+    TENANT_RATE_LIMIT_REDIS_URL: str | None = Field(
+        default=None,
+        description="Optional Redis URL for rate limits. Falls back to REDIS_URL, then memory.",
+    )
+    TENANT_RATE_LIMIT_FAIL_OPEN: bool = Field(
+        default=True,
+        description="Allow requests if Redis rate limiting errors",
+    )
+    TENANT_RATE_LIMIT_OVERRIDE_HEADER: str = Field(
+        default="X-FieldCore-RateLimit-Override",
+        description="Emergency override header accepted only from super_admin tokens",
+    )
+    SUPPORT_DIAGNOSTICS_RECENT_OPERATION_LIMIT: int = Field(
+        default=5,
+        ge=1,
+        le=25,
+        description="Recent tenant operation rows returned by support diagnostics",
+    )
+
     # Licensing / metering
     LICENSING_METERING_JOB_ENABLED: bool = Field(
         default=False,
@@ -126,6 +160,11 @@ class AppSettings(BaseSettings):
         if raw:
             return [origin.strip() for origin in raw.split(",") if origin.strip()]
         return self.allowed_origins
+
+    @property
+    def tenant_rate_limit_redis_url(self) -> str | None:
+        """Redis URL for tenant rate limiting."""
+        return self.TENANT_RATE_LIMIT_REDIS_URL or self.REDIS_URL
 
     @property
     def database_url(self) -> str:
