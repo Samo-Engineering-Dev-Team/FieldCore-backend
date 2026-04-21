@@ -1,6 +1,7 @@
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from app.models import (
+    AuditLog,
     SystemSetting,
     Tenant,
     TenantBootstrapRequest,
@@ -23,6 +24,7 @@ def _session() -> Session:
         tables=[
             Tenant.__table__,
             TenantOperationLog.__table__,
+            AuditLog.__table__,
             User.__table__,
             SystemSetting.__table__,
             Webhook.__table__,
@@ -67,6 +69,11 @@ def test_tenant_bootstrap_creates_tenant_defaults_admin_and_log() -> None:
         assert log is not None
         assert log.operation == "bootstrap"
         assert log.dry_run is False
+
+        audit = session.exec(select(AuditLog).where(AuditLog.tenant_id == "acme-fibre")).one()
+        assert audit.action_type == "tenant.bootstrap"
+        assert audit.resource == "tenant:acme-fibre"
+        assert audit.after["admin_user_id"] == str(admin.id)
 
 
 def test_operational_import_dry_run_previews_without_mutating_rows() -> None:
@@ -127,6 +134,11 @@ def test_operational_import_dry_run_previews_without_mutating_rows() -> None:
         assert log is not None
         assert log.operation == "import"
         assert log.dry_run is True
+
+        audit = session.exec(select(AuditLog).where(AuditLog.tenant_id == "tenant-alpha")).one()
+        assert audit.action_type == "tenant.import"
+        assert audit.after["dry_run"] is True
+        assert audit.after["conflict_count"] == 1
 
 
 def test_archive_offboarding_disables_access_and_keeps_audit_rows() -> None:
@@ -192,6 +204,11 @@ def test_archive_offboarding_disables_access_and_keeps_audit_rows() -> None:
             select(SystemSetting).where(SystemSetting.tenant_id == "tenant-alpha")
         ).one()
         assert setting.key == "noc_email_addresses"
+
+        audit = session.exec(select(AuditLog).where(AuditLog.tenant_id == "tenant-alpha")).one()
+        assert audit.action_type == "tenant.offboard"
+        assert audit.before["tenant"]["status"] == "active"
+        assert audit.after["applied"] is True
 
 
 def test_delete_offboarding_supports_dry_run_then_confirmed_delete() -> None:

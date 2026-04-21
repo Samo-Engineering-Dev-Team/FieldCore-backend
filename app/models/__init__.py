@@ -31,6 +31,7 @@ from .maintenance_schedule import MaintenanceSchedule, MaintenanceScheduleCreate
 from .route_patrol import RoutePatrol, RoutePatrolCreate, RoutePatrolUpdate, RoutePatrolResponse
 from .technician_site import TechnicianSite
 from .webhook import Webhook
+from .audit import AuditLog, AuditLogListResponse, AuditLogResponse
 from .tenant import (
     Tenant,
     TenantBootstrapRequest,
@@ -175,6 +176,9 @@ __all__ = [
     "RoutePatrolResponse",
     "TechnicianSite",
     "Webhook",
+    "AuditLog",
+    "AuditLogListResponse",
+    "AuditLogResponse",
     "Tenant",
     "TenantBootstrapRequest",
     "TenantBootstrapResponse",

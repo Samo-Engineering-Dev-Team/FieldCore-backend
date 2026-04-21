@@ -31,6 +31,7 @@ from app.models import (
     TenantLicenseResponse,
     TenantLicenseUnassign,
 )
+from app.services.audit import write_audit_event
 from app.utils.enums import LicenseHistoryAction
 from app.utils.funcs import utcnow
 
@@ -107,6 +108,9 @@ class LicensingService:
         self,
         payload: LicenseProductCreate,
         session: Session,
+        *,
+        actor_user_id: UUID | None = None,
+        request_id: str | None = None,
     ) -> LicenseProductResponse:
         sku = _normalize_required(payload.sku, "sku")
         name = _normalize_required(payload.name, "name")
@@ -127,6 +131,15 @@ class LicensingService:
             is_active=payload.is_active,
         )
         session.add(product)
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            action_type="license.product.create",
+            resource=f"license_product:{product.id}",
+            before=None,
+            after=LicenseProductResponse.model_validate(product),
+            request_id=request_id,
+        )
         session.commit()
         session.refresh(product)
         return LicenseProductResponse.model_validate(product)
@@ -199,6 +212,9 @@ class LicensingService:
         self,
         payload: LicensePlanCreate,
         session: Session,
+        *,
+        actor_user_id: UUID | None = None,
+        request_id: str | None = None,
     ) -> LicensePlanResponse:
         product = self._get_product(payload.license_product_id, session)
         code = _normalize_required(payload.code, "code")
@@ -224,6 +240,15 @@ class LicensingService:
             is_active=payload.is_active,
         )
         session.add(plan)
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            action_type="license.plan.create",
+            resource=f"license_plan:{plan.id}",
+            before=None,
+            after=LicensePlanResponse.model_validate(plan),
+            request_id=request_id,
+        )
         session.commit()
         session.refresh(plan)
         return LicensePlanResponse.model_validate(plan)
@@ -276,6 +301,9 @@ class LicensingService:
         self,
         payload: EntitlementCreate,
         session: Session,
+        *,
+        actor_user_id: UUID | None = None,
+        request_id: str | None = None,
     ) -> EntitlementResponse:
         self._get_plan(payload.license_plan_id, session)
         feature_key = _normalize_feature_key(payload.feature_key)
@@ -302,6 +330,15 @@ class LicensingService:
             is_enabled=payload.is_enabled,
         )
         session.add(entitlement)
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            action_type="license.entitlement.create",
+            resource=f"entitlement:{entitlement.id}",
+            before=None,
+            after=EntitlementResponse.model_validate(entitlement),
+            request_id=request_id,
+        )
         session.commit()
         session.refresh(entitlement)
         return EntitlementResponse.model_validate(entitlement)
@@ -323,6 +360,7 @@ class LicensingService:
         session: Session,
         *,
         actor_user_id: UUID | None,
+        request_id: str | None = None,
     ) -> TenantLicenseDetail:
         tenant_id = _normalize_tenant_id(payload.tenant_id)
         starts_at = _as_utc(payload.starts_at or utcnow())
@@ -366,6 +404,25 @@ class LicensingService:
             actor_user_id=actor_user_id,
             effective_at=starts_at,
             note=payload.note,
+        )
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            tenant_id=tenant_id,
+            action_type="license.assignment.create",
+            resource=f"tenant_license:{tenant_license.id}",
+            before=None,
+            after={
+                "tenant_license": TenantLicenseResponse.model_validate(tenant_license),
+                "license_product_id": product.id,
+                "product_sku": product.sku,
+                "product_name": product.name,
+                "license_plan_id": plan.id,
+                "plan_code": plan.code,
+                "plan_name": plan.name,
+                "note": payload.note,
+            },
+            request_id=request_id,
         )
 
         session.commit()
@@ -610,10 +667,20 @@ class LicensingService:
         session: Session,
         *,
         actor_user_id: UUID | None,
+        request_id: str | None = None,
     ) -> TenantLicenseDetail:
         tenant_license = self._get_tenant_license(tenant_license_id, session)
         plan = self._get_plan(tenant_license.license_plan_id, session)
         product = self._get_product(plan.license_product_id, session)
+        before_snapshot = {
+            "tenant_license": TenantLicenseResponse.model_validate(tenant_license),
+            "license_product_id": product.id,
+            "product_sku": product.sku,
+            "product_name": product.name,
+            "license_plan_id": plan.id,
+            "plan_code": plan.code,
+            "plan_name": plan.name,
+        }
 
         effective_end = _as_utc(payload.ends_at or utcnow())
         starts_at = _as_utc(tenant_license.starts_at)
@@ -644,6 +711,25 @@ class LicensingService:
             actor_user_id=actor_user_id,
             effective_at=effective_end,
             note=payload.note,
+        )
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            tenant_id=tenant_license.tenant_id,
+            action_type="license.assignment.end",
+            resource=f"tenant_license:{tenant_license.id}",
+            before=before_snapshot,
+            after={
+                "tenant_license": TenantLicenseResponse.model_validate(tenant_license),
+                "license_product_id": product.id,
+                "product_sku": product.sku,
+                "product_name": product.name,
+                "license_plan_id": plan.id,
+                "plan_code": plan.code,
+                "plan_name": plan.name,
+                "note": payload.note,
+            },
+            request_id=request_id,
         )
 
         session.commit()

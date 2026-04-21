@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.database import Session
 from app.models import (
@@ -21,6 +21,7 @@ from app.models import (
     TenantLicenseUnassign,
 )
 from app.services.auth import AdminOrSuperAdminUser, require_admin_or_super_admin
+from app.services.audit import request_id_from_headers
 from app.services.licensing import LicensingServiceDep
 from app.services.licensing_compliance import LicensingComplianceServiceDep
 
@@ -35,11 +36,18 @@ router = APIRouter(
 @router.post("/products", response_model=LicenseProductResponse, status_code=201)
 def create_license_product(
     payload: LicenseProductCreate,
+    request: Request,
+    current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
 ) -> LicenseProductResponse:
     """Create one license product/SKU. Platform admin only."""
-    return service.create_product(payload, session)
+    return service.create_product(
+        payload,
+        session,
+        actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
+    )
 
 
 @router.get("/products", response_model=list[LicenseProductCatalog], status_code=200)
@@ -55,11 +63,18 @@ def list_license_products(
 @router.post("/plans", response_model=LicensePlanResponse, status_code=201)
 def create_license_plan(
     payload: LicensePlanCreate,
+    request: Request,
+    current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
 ) -> LicensePlanResponse:
     """Create one plan under existing license product. Platform admin only."""
-    return service.create_plan(payload, session)
+    return service.create_plan(
+        payload,
+        session,
+        actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
+    )
 
 
 @router.get("/plans", response_model=list[LicensePlanDetail], status_code=200)
@@ -76,11 +91,18 @@ def list_license_plans(
 @router.post("/entitlements", response_model=EntitlementResponse, status_code=201)
 def create_entitlement(
     payload: EntitlementCreate,
+    request: Request,
+    current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
 ) -> EntitlementResponse:
     """Create one entitlement for existing plan. Platform admin only."""
-    return service.create_entitlement(payload, session)
+    return service.create_entitlement(
+        payload,
+        session,
+        actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
+    )
 
 
 @router.get("/entitlements", response_model=list[EntitlementResponse], status_code=200)
@@ -133,12 +155,18 @@ def get_tenant_compliance_overview(
 @router.post("/tenant-licenses", response_model=TenantLicenseDetail, status_code=201)
 def assign_tenant_license(
     payload: TenantLicenseAssign,
+    request: Request,
     current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
 ) -> TenantLicenseDetail:
     """Assign one license plan to tenant. Platform admin only."""
-    return service.assign_tenant_license(payload, session, actor_user_id=current_user.user_id)
+    return service.assign_tenant_license(
+        payload,
+        session,
+        actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
+    )
 
 
 @router.get("/tenant-licenses", response_model=list[TenantLicenseDetail], status_code=200)
@@ -160,6 +188,7 @@ def list_tenant_licenses(
 def unassign_tenant_license(
     tenant_license_id: UUID,
     payload: TenantLicenseUnassign,
+    request: Request,
     current_user: AdminOrSuperAdminUser,
     service: LicensingServiceDep,
     session: Session,
@@ -170,4 +199,5 @@ def unassign_tenant_license(
         payload,
         session,
         actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
     )

@@ -6,6 +6,7 @@ from sqlmodel import SQLModel, Session, create_engine
 
 from app.core import SecurityUtils
 from app.models import (
+    AuditLog,
     Entitlement,
     EntitlementCreate,
     LicenseHistory,
@@ -37,6 +38,7 @@ def session() -> Session:
             Entitlement.__table__,
             TenantLicense.__table__,
             LicenseHistory.__table__,
+            AuditLog.__table__,
             TenantFeatureUsageEvent.__table__,
             TenantUsageDaily.__table__,
             TenantComplianceRecord.__table__,

@@ -38,6 +38,7 @@ from app.models import (
     User,
     Webhook,
 )
+from app.services.audit import write_audit_event
 from app.models.notification import Notification
 from app.models.passkey import PasskeyChallenge, PasskeyCredential
 from app.models.user_session import UserSession
@@ -136,6 +137,7 @@ class _TenantService:
         session: Session,
         *,
         actor_user_id: UUID | None = None,
+        request_id: str | None = None,
     ) -> TenantBootstrapResponse:
         tenant_id = self._normalize_required_tenant_id(payload.slug)
         admin_email = str(payload.admin_email).strip().lower()
@@ -178,6 +180,21 @@ class _TenantService:
             for setting in settings:
                 session.add(setting)
             session.add(log)
+            write_audit_event(
+                session,
+                actor_user_id=actor_user_id,
+                tenant_id=tenant.id,
+                action_type="tenant.bootstrap",
+                resource=f"tenant:{tenant.id}",
+                before=None,
+                after={
+                    "tenant": self._to_response(tenant),
+                    "admin_user_id": admin.id,
+                    "setting_keys": [setting.key for setting in settings],
+                    "operation_log_id": log.id,
+                },
+                request_id=request_id,
+            )
             session.commit()
             session.refresh(tenant)
             session.refresh(admin)
@@ -200,6 +217,7 @@ class _TenantService:
         session: Session,
         *,
         actor_user_id: UUID | None = None,
+        request_id: str | None = None,
     ) -> TenantOperationalImportResponse:
         scoped_tenant_id = self._normalize_required_tenant_id(tenant_id)
         self._get_active_tenant(session, scoped_tenant_id)
@@ -229,6 +247,22 @@ class _TenantService:
                 message="Tenant import blocked by conflicting rows",
                 details=self._import_details(user_actions, setting_actions, conflict_count),
             )
+            write_audit_event(
+                session,
+                actor_user_id=actor_user_id,
+                tenant_id=scoped_tenant_id,
+                action_type="tenant.import",
+                resource=f"tenant:{scoped_tenant_id}",
+                before=None,
+                after={
+                    "dry_run": False,
+                    "applied": False,
+                    "status": "blocked",
+                    **self._import_details(user_actions, setting_actions, conflict_count),
+                    "operation_log_id": log.id,
+                },
+                request_id=request_id,
+            )
             session.commit()
             raise BadRequestException(
                 f"Import has {conflict_count} conflict(s). Run dry-run and resolve before applying."
@@ -248,6 +282,22 @@ class _TenantService:
             actor_user_id=actor_user_id,
             message="Tenant import dry-run preview" if payload.dry_run else "Tenant import applied",
             details=self._import_details(user_actions, setting_actions, conflict_count),
+        )
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            tenant_id=scoped_tenant_id,
+            action_type="tenant.import",
+            resource=f"tenant:{scoped_tenant_id}",
+            before=None,
+            after={
+                "dry_run": payload.dry_run,
+                "applied": applied,
+                "status": "completed",
+                **self._import_details(user_actions, setting_actions, conflict_count),
+                "operation_log_id": log.id,
+            },
+            request_id=request_id,
         )
         session.commit()
         session.refresh(log)
@@ -269,12 +319,17 @@ class _TenantService:
         session: Session,
         *,
         actor_user_id: UUID | None = None,
+        request_id: str | None = None,
     ) -> TenantOffboardResponse:
         scoped_tenant_id = self._normalize_required_tenant_id(tenant_id)
         tenant = self._get_tenant(session, scoped_tenant_id)
         row_actions = self._build_offboard_row_actions(session, scoped_tenant_id, payload.mode)
         blockers = self._delete_blockers(session, scoped_tenant_id) if payload.mode == TenantOffboardMode.DELETE else []
         safe_to_delete = not blockers
+        before_snapshot = {
+            "tenant": self._to_response(tenant),
+            "row_actions": [action.model_dump(mode="json") for action in row_actions],
+        }
 
         if payload.dry_run:
             log = self._write_log(
@@ -285,6 +340,24 @@ class _TenantService:
                 actor_user_id=actor_user_id,
                 message="Tenant offboard dry-run preview",
                 details=self._offboard_details(payload, row_actions, blockers),
+            )
+            write_audit_event(
+                session,
+                actor_user_id=actor_user_id,
+                tenant_id=scoped_tenant_id,
+                action_type="tenant.offboard",
+                resource=f"tenant:{scoped_tenant_id}",
+                before=before_snapshot,
+                after={
+                    "mode": payload.mode.value,
+                    "dry_run": True,
+                    "applied": False,
+                    "safe_to_delete": safe_to_delete,
+                    "status": "preview",
+                    "operation_log_id": log.id,
+                    **self._offboard_details(payload, row_actions, blockers),
+                },
+                request_id=request_id,
             )
             session.commit()
             session.refresh(log)
@@ -313,6 +386,24 @@ class _TenantService:
                 message="Tenant delete offboard blocked by dependent operational data",
                 details=self._offboard_details(payload, row_actions, blockers),
             )
+            write_audit_event(
+                session,
+                actor_user_id=actor_user_id,
+                tenant_id=scoped_tenant_id,
+                action_type="tenant.offboard",
+                resource=f"tenant:{scoped_tenant_id}",
+                before=before_snapshot,
+                after={
+                    "mode": payload.mode.value,
+                    "dry_run": False,
+                    "applied": False,
+                    "safe_to_delete": False,
+                    "status": "blocked",
+                    "operation_log_id": log.id,
+                    **self._offboard_details(payload, row_actions, blockers),
+                },
+                request_id=request_id,
+            )
             session.commit()
             raise BadRequestException("Tenant delete blocked by dependent operational data")
 
@@ -329,6 +420,24 @@ class _TenantService:
             actor_user_id=actor_user_id,
             message=f"Tenant offboard {payload.mode.value} applied",
             details=self._offboard_details(payload, row_actions, blockers),
+        )
+        write_audit_event(
+            session,
+            actor_user_id=actor_user_id,
+            tenant_id=scoped_tenant_id,
+            action_type="tenant.offboard",
+            resource=f"tenant:{scoped_tenant_id}",
+            before=before_snapshot,
+            after={
+                "mode": payload.mode.value,
+                "dry_run": False,
+                "applied": True,
+                "safe_to_delete": safe_to_delete,
+                "status": "completed",
+                "operation_log_id": log.id,
+                **self._offboard_details(payload, row_actions, blockers),
+            },
+            request_id=request_id,
         )
         session.commit()
         session.refresh(log)

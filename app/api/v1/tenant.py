@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.database import Session
 from app.models import (
@@ -10,6 +10,7 @@ from app.models import (
     TenantOperationalImportResponse,
 )
 from app.services.auth import AdminOrSuperAdminUser, require_admin_or_super_admin
+from app.services.audit import request_id_from_headers
 from app.services.tenant import TenantServiceDep
 
 
@@ -23,12 +24,18 @@ router = APIRouter(
 @router.post("/bootstrap", response_model=TenantBootstrapResponse, status_code=201)
 def bootstrap_tenant(
     payload: TenantBootstrapRequest,
+    request: Request,
     current_user: AdminOrSuperAdminUser,
     service: TenantServiceDep,
     session: Session,
 ) -> TenantBootstrapResponse:
     """Create tenant entity, tenant settings, and first tenant-scoped admin user."""
-    return service.bootstrap_tenant(payload, session, actor_user_id=current_user.user_id)
+    return service.bootstrap_tenant(
+        payload,
+        session,
+        actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
+    )
 
 
 @router.post(
@@ -39,6 +46,7 @@ def bootstrap_tenant(
 def import_tenant_operational_data(
     tenant_id: str,
     payload: TenantOperationalImportRequest,
+    request: Request,
     current_user: AdminOrSuperAdminUser,
     service: TenantServiceDep,
     session: Session,
@@ -49,6 +57,7 @@ def import_tenant_operational_data(
         payload,
         session,
         actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
     )
 
 
@@ -60,6 +69,7 @@ def import_tenant_operational_data(
 def offboard_tenant(
     tenant_id: str,
     payload: TenantOffboardRequest,
+    request: Request,
     current_user: AdminOrSuperAdminUser,
     service: TenantServiceDep,
     session: Session,
@@ -70,4 +80,5 @@ def offboard_tenant(
         payload,
         session,
         actor_user_id=current_user.user_id,
+        request_id=request_id_from_headers(request),
     )

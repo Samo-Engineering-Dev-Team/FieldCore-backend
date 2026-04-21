@@ -7,6 +7,7 @@ from sqlmodel import SQLModel, Session, create_engine, select
 from app.api.v1.licensing import router as licensing_router
 from app.exceptions.http import ConflictException
 from app.models import (
+    AuditLog,
     Entitlement,
     EntitlementCreate,
     LicenseHistory,
@@ -35,6 +36,7 @@ def session() -> Session:
             Entitlement.__table__,
             TenantLicense.__table__,
             LicenseHistory.__table__,
+            AuditLog.__table__,
         ],
     )
     with Session(engine) as session:
@@ -117,6 +119,19 @@ def test_tenant_entitlement_lookup_and_history_flow(session: Session) -> None:
     ]
     assert history_rows[0].note == "Initial assignment"
     assert history_rows[1].note == "Customer downgraded"
+
+    audit_rows = list(
+        session.exec(
+            select(AuditLog).where(AuditLog.tenant_id == "tenant-123").order_by(AuditLog.id)
+        ).all()
+    )
+    assert [row.action_type for row in audit_rows] == [
+        "license.assignment.create",
+        "license.assignment.end",
+    ]
+    assert audit_rows[0].after["note"] == "Initial assignment"
+    assert audit_rows[1].before["tenant_license"]["ends_at"] is None
+    assert audit_rows[1].after["note"] == "Customer downgraded"
 
 
 def test_assign_tenant_license_rejects_overlap(session: Session) -> None:

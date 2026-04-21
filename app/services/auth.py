@@ -761,6 +761,15 @@ def require_admin_or_super_admin(current_user: TokenData = Depends(get_current_u
     return current_user
 
 
+def require_platform_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+    """Dependency that ensures the current user can administer platform-wide data."""
+    if current_user.role == UserRole.SUPER_ADMIN:
+        return current_user
+    if current_user.role == UserRole.ADMIN and current_user.tenant_id is None:
+        return current_user
+    raise ForbiddenException("Platform admin access required")
+
+
 def require_noc_or_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
     """Dependency that ensures the current user is NOC or admin."""
     if current_user.role not in (UserRole.ADMIN, UserRole.NOC):
@@ -786,6 +795,7 @@ AuthService = Annotated[_AuthService, Depends(get_auth_service)]
 CurrentUser = Annotated[TokenData, Depends(get_current_user)]
 AdminUser = Annotated[TokenData, Depends(require_admin)]
 AdminOrSuperAdminUser = Annotated[TokenData, Depends(require_admin_or_super_admin)]
+PlatformAdminUser = Annotated[TokenData, Depends(require_platform_admin)]
 NocOrAdminUser = Annotated[TokenData, Depends(require_noc_or_admin)]
 ManagerOrAdminUser = Annotated[TokenData, Depends(require_manager_or_admin)]
 NocOrManagerOrAdminUser = Annotated[TokenData, Depends(require_noc_or_manager_or_admin)]
