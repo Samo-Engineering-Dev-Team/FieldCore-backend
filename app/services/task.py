@@ -395,6 +395,8 @@ class _TaskService:
                 task_type="RHS — " + (feedback[:80] + "…" if len(feedback) > 80 else feedback),
                 completed_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
                 recipients=get_tenant_notification_recipients(session, tenant_id),
+                session=session,
+                tenant_id=tenant_id,
             )
             return self.task_to_response(task, session)
         except Exception as e:
@@ -444,6 +446,8 @@ class _TaskService:
                 task_type=str(task.task_type),
                 completed_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
                 recipients=get_tenant_notification_recipients(session, tenant_id),
+                session=session,
+                tenant_id=tenant_id,
             )
 
             # Self-heal path notification: report was missing and auto-created at completion.

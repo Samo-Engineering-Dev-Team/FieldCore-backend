@@ -94,6 +94,13 @@ from .system_settings import (
     SystemSettingsBulkUpdate,
     DebugConfig,
 )
+from .template import (
+    TenantTemplate,
+    TenantTemplatePreviewRequest,
+    TenantTemplatePreviewResponse,
+    TenantTemplateResolved,
+    TenantTemplateResponse,
+)
 
 __all__ = [
     "BaseDB",
@@ -235,4 +242,9 @@ __all__ = [
     "SystemSettingsResponse",
     "SystemSettingsBulkUpdate",
     "DebugConfig",
+    "TenantTemplate",
+    "TenantTemplatePreviewRequest",
+    "TenantTemplatePreviewResponse",
+    "TenantTemplateResolved",
+    "TenantTemplateResponse",
 ]

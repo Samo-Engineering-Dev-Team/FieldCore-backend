@@ -112,15 +112,17 @@ def _bg_notify_incident_resolved(
         from app.utils.funcs import utcnow as _utcnow
         with Database.session() as session:
             recipients = get_tenant_notification_recipients(session, tenant_id)
-        EmailService.send_incident_resolved(
-            ref_no=ref_no or "N/A",
-            site_name=site_name,
-            technician_name=tech_name,
-            severity=severity,
-            resolved_at=_utcnow().strftime("%d %b %Y %H:%M UTC"),
-            description=description,
-            recipients=recipients,
-        )
+            EmailService.send_incident_resolved(
+                ref_no=ref_no or "N/A",
+                site_name=site_name,
+                technician_name=tech_name,
+                severity=severity,
+                resolved_at=_utcnow().strftime("%d %b %Y %H:%M UTC"),
+                description=description,
+                recipients=recipients,
+                session=session,
+                tenant_id=tenant_id,
+            )
     except Exception as e:
         LOG.warning("Background incident-resolved email failed: {}", e)
 

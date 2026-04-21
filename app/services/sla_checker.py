@@ -189,6 +189,8 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                         milestone=milestone_name,
                         time_remaining=time_str,
                         recipients=tenant_recipients,
+                        session=session,
+                        tenant_id=tenant_id,
                     )
 
                     def _send_warning(data: dict = event) -> None:
@@ -257,6 +259,8 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                     milestone=milestone_name,
                     time_overdue=overdue_str,
                     recipients=tenant_recipients,
+                    session=session,
+                    tenant_id=tenant_id,
                 )
 
                 def _send_breach(data: dict = event) -> None:

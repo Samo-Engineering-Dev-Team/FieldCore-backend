@@ -147,6 +147,8 @@ async def test_email(
         task_type="email_test",
         completed_at="Now",
         recipients=recipients,
+        session=session,
+        tenant_id=current_user.tenant_id,
     )
 
     return {

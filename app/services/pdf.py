@@ -19,8 +19,11 @@ from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarC
 from xml.sax.saxutils import escape
 
 from loguru import logger as LOG
+from sqlmodel import Session
+
 from app.core.settings import app_settings
 from app.models import Report
+from app.services.template import PDF_BRANDING_TEMPLATE, DEFAULT_TEMPLATES, get_template_service
 from app.utils.enums import ReportType
 from app.utils.funcs import utcnow
 
@@ -79,6 +82,67 @@ class PDFService:
         self._first_page_bg_image: Path | None = None
         self._first_page_bg_primary: str = "#0b2265"
         self._first_page_bg_accent: str = "#1a365d"
+        self._template_branding: dict[str, str] = self._default_branding()
+
+    def _default_branding(self) -> dict[str, str]:
+        content = DEFAULT_TEMPLATES[PDF_BRANDING_TEMPLATE]
+        return {key: str(value) for key, value in content.items()}
+
+    def configure_templates(
+        self,
+        session: Session | None = None,
+        tenant_id: str | None = None,
+    ) -> None:
+        """Resolve PDF branding template for the current generation."""
+        self._template_branding = self._default_branding()
+        if session is None:
+            return
+
+        try:
+            resolved = get_template_service().resolve_template(
+                session,
+                tenant_id,
+                PDF_BRANDING_TEMPLATE,
+                default_content=self._default_branding(),
+            )
+        except Exception as exc:
+            LOG.warning("PDF template resolution failed: {}", exc)
+            return
+
+        if not isinstance(resolved.content, dict):
+            return
+
+        for key, value in resolved.content.items():
+            if isinstance(value, str) and value.strip():
+                self._template_branding[key] = value.strip()
+
+    def _brand_value(self, key: str, fallback: str) -> str:
+        value = self._template_branding.get(key)
+        return value if value else fallback
+
+    def _brand_name(self) -> str:
+        return self._brand_value("brand", _FIELDCORE_BRAND)
+
+    def _brand_report_label(self) -> str:
+        return self._brand_value("report_label", _FIELDCORE_REPORT_LABEL)
+
+    def _brand_confidential(self) -> str:
+        return self._brand_value("confidential", _FIELDCORE_CONFIDENTIAL)
+
+    def _brand_incident_service_label(self) -> str:
+        return self._brand_value("incident_service_label", "Field Core incident services")
+
+    def _brand_incident_footer_label(self) -> str:
+        return self._brand_value("incident_footer_label", "Samo Engineering // Incident Report")
+
+    def _brand_internal_use_label(self) -> str:
+        return self._brand_value("internal_use_label", "Confidential, Field Core internal use.")
+
+    def _brand_mark_asset(self) -> str:
+        return self._brand_value("mark_asset", _FIELDCORE_MARK_ASSET)
+
+    def _brand_lockup_asset(self) -> str:
+        return self._brand_value("lockup_asset", _FIELDCORE_LOCKUP_ASSET)
 
     def _setup_custom_styles(self):
         """Setup custom paragraph styles for professional PDF design."""
@@ -215,14 +279,14 @@ class PDFService:
 
     def _load_fieldcore_mark(self, *, max_width_mm: float, max_height_mm: float) -> Image | None:
         return self._load_brand_logo(
-            _FIELDCORE_MARK_ASSET,
+            self._brand_mark_asset(),
             max_width_mm=max_width_mm,
             max_height_mm=max_height_mm,
         )
 
     def _load_fieldcore_lockup(self, *, max_width_mm: float, max_height_mm: float) -> Image | None:
         return self._load_brand_logo(
-            _FIELDCORE_LOCKUP_ASSET,
+            self._brand_lockup_asset(),
             max_width_mm=max_width_mm,
             max_height_mm=max_height_mm,
         )
@@ -321,8 +385,8 @@ class PDFService:
         )
         header_data = [[
             mark_logo or Paragraph("<b>FC</b>", self.styles['CompanyHeader']),
-            Paragraph(_FIELDCORE_BRAND, brand_style),
-            lockup_logo or Paragraph("<b>FIELD CORE</b>", self.styles['CompanyHeader']),
+            Paragraph(escape(self._brand_name()), brand_style),
+            lockup_logo or Paragraph(f"<b>{escape(self._brand_name())}</b>", self.styles['CompanyHeader']),
         ]]
         header_table = Table(header_data, colWidths=[60 * mm, 50 * mm, 60 * mm], rowHeights=[32 * mm])
         header_table.setStyle(TableStyle([
@@ -399,7 +463,7 @@ class PDFService:
             fontName='Helvetica-Oblique',
         )
         elements.append(Paragraph(
-            _FIELDCORE_CONFIDENTIAL,
+            escape(self._brand_confidential()),
             conf_style,
         ))
         elements.append(Spacer(1, 3 * mm))
@@ -446,7 +510,7 @@ class PDFService:
         logos = Table(
             [[
                 mark_logo or Paragraph("<b>FC</b>", fallback_s),
-                lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
+                lockup_logo or Paragraph(f"<b>{escape(self._brand_name())}</b>", fallback_s),
             ]],
             colWidths=[mark_width_mm * mm, lockup_width_mm * mm],
         )
@@ -549,7 +613,7 @@ class PDFService:
                 [
                     Paragraph("FIELD OPERATIONS REPORT", kicker_s),
                     Spacer(1, 1.5 * mm),
-                    Paragraph(_FIELDCORE_BRAND, brand_s),
+                    Paragraph(escape(self._brand_name()), brand_s),
                 ],
                 self._build_brand_logo_row(
                     mark_width_mm=34,
@@ -574,7 +638,7 @@ class PDFService:
         footer = Table(
             [[
                 Paragraph(
-                    _FIELDCORE_CONFIDENTIAL,
+                    escape(self._brand_confidential()),
                     footer_s,
                 ),
                 Paragraph(f"Generated {escape(generated_at)}", footer_s),
@@ -813,9 +877,10 @@ class PDFService:
             cover_details.append(["Generated", self._format_datetime(report.created_at)])
             report_cover_key = report.report_type.value if getattr(report, "report_type", None) else "base"
             primary_hex, accent_hex = self._cover_palette(report_cover_key)
+            report_label = self._brand_report_label()
             story.extend(self._build_cover_page(
                 title=f"{report_type_display} Report",
-                subtitle=_FIELDCORE_REPORT_LABEL,
+                subtitle=report_label,
                 details=cover_details,
                 cover_key=report_cover_key,
             ))
@@ -823,7 +888,7 @@ class PDFService:
             # ── Page 2: banner header ─────────────────────────────────────────
             story.extend(self._build_page_header(
                 title=f"{report_type_display} Report",
-                subtitle=f"{_FIELDCORE_REPORT_LABEL}  |  {self._format_datetime(report.created_at)}",
+                subtitle=f"{report_label}  |  {self._format_datetime(report.created_at)}",
                 primary_hex=primary_hex,
                 accent_hex=accent_hex,
             ))
@@ -965,12 +1030,13 @@ class PDFService:
             created_display = self._format_datetime(report.created_at)
             report_cover_key = report.report_type.value if getattr(report, "report_type", None) else "base"
             primary_hex, accent_hex = self._cover_palette(report_cover_key)
+            report_label = self._brand_report_label()
 
             story.extend(self._build_field_cover_page(
                 report_type_label=report_type_display,
                 title=f"{report_type_display} Report",
                 site=site_display,
-                subtitle=_FIELDCORE_REPORT_LABEL,
+                subtitle=report_label,
                 descriptor=(
                     f"Prepared for {service_provider_display}. Structured field document "
                     "for operational review, archive, and audit traceability."
@@ -992,7 +1058,7 @@ class PDFService:
 
             story.extend(self._build_field_page_header(
                 title=f"{report_type_display} Report",
-                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {created_display}",
+                subtitle=f"{report_label} | {created_display}",
                 accent_hex=accent_hex,
             ))
             story.extend(self._build_field_overview_cards(
@@ -1376,7 +1442,7 @@ class PDFService:
             [[
                 mark_logo or Paragraph("<b>FC</b>", fb_s),
                 pill_inner,
-                lockup_logo or Paragraph("<b>FIELD CORE</b>", fb_r_s),
+                lockup_logo or Paragraph(f"<b>{escape(self._brand_name())}</b>", fb_r_s),
             ]],
             colWidths=[50 * mm, 70 * mm, 50 * mm],
         )
@@ -1398,7 +1464,7 @@ class PDFService:
         # ── 4. Brand line ─────────────────────────────────────────────────────
         elements.append(Paragraph("FIELD OPERATIONS DOSSIER", kicker_s))
         elements.append(Spacer(1, 2 * mm))
-        elements.append(Paragraph(_FIELDCORE_BRAND, brand_s))
+        elements.append(Paragraph(escape(self._brand_name()), brand_s))
         elements.append(Spacer(1, 5 * mm))
 
         # ── 5. Large title ────────────────────────────────────────────────────
@@ -1509,7 +1575,7 @@ class PDFService:
         # ── 8. Confidentiality footer box ─────────────────────────────────────
         conf_box = Table(
             [[Paragraph(
-                f"Ref: {seacom_ref}  \u2014  Confidential, Field Core internal use.",
+                f"Ref: {seacom_ref}  \u2014  {escape(self._brand_internal_use_label())}",
                 conf_s,
             )]],
             colWidths=[170 * mm],
@@ -2301,8 +2367,8 @@ class PDFService:
 
         header = Table(
             [[
-                Paragraph("Field Core incident services", top_l_s),
-                lockup_logo or Paragraph("FIELD CORE", top_r_s),
+                Paragraph(escape(self._brand_incident_service_label()), top_l_s),
+                lockup_logo or Paragraph(escape(self._brand_name()), top_r_s),
             ]],
             colWidths=[109 * mm, 61 * mm],
         )
@@ -2452,7 +2518,7 @@ class PDFService:
             header_y = page_h - 12 * mm
             canv.setFillColor(ink)
             canv.setFont("Helvetica", 8)
-            canv.drawString(left, header_y, "Samo Engineering // Incident Report")
+            canv.drawString(left, header_y, self._brand_incident_footer_label())
             canv.setFont("Helvetica-Bold", 8)
             canv.drawRightString(right, header_y, f"Ref {seacom_ref}")
 
@@ -2863,6 +2929,7 @@ class PDFService:
         )
 
         story = []
+        brand_name = self._brand_name()
 
         # ── Cover page ────────────────────────────────────────────────────────
         cover_details: list[list[str]] = [
@@ -2874,7 +2941,7 @@ class PDFService:
         ]
         story.extend(self._build_cover_page(
             title="Executive Management Report",
-            subtitle=f"{month_label} - {_FIELDCORE_BRAND}",
+            subtitle=f"{month_label} - {brand_name}",
             details=cover_details,
             cover_key="executive",
         ))
@@ -2883,7 +2950,7 @@ class PDFService:
         exec_primary, exec_accent = self._cover_palette("executive")
         story.extend(self._build_page_header(
             title="Executive Management Report",
-            subtitle=f"{month_label}  |  {_FIELDCORE_BRAND}",
+            subtitle=f"{month_label}  |  {brand_name}",
             primary_hex=exec_primary,
             accent_hex=exec_accent,
         ))
@@ -3058,7 +3125,7 @@ class PDFService:
             [[
                 mark_logo or Paragraph("<b>FC</b>", fallback_s),
                 [Paragraph(title, title_s), Spacer(1, 2), Paragraph(subtitle, sub_s)],
-                lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
+                lockup_logo or Paragraph(f"<b>{escape(self._brand_name())}</b>", fallback_s),
             ]],
             colWidths=[46 * mm, 78 * mm, 46 * mm],
         )

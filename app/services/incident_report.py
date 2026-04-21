@@ -118,6 +118,8 @@ class _IncidentReportService:
                 technician_name=technician_name,
                 submitted_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
                 recipients=get_tenant_notification_recipients(session, tenant_id),
+                session=session,
+                tenant_id=tenant_id,
             )
         except Exception as exc:
             LOG.warning("Failed to send incident report notifications: {}", exc)
@@ -371,6 +373,11 @@ class _IncidentReportService:
 
         pdf_service = get_pdf_service()
         incident = self._get_incident(report.incident_id, session)
+        if hasattr(pdf_service, "configure_templates"):
+            pdf_service.configure_templates(
+                session=session,
+                tenant_id=get_technician_tenant_id(session, getattr(incident, "technician_id", None)),
+            )
         pdf_buffer = pdf_service.generate_incident_report_pdf(report, incident=incident)
 
         date_str = (report.report_date or utcnow()).strftime("%Y%m%d")

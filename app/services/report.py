@@ -425,6 +425,11 @@ class _ReportService:
             session.refresh(report)
             
             pdf_service = get_pdf_service()
+            if hasattr(pdf_service, "configure_templates"):
+                pdf_service.configure_templates(
+                    session=session,
+                    tenant_id=get_task_tenant_id(session, getattr(report, "task", None)),
+                )
             pdf_buffer = pdf_service.generate_report_pdf(report)
             
             # Verify buffer has content
