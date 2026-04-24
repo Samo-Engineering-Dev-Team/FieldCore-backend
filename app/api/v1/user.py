@@ -6,11 +6,29 @@ from app.models import UserCreate, UserUpdate, UserResponse, UserRoleUpdate, Adm
 from app.services import UserService, CurrentUser
 from app.database import Session
 from app.utils.enums import UserRole, UserStatus
-from app.exceptions.http import UnauthorizedException
+from app.exceptions.http import ForbiddenException
 from app.services.authorization import ADMIN_MANAGER_ROLES, assert_self_or_roles
 from app.models.auth import TokenData
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+USER_DIRECTORY_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.HR,
+    UserRole.MANAGER,
+)
+USER_STATUS_MANAGER_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.HR,
+    UserRole.MANAGER,
+)
+USER_ROLE_MANAGER_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+)
 
 
 def _is_platform_admin(current_user: TokenData) -> bool:
@@ -36,7 +54,7 @@ def _resolve_tenant_scope(
         and header_tenant_id is not None
         and query_tenant_id != header_tenant_id
     ):
-        raise UnauthorizedException("Tenant scope mismatch between header and query parameter")
+        raise ForbiddenException("Tenant scope mismatch between header and query parameter")
 
     requested_tenant_id = query_tenant_id or header_tenant_id
 
@@ -45,12 +63,31 @@ def _resolve_tenant_scope(
 
     user_tenant_id = current_user.tenant_id.strip() if current_user.tenant_id else None
     if not user_tenant_id:
-        raise UnauthorizedException("Tenant-scoped account is missing tenant scope")
+        raise ForbiddenException("Tenant-scoped account is missing tenant scope")
 
     if requested_tenant_id is not None and requested_tenant_id != user_tenant_id:
-        raise UnauthorizedException("Tenant scope does not match authenticated user")
+        raise ForbiddenException("Tenant scope does not match authenticated user")
 
     return user_tenant_id
+
+
+def _has_requested_tenant_scope(request: Request | None, tenant_id: str | None) -> bool:
+    if tenant_id and tenant_id.strip():
+        return True
+    if request is None:
+        return False
+    header_tenant_id = request.headers.get("X-Tenant-ID")
+    return bool(header_tenant_id and header_tenant_id.strip())
+
+
+def _assert_can_assign_role(target_role: UserRole, current_user: TokenData) -> None:
+    if target_role == UserRole.SUPER_ADMIN and current_user.role != UserRole.SUPER_ADMIN:
+        raise ForbiddenException("Only a super admin can assign the super admin role.")
+    if current_user.role in (UserRole.HR, UserRole.MANAGER) and target_role in (
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+    ):
+        raise ForbiddenException("Only tenant admins can assign admin roles.")
 
 
 @router.post("", response_model=UserResponse, status_code=201, include_in_schema=False)
@@ -64,8 +101,9 @@ def create_user(
     request: Request = None,
 ) -> UserResponse:
     """Create a new user. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to create users.")
+    if current_user.role not in USER_DIRECTORY_ROLES:
+        raise ForbiddenException("You do not have permission to create users.")
+    _assert_can_assign_role(payload.role, current_user)
     return service.create_user(
         payload,
         session,
@@ -87,8 +125,8 @@ def read_users(
     request: Request = None,
 ) -> List[UserResponse]:
     """Get all users. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to view all users.")
+    if current_user.role not in USER_DIRECTORY_ROLES:
+        raise ForbiddenException("You do not have permission to view all users.")
     return service.read_users(
         session,
         status,
@@ -115,10 +153,15 @@ def read_user(
         ADMIN_MANAGER_ROLES,
         "You do not have permission to view this user.",
     )
+    resolved_tenant_id = (
+        _resolve_tenant_scope(request, tenant_id, current_user)
+        if user_id != current_user.user_id or _has_requested_tenant_scope(request, tenant_id)
+        else None
+    )
     return service.read_user(
         user_id,
         session,
-        tenant_id=_resolve_tenant_scope(request, tenant_id, current_user),
+        tenant_id=resolved_tenant_id,
     )
 
 
@@ -158,8 +201,9 @@ def set_user_role(
     request: Request = None,
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to perform this action.")
+    if current_user.role not in USER_ROLE_MANAGER_ROLES:
+        raise ForbiddenException("You do not have permission to perform this action.")
+    _assert_can_assign_role(payload.new_role, current_user)
     return service.set_user_role(
         user_id,
         payload.new_role,
@@ -179,8 +223,8 @@ def reset_user_password(
     request: Request = None,
 ) -> dict:
     """Reset a user's password. Only accessible to admins."""
-    if current_user.role != UserRole.ADMIN:
-        raise UnauthorizedException("You do not have permission to reset passwords.")
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
+        raise ForbiddenException("You do not have permission to reset passwords.")
     return service.reset_password(
         user_id,
         payload,
@@ -199,8 +243,8 @@ def activate_user(
     request: Request = None,
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to perform this action.")
+    if current_user.role not in USER_STATUS_MANAGER_ROLES:
+        raise ForbiddenException("You do not have permission to perform this action.")
     return service.activate_user(
         user_id,
         session,
@@ -218,8 +262,8 @@ def deactivate_user(
     request: Request = None,
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to perform this action.")
+    if current_user.role not in USER_STATUS_MANAGER_ROLES:
+        raise ForbiddenException("You do not have permission to perform this action.")
     return service.deactivate_user(
         user_id,
         session,
@@ -237,8 +281,8 @@ def delete_user(
     request: Request = None,
 ) -> None:
     """Soft delete a user. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to delete users.")
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]:
+        raise ForbiddenException("You do not have permission to delete users.")
     service.delete_user(
         user_id,
         session,

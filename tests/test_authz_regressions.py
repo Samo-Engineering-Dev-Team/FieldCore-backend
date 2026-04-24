@@ -147,6 +147,20 @@ def test_read_user_rejects_non_management_user_accessing_other_user() -> None:
         read_user(uuid4(), service, MagicMock(), current_user)
 
 
+def test_read_user_allows_self_without_tenant_scope() -> None:
+    user_id = uuid4()
+    current_user = make_user(UserRole.TECHNICIAN, user_id=user_id)
+    service = MagicMock()
+    session = MagicMock()
+    expected = object()
+    service.read_user.return_value = expected
+
+    result = read_user(user_id, service, session, current_user, tenant_id=None)
+
+    assert result is expected
+    service.read_user.assert_called_once_with(user_id, session, tenant_id=None)
+
+
 def test_technician_read_rejects_other_technician(monkeypatch: pytest.MonkeyPatch) -> None:
     service = _TechnicianService()
     session = MagicMock()

@@ -159,7 +159,7 @@ app.include_router(router)
 # app.include_router(graphql_app, prefix="/graphql")
 
 
-@app.get("/", include_in_schema=False, status_code=307)
+@app.get("/", include_in_schema=False, status_code=307, response_model=None)
 def root() -> RedirectResponse | JSONResponse:
     """"""
     if app.docs_url:

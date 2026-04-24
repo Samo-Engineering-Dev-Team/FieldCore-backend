@@ -5,6 +5,8 @@ class UserRole(StrEnum):
     """"""
     SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
+    HR = "hr"
+    EXECUTIVE = "executive"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"

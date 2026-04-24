@@ -22,6 +22,12 @@ from sqlalchemy.engine import Connection, Engine
 
 
 PLATFORM_ROLES = ("admin", "super_admin")
+DEFAULT_TENANT_ID = "samo-telecoms"
+DEFAULT_TENANT_NAME = "Samo Telecoms"
+DEFAULT_LICENSE_PRODUCT_SKU = "FIELDCORE"
+DEFAULT_LICENSE_PRODUCT_NAME = "FieldCore"
+DEFAULT_LICENSE_PLAN_CODE = "OPS-PRO"
+DEFAULT_LICENSE_PLAN_NAME = "FieldCore OPS Pro"
 
 
 @dataclass(frozen=True)
@@ -35,6 +41,8 @@ class TenantBackfillOptions:
     skip_users: bool
     skip_webhooks: bool
     skip_settings: bool
+    seed_full_access_license: bool
+    platform_owner_emails: tuple[str, ...]
     strict: bool
 
 
@@ -97,6 +105,16 @@ def users_where_clause(options: TenantBackfillOptions) -> tuple[str, dict[str, A
 
     if not options.include_admins:
         conditions.append("LOWER(role::text) NOT IN ('admin', 'super_admin')")
+    else:
+        conditions.append("LOWER(role::text) != 'super_admin'")
+
+    if options.platform_owner_emails:
+        placeholders: list[str] = []
+        for index, email in enumerate(options.platform_owner_emails):
+            param_name = f"platform_owner_email_{index}"
+            placeholders.append(f":{param_name}")
+            params[param_name] = email.lower()
+        conditions.append(f"LOWER(email) NOT IN ({', '.join(placeholders)})")
 
     if options.user_email_domain:
         conditions.append("LOWER(email) LIKE :email_domain")
@@ -175,6 +193,117 @@ def ensure_schema(connection: Connection) -> None:
         )
 
 
+def ensure_licensing_schema(connection: Connection) -> None:
+    connection.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+    connection.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS license_products (
+                id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deleted_at  TIMESTAMPTZ,
+                sku         VARCHAR(64) NOT NULL,
+                name        VARCHAR(120) NOT NULL,
+                description TEXT,
+                is_active   BOOLEAN     NOT NULL DEFAULT TRUE,
+                CONSTRAINT uq_license_products_sku UNIQUE (sku)
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS license_plans (
+                id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deleted_at         TIMESTAMPTZ,
+                license_product_id UUID        NOT NULL REFERENCES license_products(id) ON DELETE CASCADE,
+                code               VARCHAR(64) NOT NULL,
+                name               VARCHAR(120) NOT NULL,
+                description        TEXT,
+                is_active          BOOLEAN     NOT NULL DEFAULT TRUE,
+                CONSTRAINT uq_license_plans_product_code UNIQUE (license_product_id, code)
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS entitlements (
+                id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+                created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+                updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+                deleted_at      TIMESTAMPTZ,
+                license_plan_id UUID         NOT NULL REFERENCES license_plans(id) ON DELETE CASCADE,
+                feature_key     VARCHAR(120) NOT NULL,
+                feature_name    VARCHAR(120) NOT NULL,
+                description     TEXT,
+                grant_value     VARCHAR(120),
+                is_enabled      BOOLEAN      NOT NULL DEFAULT TRUE,
+                CONSTRAINT uq_entitlements_plan_feature UNIQUE (license_plan_id, feature_key)
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS tenant_licenses (
+                id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deleted_at            TIMESTAMPTZ,
+                tenant_id             TEXT        NOT NULL,
+                license_plan_id       UUID        NOT NULL REFERENCES license_plans(id) ON DELETE CASCADE,
+                starts_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                ends_at               TIMESTAMPTZ,
+                assigned_by_user_id   UUID,
+                unassigned_by_user_id UUID
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS license_history (
+                id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+                created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                deleted_at        TIMESTAMPTZ,
+                tenant_license_id UUID        NOT NULL REFERENCES tenant_licenses(id) ON DELETE CASCADE,
+                tenant_id         TEXT        NOT NULL,
+                license_plan_id   UUID        NOT NULL REFERENCES license_plans(id) ON DELETE CASCADE,
+                action            VARCHAR(32) NOT NULL,
+                actor_user_id     UUID,
+                effective_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                note              TEXT
+            )
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_tenant_licenses_lookup
+            ON tenant_licenses(tenant_id, license_plan_id, starts_at)
+            """
+        )
+    )
+    connection.execute(
+        text(
+            """
+            CREATE INDEX IF NOT EXISTS ix_license_history_tenant_effective_at
+            ON license_history(tenant_id, effective_at DESC)
+            """
+        )
+    )
+
+
 def schema_status(connection: Connection) -> dict[str, Any]:
     required = ("tenants", "tenant_operation_logs", "users", "webhooks", "system_settings")
     present = {table: has_table(connection, table) for table in required}
@@ -211,6 +340,8 @@ def build_plan(connection: Connection, options: TenantBackfillOptions) -> dict[s
             "skip_users": options.skip_users,
             "skip_webhooks": options.skip_webhooks,
             "skip_settings": options.skip_settings,
+            "seed_full_access_license": options.seed_full_access_license,
+            "platform_owner_emails": list(options.platform_owner_emails),
         },
     }
 
@@ -262,6 +393,49 @@ def build_plan(connection: Connection, options: TenantBackfillOptions) -> dict[s
             {"tenant_id": options.tenant_id},
         )
 
+    if has_table(connection, "users") and options.platform_owner_emails:
+        owner_placeholders: list[str] = []
+        owner_params: dict[str, Any] = {}
+        for index, email in enumerate(options.platform_owner_emails):
+            param_name = f"owner_email_{index}"
+            owner_placeholders.append(f":{param_name}")
+            owner_params[param_name] = email.lower()
+        plan["counts"]["platform_owner_users_found"] = scalar(
+            connection,
+            f"""
+            SELECT COUNT(*)
+            FROM users
+            WHERE deleted_at IS NULL
+              AND LOWER(email) IN ({', '.join(owner_placeholders)})
+            """,
+            owner_params,
+        )
+
+    if options.seed_full_access_license and all(
+        has_table(connection, table_name)
+        for table_name in ("tenant_licenses", "license_plans", "license_products")
+    ):
+        plan["counts"]["active_full_access_license_exists"] = scalar(
+            connection,
+            """
+            SELECT COUNT(*)
+            FROM tenant_licenses tl
+            JOIN license_plans lp ON lp.id = tl.license_plan_id
+            JOIN license_products lprod ON lprod.id = lp.license_product_id
+            WHERE tl.tenant_id = :tenant_id
+              AND tl.deleted_at IS NULL
+              AND tl.starts_at <= NOW()
+              AND (tl.ends_at IS NULL OR tl.ends_at > NOW())
+              AND lprod.sku = :product_sku
+              AND lp.code = :plan_code
+            """,
+            {
+                "tenant_id": options.tenant_id,
+                "product_sku": DEFAULT_LICENSE_PRODUCT_SKU,
+                "plan_code": DEFAULT_LICENSE_PLAN_CODE,
+            },
+        )
+
     return plan
 
 
@@ -286,10 +460,177 @@ def upsert_tenant(connection: Connection, options: TenantBackfillOptions) -> Non
     )
 
 
+def promote_platform_owners(connection: Connection, options: TenantBackfillOptions) -> int:
+    if not options.platform_owner_emails or not has_table(connection, "users"):
+        return 0
+
+    placeholders: list[str] = []
+    params: dict[str, Any] = {}
+    for index, email in enumerate(options.platform_owner_emails):
+        param_name = f"owner_email_{index}"
+        placeholders.append(f":{param_name}")
+        params[param_name] = email.lower()
+
+    result = connection.execute(
+        text(
+            f"""
+            UPDATE users
+            SET role = 'super_admin',
+                tenant_id = NULL,
+                updated_at = NOW()
+            WHERE deleted_at IS NULL
+              AND LOWER(email) IN ({', '.join(placeholders)})
+            """
+        ),
+        params,
+    )
+    return int(result.rowcount or 0)
+
+
+def seed_full_access_license(connection: Connection, options: TenantBackfillOptions) -> dict[str, Any]:
+    ensure_licensing_schema(connection)
+
+    product_id = connection.execute(
+        text(
+            """
+            INSERT INTO license_products (sku, name, description, is_active, created_at, updated_at)
+            VALUES (:sku, :name, :description, TRUE, NOW(), NOW())
+            ON CONFLICT (sku) DO UPDATE
+            SET name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                is_active = TRUE,
+                deleted_at = NULL,
+                updated_at = NOW()
+            RETURNING id
+            """
+        ),
+        {
+            "sku": DEFAULT_LICENSE_PRODUCT_SKU,
+            "name": DEFAULT_LICENSE_PRODUCT_NAME,
+            "description": "FieldCore licensing catalog for tenant access control.",
+        },
+    ).scalar_one()
+
+    plan_id = connection.execute(
+        text(
+            """
+            INSERT INTO license_plans (
+                license_product_id, code, name, description, is_active, created_at, updated_at
+            )
+            VALUES (:product_id, :code, :name, :description, TRUE, NOW(), NOW())
+            ON CONFLICT (license_product_id, code) DO UPDATE
+            SET name = EXCLUDED.name,
+                description = EXCLUDED.description,
+                is_active = TRUE,
+                deleted_at = NULL,
+                updated_at = NOW()
+            RETURNING id
+            """
+        ),
+        {
+            "product_id": product_id,
+            "code": DEFAULT_LICENSE_PLAN_CODE,
+            "name": DEFAULT_LICENSE_PLAN_NAME,
+            "description": "Full FieldCore operations access while tier limits are being formalized.",
+        },
+    ).scalar_one()
+
+    connection.execute(
+        text(
+            """
+            INSERT INTO entitlements (
+                license_plan_id, feature_key, feature_name, description, grant_value,
+                is_enabled, created_at, updated_at
+            )
+            VALUES (
+                :plan_id, '*', 'Full platform access',
+                'Unlock all current FieldCore screens for the tenant.', 'full',
+                TRUE, NOW(), NOW()
+            )
+            ON CONFLICT (license_plan_id, feature_key) DO UPDATE
+            SET feature_name = EXCLUDED.feature_name,
+                description = EXCLUDED.description,
+                grant_value = EXCLUDED.grant_value,
+                is_enabled = TRUE,
+                deleted_at = NULL,
+                updated_at = NOW()
+            """
+        ),
+        {"plan_id": plan_id},
+    )
+
+    existing_license_id = connection.execute(
+        text(
+            """
+            SELECT id
+            FROM tenant_licenses
+            WHERE tenant_id = :tenant_id
+              AND license_plan_id = :plan_id
+              AND deleted_at IS NULL
+              AND starts_at <= NOW()
+              AND (ends_at IS NULL OR ends_at > NOW())
+            ORDER BY starts_at DESC
+            LIMIT 1
+            """
+        ),
+        {"tenant_id": options.tenant_id, "plan_id": plan_id},
+    ).scalar()
+
+    created_assignment = False
+    tenant_license_id = existing_license_id
+    if tenant_license_id is None:
+        tenant_license_id = connection.execute(
+            text(
+                """
+                INSERT INTO tenant_licenses (
+                    tenant_id, license_plan_id, starts_at, created_at, updated_at
+                )
+                VALUES (:tenant_id, :plan_id, NOW(), NOW(), NOW())
+                RETURNING id
+                """
+            ),
+            {"tenant_id": options.tenant_id, "plan_id": plan_id},
+        ).scalar_one()
+        created_assignment = True
+
+        connection.execute(
+            text(
+                """
+                INSERT INTO license_history (
+                    tenant_license_id, tenant_id, license_plan_id, action,
+                    effective_at, note, created_at, updated_at
+                )
+                VALUES (
+                    :tenant_license_id, :tenant_id, :plan_id, 'assigned',
+                    NOW(), :note, NOW(), NOW()
+                )
+                """
+            ),
+            {
+                "tenant_license_id": tenant_license_id,
+                "tenant_id": options.tenant_id,
+                "plan_id": plan_id,
+                "note": "Seeded by tenant scope rollout script.",
+            },
+        )
+
+    return {
+        "product_id": str(product_id),
+        "plan_id": str(plan_id),
+        "tenant_license_id": str(tenant_license_id),
+        "tenant_license_created": created_assignment,
+        "entitlements_upserted": 1,
+    }
+
+
 def apply_backfill(connection: Connection, options: TenantBackfillOptions, plan: dict[str, Any]) -> dict[str, Any]:
     ensure_schema(connection)
     upsert_tenant(connection, options)
     applied: dict[str, int] = {"tenants_upserted": 1}
+
+    promoted_platform_owners = promote_platform_owners(connection, options)
+    if promoted_platform_owners:
+        applied["platform_owners_promoted"] = promoted_platform_owners
 
     if has_table(connection, "users") and not options.skip_users:
         where_sql, params = users_where_clause(options)
@@ -329,6 +670,11 @@ def apply_backfill(connection: Connection, options: TenantBackfillOptions, plan:
         )
         applied["tenant_settings_copied"] = int(result.rowcount or 0)
 
+    license_seed: dict[str, Any] | None = None
+    if options.seed_full_access_license:
+        license_seed = seed_full_access_license(connection, options)
+        applied["full_access_license_seeded"] = 1
+
     connection.execute(
         text(
             """
@@ -341,7 +687,10 @@ def apply_backfill(connection: Connection, options: TenantBackfillOptions, plan:
         {
             "tenant_id": options.tenant_id,
             "message": "Tenant scope backfill applied by scripts/backfill_tenant_scope.py",
-            "details": json.dumps({"plan": plan, "applied": applied}, default=json_default),
+            "details": json.dumps(
+                {"plan": plan, "applied": applied, "license_seed": license_seed},
+                default=json_default,
+            ),
         },
     )
     return applied
@@ -396,6 +745,58 @@ def verify(connection: Connection, options: TenantBackfillOptions) -> dict[str, 
             """,
         )
 
+    if options.platform_owner_emails and has_table(connection, "users"):
+        placeholders: list[str] = []
+        params: dict[str, Any] = {}
+        for index, email in enumerate(options.platform_owner_emails):
+            param_name = f"owner_email_{index}"
+            placeholders.append(f":{param_name}")
+            params[param_name] = email.lower()
+        findings["platform_owner_status"] = {
+            "super_admin_tenantless": scalar(
+                connection,
+                f"""
+                SELECT COUNT(*)
+                FROM users
+                WHERE deleted_at IS NULL
+                  AND LOWER(email) IN ({', '.join(placeholders)})
+                  AND LOWER(role::text) = 'super_admin'
+                  AND tenant_id IS NULL
+                """,
+                params,
+            )
+        }
+
+    if options.seed_full_access_license and all(
+        has_table(connection, table_name)
+        for table_name in ("tenant_licenses", "license_plans", "license_products", "entitlements")
+    ):
+        findings["license"] = {
+            "active_full_access_license": scalar(
+                connection,
+                """
+                SELECT COUNT(*)
+                FROM tenant_licenses tl
+                JOIN license_plans lp ON lp.id = tl.license_plan_id
+                JOIN license_products lprod ON lprod.id = lp.license_product_id
+                JOIN entitlements e ON e.license_plan_id = lp.id
+                WHERE tl.tenant_id = :tenant_id
+                  AND tl.deleted_at IS NULL
+                  AND tl.starts_at <= NOW()
+                  AND (tl.ends_at IS NULL OR tl.ends_at > NOW())
+                  AND lprod.sku = :product_sku
+                  AND lp.code = :plan_code
+                  AND e.feature_key = '*'
+                  AND e.is_enabled IS TRUE
+                """,
+                {
+                    "tenant_id": options.tenant_id,
+                    "product_sku": DEFAULT_LICENSE_PRODUCT_SKU,
+                    "plan_code": DEFAULT_LICENSE_PLAN_CODE,
+                },
+            )
+        }
+
     if has_table(connection, "v_tenant_operational_row_counts"):
         rows = connection.execute(
             text(
@@ -414,6 +815,12 @@ def verify(connection: Connection, options: TenantBackfillOptions) -> dict[str, 
     passed = passed and all(count == 0 for count in findings["orphan_tenant_refs"].values())
     if options.user_email_domain:
         passed = passed and findings["unscoped_counts"].get("matching_users", 0) == 0
+    if options.platform_owner_emails:
+        passed = passed and findings.get("platform_owner_status", {}).get("super_admin_tenantless", 0) == len(
+            options.platform_owner_emails
+        )
+    if options.seed_full_access_license:
+        passed = passed and findings.get("license", {}).get("active_full_access_license", 0) > 0
     findings["passed"] = passed
     return findings
 
@@ -422,7 +829,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, TenantBackfillOptio
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("dry-run", "apply", "verify"))
     parser.add_argument("--database-url", default=None)
-    parser.add_argument("--tenant-id", required=True)
+    parser.add_argument("--tenant-id", default=DEFAULT_TENANT_ID)
     parser.add_argument("--tenant-name", default=None)
     parser.add_argument("--tenant-slug", default=None)
     parser.add_argument("--user-email-domain", default=None)
@@ -430,12 +837,32 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, TenantBackfillOptio
     parser.add_argument("--skip-users", action="store_true")
     parser.add_argument("--skip-webhooks", action="store_true")
     parser.add_argument("--skip-settings", action="store_true")
+    parser.add_argument(
+        "--seed-full-access-license",
+        action="store_true",
+        help="Create FieldCore OPS Pro wildcard entitlement and assign it to the tenant.",
+    )
+    parser.add_argument(
+        "--platform-owner-email",
+        action="append",
+        default=[],
+        help="Promote this user to tenantless super_admin and exclude them from tenant backfill. Repeat for multiple owners.",
+    )
     parser.add_argument("--strict", action="store_true", help="Exit non-zero when verify fails")
     args = parser.parse_args(argv)
 
     tenant_id = normalize_identifier(args.tenant_id, "tenant_id")
     tenant_slug = normalize_identifier(args.tenant_slug or tenant_id, "tenant_slug")
-    tenant_name = (args.tenant_name or tenant_slug.replace("-", " ").title()).strip()
+    tenant_name = (args.tenant_name or (DEFAULT_TENANT_NAME if tenant_id == DEFAULT_TENANT_ID else tenant_slug.replace("-", " ").title())).strip()
+    platform_owner_emails = tuple(
+        sorted(
+            {
+                email.strip().lower()
+                for email in args.platform_owner_email
+                if isinstance(email, str) and email.strip()
+            }
+        )
+    )
 
     options = TenantBackfillOptions(
         phase=args.phase,
@@ -447,6 +874,8 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, TenantBackfillOptio
         skip_users=args.skip_users,
         skip_webhooks=args.skip_webhooks,
         skip_settings=args.skip_settings,
+        seed_full_access_license=args.seed_full_access_license,
+        platform_owner_emails=platform_owner_emails,
         strict=args.strict,
     )
     return args, options

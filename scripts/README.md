@@ -60,3 +60,13 @@ python scripts/backfill_tenant_scope.py dry-run --tenant-id tenant-alpha --user-
 python scripts/backfill_tenant_scope.py apply --tenant-id tenant-alpha --user-email-domain example.com --database-url "$env:DATABASE_URL" --strict
 python scripts/backfill_tenant_scope.py verify --tenant-id tenant-alpha --user-email-domain example.com --database-url "$env:DATABASE_URL" --strict
 ```
+
+Samo rollout helper (data-preserving):
+
+```powershell
+python scripts/backfill_tenant_scope.py dry-run --database-url "$env:DATABASE_URL" --include-admins --seed-full-access-license --platform-owner-email "bongani@example.com"
+python scripts/backfill_tenant_scope.py apply --database-url "$env:DATABASE_URL" --include-admins --seed-full-access-license --platform-owner-email "bongani@example.com" --strict
+python scripts/backfill_tenant_scope.py verify --database-url "$env:DATABASE_URL" --include-admins --seed-full-access-license --platform-owner-email "bongani@example.com" --strict
+```
+
+Replace `bongani@example.com` with Bongani's real login email. Defaults create tenant `samo-telecoms` named `Samo Telecoms`.

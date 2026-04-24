@@ -102,6 +102,22 @@ class TenantResponse(SQLModel):
     archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    feature_keys: list[str] = Field(default_factory=list)
+    featureKeys: list[str] = Field(default_factory=list)
+    entitlements: list[dict[str, Any]] = Field(default_factory=list)
+    licenses: list["TenantLicenseEnvelope"] = Field(default_factory=list)
+
+
+class TenantLicenseEnvelope(SQLModel):
+    tenant_license_id: UUID
+    product_sku: str
+    product_name: str
+    plan_code: str
+    plan_name: str
+    starts_at: datetime
+    ends_at: datetime | None = None
+    feature_keys: list[str] = Field(default_factory=list)
+    entitlements: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TenantBootstrapRequest(SQLModel):

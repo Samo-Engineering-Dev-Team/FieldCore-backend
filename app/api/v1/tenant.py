@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 
 from app.database import Session
 from app.models import (
@@ -8,17 +8,41 @@ from app.models import (
     TenantOffboardResponse,
     TenantOperationalImportRequest,
     TenantOperationalImportResponse,
+    TenantResponse,
 )
-from app.services.auth import PlatformAdminUser, require_platform_admin
+from app.services.auth import CurrentUser, PlatformAdminUser, require_platform_admin
 from app.services.audit import request_id_from_headers
+from app.services.tenant_scope import assert_tenant_access
 from app.services.tenant import TenantServiceDep
 
 
 router = APIRouter(
     prefix="/tenants",
     tags=["Tenants"],
-    dependencies=[Depends(require_platform_admin)],
 )
+
+
+@router.get("", response_model=list[TenantResponse], status_code=200, include_in_schema=False)
+@router.get("/", response_model=list[TenantResponse], status_code=200)
+def list_tenants(
+    _current_user: PlatformAdminUser,
+    service: TenantServiceDep,
+    session: Session,
+) -> list[TenantResponse]:
+    """List tenant directory rows for platform administrators."""
+    return service.list_tenants(session)
+
+
+@router.get("/{tenant_id}", response_model=TenantResponse, status_code=200)
+def read_tenant(
+    tenant_id: str,
+    current_user: CurrentUser,
+    service: TenantServiceDep,
+    session: Session,
+) -> TenantResponse:
+    """Read one tenant directory row for platform administrators or same-tenant users."""
+    assert_tenant_access(tenant_id, current_user, "Tenant profile is outside current tenant scope")
+    return service.read_tenant(tenant_id, session)
 
 
 @router.post("/bootstrap", response_model=TenantBootstrapResponse, status_code=201)

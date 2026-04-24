@@ -134,6 +134,42 @@ def test_tenant_entitlement_lookup_and_history_flow(session: Session) -> None:
     assert audit_rows[1].after["note"] == "Customer downgraded"
 
 
+def test_tenant_entitlement_lookup_accepts_wildcard(session: Session) -> None:
+    service = LicensingService()
+
+    product = service.create_product(
+        LicenseProductCreate(sku="FIELDCORE", name="FieldCore"),
+        session,
+    )
+    plan = service.create_plan(
+        LicensePlanCreate(
+            license_product_id=product.id,
+            code="OPS-PRO",
+            name="FieldCore OPS Pro",
+        ),
+        session,
+    )
+    service.create_entitlement(
+        EntitlementCreate(
+            license_plan_id=plan.id,
+            feature_key="*",
+            feature_name="Full access",
+        ),
+        session,
+    )
+    service.assign_tenant_license(
+        TenantLicenseAssign(
+            tenant_id="samo-telecoms",
+            license_plan_id=plan.id,
+        ),
+        session,
+        actor_user_id=uuid4(),
+    )
+
+    assert tenant_has_entitlement(session, "samo-telecoms", "reports.export") is True
+    assert tenant_has_entitlement(session, "samo-telecoms", "dashboards.executive") is True
+
+
 def test_assign_tenant_license_rejects_overlap(session: Session) -> None:
     service = LicensingService()
 

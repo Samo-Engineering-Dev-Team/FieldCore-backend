@@ -13,7 +13,10 @@ from sqlmodel import Session, select
 from app.core import SecurityUtils
 from app.exceptions.http import BadRequestException, ConflictException, NotFoundException
 from app.models import (
+    Entitlement,
     LicenseHistory,
+    LicensePlan,
+    LicenseProduct,
     SystemSetting,
     Tenant,
     TenantBootstrapRequest,
@@ -22,6 +25,7 @@ from app.models import (
     TenantFeatureUsageEvent,
     TenantImportSettingAction,
     TenantImportUserAction,
+    TenantLicenseEnvelope,
     TenantLicense,
     TenantOffboardMode,
     TenantOffboardRequest,
@@ -44,11 +48,15 @@ from app.services.audit import write_audit_event
 from app.models.notification import Notification
 from app.models.passkey import PasskeyChallenge, PasskeyCredential
 from app.models.user_session import UserSession
-from app.utils.enums import UserRole, UserStatus
+from app.utils.enums import LicenseHistoryAction, UserRole, UserStatus
 from app.utils.funcs import utcnow
 
 
 TENANT_SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,126}[a-z0-9])?$")
+DEFAULT_LICENSE_PRODUCT_SKU = "FIELDCORE"
+DEFAULT_LICENSE_PRODUCT_NAME = "FieldCore"
+DEFAULT_LICENSE_PLAN_CODE = "OPS-PRO"
+DEFAULT_LICENSE_PLAN_NAME = "FieldCore OPS Pro"
 
 DEFAULT_TENANT_SETTINGS: tuple[dict[str, Any], ...] = (
     {
@@ -133,6 +141,18 @@ DEFAULT_TENANT_SETTINGS: tuple[dict[str, Any], ...] = (
 
 
 class _TenantService:
+    def list_tenants(self, session: Session) -> list[TenantResponse]:
+        tenants = session.exec(
+            select(Tenant)
+            .where(Tenant.deleted_at.is_(None))
+            .order_by(Tenant.name, Tenant.id)
+        ).all()
+        return [self._to_response(tenant, session=session) for tenant in tenants]
+
+    def read_tenant(self, tenant_id: str, session: Session) -> TenantResponse:
+        tenant = self._get_tenant(session, self._normalize_required_tenant_id(tenant_id))
+        return self._to_response(tenant, session=session)
+
     def bootstrap_tenant(
         self,
         payload: TenantBootstrapRequest,
@@ -168,11 +188,12 @@ class _TenantService:
             operation=TenantOperationType.BOOTSTRAP,
             dry_run=False,
             actor_user_id=actor_user_id,
-            message="Tenant bootstrap created tenant, default settings, and initial admin user",
+            message="Tenant bootstrap created tenant, default settings, initial admin user, and default license when licensing is enabled",
             details={
                 "tenant_id": tenant.id,
                 "setting_keys": [setting.key for setting in settings],
                 "admin_email": admin_email,
+                "default_license_seeded": False,
             },
         )
 
@@ -181,6 +202,12 @@ class _TenantService:
             session.add(admin)
             for setting in settings:
                 session.add(setting)
+            license_seeded = self._ensure_default_full_access_license(
+                session,
+                tenant_id=tenant.id,
+                actor_user_id=actor_user_id,
+            )
+            log.details["default_license_seeded"] = bool(license_seeded)
             session.add(log)
             write_audit_event(
                 session,
@@ -190,10 +217,11 @@ class _TenantService:
                 resource=f"tenant:{tenant.id}",
                 before=None,
                 after={
-                    "tenant": self._to_response(tenant),
+                    "tenant": self._to_response(tenant, session=session),
                     "admin_user_id": admin.id,
                     "setting_keys": [setting.key for setting in settings],
                     "operation_log_id": log.id,
+                    "default_license_seeded": bool(license_seeded),
                 },
                 request_id=request_id,
             )
@@ -206,7 +234,7 @@ class _TenantService:
             raise ConflictException(f"Tenant bootstrap conflict: {exc.orig}")
 
         return TenantBootstrapResponse(
-            tenant=self._to_response(tenant),
+            tenant=self._to_response(tenant, session=session),
             admin_user_id=admin.id,
             setting_count=len(settings),
             operation_log_id=log.id,
@@ -955,8 +983,218 @@ class _TenantService:
             "blockers": blockers,
         }
 
-    def _to_response(self, tenant: Tenant) -> TenantResponse:
-        return TenantResponse(**tenant.model_dump())
+    def _active_license_envelopes(
+        self,
+        tenant_id: str,
+        session: Session,
+    ) -> list[TenantLicenseEnvelope]:
+        required_tables = (
+            TenantLicense.__tablename__,
+            LicensePlan.__tablename__,
+            LicenseProduct.__tablename__,
+            Entitlement.__tablename__,
+        )
+        if not all(self._table_exists(session, table_name) for table_name in required_tables):
+            return []
+
+        now = utcnow()
+        rows = session.exec(
+            select(TenantLicense, LicensePlan, LicenseProduct)
+            .join(LicensePlan, TenantLicense.license_plan_id == LicensePlan.id)
+            .join(LicenseProduct, LicensePlan.license_product_id == LicenseProduct.id)
+            .where(
+                TenantLicense.deleted_at.is_(None),
+                TenantLicense.tenant_id == tenant_id,
+                TenantLicense.starts_at <= now,
+                or_(TenantLicense.ends_at.is_(None), TenantLicense.ends_at > now),
+                LicensePlan.deleted_at.is_(None),
+                LicensePlan.is_active == True,  # noqa: E712
+                LicenseProduct.deleted_at.is_(None),
+                LicenseProduct.is_active == True,  # noqa: E712
+            )
+            .order_by(LicenseProduct.sku, LicensePlan.code, TenantLicense.starts_at.desc())
+        ).all()
+        if not rows:
+            return []
+
+        plan_ids = list({license_plan.id for _, license_plan, _ in rows})
+        entitlement_rows = session.exec(
+            select(Entitlement)
+            .where(
+                Entitlement.deleted_at.is_(None),
+                Entitlement.license_plan_id.in_(plan_ids),
+                Entitlement.is_enabled == True,  # noqa: E712
+            )
+            .order_by(Entitlement.license_plan_id, Entitlement.feature_key)
+        ).all()
+        entitlements_by_plan: dict[UUID, list[dict[str, Any]]] = {}
+        feature_keys_by_plan: dict[UUID, list[str]] = {}
+        for entitlement in entitlement_rows:
+            entitlements_by_plan.setdefault(entitlement.license_plan_id, []).append(
+                {
+                    "feature_key": entitlement.feature_key,
+                    "feature_name": entitlement.feature_name,
+                    "grant_value": entitlement.grant_value,
+                    "is_enabled": entitlement.is_enabled,
+                }
+            )
+            feature_keys_by_plan.setdefault(entitlement.license_plan_id, []).append(
+                entitlement.feature_key
+            )
+
+        return [
+            TenantLicenseEnvelope(
+                tenant_license_id=tenant_license.id,
+                product_sku=license_product.sku,
+                product_name=license_product.name,
+                plan_code=license_plan.code,
+                plan_name=license_plan.name,
+                starts_at=tenant_license.starts_at,
+                ends_at=tenant_license.ends_at,
+                feature_keys=sorted(set(feature_keys_by_plan.get(license_plan.id, []))),
+                entitlements=entitlements_by_plan.get(license_plan.id, []),
+            )
+            for tenant_license, license_plan, license_product in rows
+        ]
+
+    def _ensure_default_full_access_license(
+        self,
+        session: Session,
+        *,
+        tenant_id: str,
+        actor_user_id: UUID | None,
+    ) -> bool:
+        required_tables = (
+            LicenseProduct.__tablename__,
+            LicensePlan.__tablename__,
+            Entitlement.__tablename__,
+            TenantLicense.__tablename__,
+        )
+        if not all(self._table_exists(session, table_name) for table_name in required_tables):
+            return False
+
+        product = session.exec(
+            select(LicenseProduct).where(
+                func.lower(LicenseProduct.sku) == DEFAULT_LICENSE_PRODUCT_SKU.lower()
+            )
+        ).first()
+        if product is None:
+            product = LicenseProduct(
+                sku=DEFAULT_LICENSE_PRODUCT_SKU,
+                name=DEFAULT_LICENSE_PRODUCT_NAME,
+                description="Default FieldCore product for tenant bootstrap",
+                is_active=True,
+            )
+        else:
+            product.name = product.name or DEFAULT_LICENSE_PRODUCT_NAME
+            product.is_active = True
+            product.deleted_at = None
+            product.touch()
+        session.add(product)
+        session.flush()
+
+        plan = session.exec(
+            select(LicensePlan).where(
+                LicensePlan.license_product_id == product.id,
+                func.lower(LicensePlan.code) == DEFAULT_LICENSE_PLAN_CODE.lower(),
+            )
+        ).first()
+        if plan is None:
+            plan = LicensePlan(
+                license_product_id=product.id,
+                code=DEFAULT_LICENSE_PLAN_CODE,
+                name=DEFAULT_LICENSE_PLAN_NAME,
+                description="Full access bootstrap license until tier limits are configured",
+                is_active=True,
+            )
+        else:
+            plan.name = plan.name or DEFAULT_LICENSE_PLAN_NAME
+            plan.is_active = True
+            plan.deleted_at = None
+            plan.touch()
+        session.add(plan)
+        session.flush()
+
+        entitlement = session.exec(
+            select(Entitlement).where(
+                Entitlement.license_plan_id == plan.id,
+                Entitlement.feature_key == "*",
+            )
+        ).first()
+        if entitlement is None:
+            entitlement = Entitlement(
+                license_plan_id=plan.id,
+                feature_key="*",
+                feature_name="Full platform access",
+                description="Allows all current tenant features until tier limits are configured",
+                grant_value="full",
+                is_enabled=True,
+            )
+        else:
+            entitlement.feature_name = entitlement.feature_name or "Full platform access"
+            entitlement.grant_value = entitlement.grant_value or "full"
+            entitlement.is_enabled = True
+            entitlement.deleted_at = None
+            entitlement.touch()
+        session.add(entitlement)
+
+        now = utcnow()
+        existing_license = session.exec(
+            select(TenantLicense).where(
+                TenantLicense.deleted_at.is_(None),
+                TenantLicense.tenant_id == tenant_id,
+                TenantLicense.license_plan_id == plan.id,
+                TenantLicense.starts_at <= now,
+                or_(TenantLicense.ends_at.is_(None), TenantLicense.ends_at > now),
+            )
+        ).first()
+        if existing_license is not None:
+            return False
+
+        tenant_license = TenantLicense(
+            tenant_id=tenant_id,
+            license_plan_id=plan.id,
+            starts_at=now,
+            assigned_by_user_id=actor_user_id,
+        )
+        session.add(tenant_license)
+        session.flush()
+
+        if self._table_exists(session, LicenseHistory.__tablename__):
+            session.add(
+                LicenseHistory(
+                    tenant_license_id=tenant_license.id,
+                    tenant_id=tenant_id,
+                    license_plan_id=plan.id,
+                    action=LicenseHistoryAction.ASSIGNED,
+                    actor_user_id=actor_user_id,
+                    effective_at=now,
+                    note="Assigned during tenant bootstrap",
+                )
+            )
+        return True
+
+    def _to_response(self, tenant: Tenant, session: Session | None = None) -> TenantResponse:
+        licenses = self._active_license_envelopes(tenant.id, session) if session is not None else []
+        feature_keys = sorted(
+            {
+                feature_key
+                for license_envelope in licenses
+                for feature_key in license_envelope.feature_keys
+            }
+        )
+        entitlements = [
+            entitlement
+            for license_envelope in licenses
+            for entitlement in license_envelope.entitlements
+        ]
+        return TenantResponse(
+            **tenant.model_dump(),
+            feature_keys=feature_keys,
+            featureKeys=feature_keys,
+            entitlements=entitlements,
+            licenses=licenses,
+        )
 
 
 def get_tenant_service() -> _TenantService:

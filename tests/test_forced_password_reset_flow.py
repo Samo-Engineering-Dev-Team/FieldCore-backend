@@ -108,3 +108,24 @@ def test_get_current_user_rejects_token_issued_before_credentials_update() -> No
 
     with pytest.raises(UnauthorizedException, match="Session expired"):
         get_current_user(token.access_token, session)
+
+
+def test_get_current_user_accepts_same_second_credentials_update() -> None:
+    user = build_user()
+    token = SecurityUtils.create_token(
+        user.id,
+        user.role,
+        user.name,
+        user.surname,
+        must_change_password=user.must_change_password,
+    )
+    decoded = SecurityUtils.verify_access_token(token.access_token)
+    assert decoded.iat is not None
+
+    user.credentials_updated_at = decoded.iat + timedelta(milliseconds=500)
+    session = MagicMock()
+    session.exec.return_value.first.return_value = user
+
+    current_user = get_current_user(token.access_token, session)
+
+    assert current_user.user_id == user.id

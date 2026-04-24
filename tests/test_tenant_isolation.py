@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.api.v1.user import _resolve_tenant_scope
-from app.exceptions.http import ForbiddenException, UnauthorizedException
+from app.api.v1.user import _resolve_tenant_scope, read_users
+from app.exceptions.http import ForbiddenException
 from app.models.auth import TokenData
 from app.services.auth import get_current_user
 from app.services.report import _ReportService
@@ -72,15 +72,37 @@ def test_auth_rehydrates_tenant_scope_from_live_user(monkeypatch) -> None:
 def test_user_scope_rejects_cross_tenant_header() -> None:
     request = SimpleNamespace(headers={"X-Tenant-ID": "tenant-beta"})
 
-    with pytest.raises(UnauthorizedException, match="does not match authenticated user"):
+    with pytest.raises(ForbiddenException, match="does not match authenticated user"):
         _resolve_tenant_scope(request, None, make_user(UserRole.MANAGER, tenant_id="tenant-alpha"))
 
 
 def test_user_scope_rejects_query_header_mismatch() -> None:
     request = SimpleNamespace(headers={"X-Tenant-ID": "tenant-alpha"})
 
-    with pytest.raises(UnauthorizedException, match="Tenant scope mismatch"):
+    with pytest.raises(ForbiddenException, match="Tenant scope mismatch"):
         _resolve_tenant_scope(request, "tenant-beta", make_user(UserRole.ADMIN, tenant_id=None))
+
+
+def test_super_admin_can_list_users_with_optional_tenant_scope() -> None:
+    calls = {}
+
+    class StubUserService:
+        def read_users(self, session, status, role, offset, limit, tenant_id):
+            calls["tenant_id"] = tenant_id
+            calls["limit"] = limit
+            return []
+
+    result = read_users(
+        StubUserService(),
+        SimpleNamespace(),
+        make_user(UserRole.SUPER_ADMIN, tenant_id=None),
+        limit=1000,
+        tenant_id="tenant-alpha",
+        request=SimpleNamespace(headers={}),
+    )
+
+    assert result == []
+    assert calls == {"tenant_id": "tenant-alpha", "limit": 1000}
 
 
 def test_task_list_scopes_management_user_to_own_tenant() -> None:

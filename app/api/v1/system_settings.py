@@ -12,7 +12,7 @@ from app.services.system_settings import SystemSettingsService
 from app.services import CurrentUser
 from app.database import Session
 from app.utils.enums import UserRole
-from app.exceptions.http import UnauthorizedException
+from app.exceptions.http import ForbiddenException
 from app.core.settings import app_settings
 from app.services.tenant_scope import get_tenant_notification_recipients
 
@@ -25,7 +25,7 @@ def _require_admin(current_user):
         return
     if current_user.role == UserRole.ADMIN and current_user.tenant_id is None:
         return
-    raise UnauthorizedException("Only platform administrators can access system settings")
+    raise ForbiddenException("Only platform administrators can access system settings")
 
 
 @router.get("/", response_model=SystemSettingsResponse, status_code=200)

@@ -77,6 +77,8 @@ def tenant_has_entitlement(
     lookup_at = _as_utc(at or utcnow())
     normalized_tenant_id = _normalize_tenant_id(tenant_id)
     normalized_feature_key = _normalize_feature_key(feature_key)
+    wildcard_feature_key = "*"
+    prefix_wildcard = f"{normalized_feature_key.split('.', 1)[0]}.*"
 
     statement = (
         select(Entitlement.id)
@@ -85,7 +87,11 @@ def tenant_has_entitlement(
         .join(TenantLicense, TenantLicense.license_plan_id == LicensePlan.id)
         .where(
             Entitlement.deleted_at.is_(None),
-            Entitlement.feature_key == normalized_feature_key,
+            or_(
+                Entitlement.feature_key == normalized_feature_key,
+                Entitlement.feature_key == wildcard_feature_key,
+                Entitlement.feature_key == prefix_wildcard,
+            ),
             Entitlement.is_enabled == True,  # noqa: E712
             LicensePlan.deleted_at.is_(None),
             LicensePlan.is_active == True,  # noqa: E712

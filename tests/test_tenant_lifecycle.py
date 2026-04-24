@@ -2,8 +2,13 @@ from sqlmodel import SQLModel, Session, create_engine, select
 
 from app.models import (
     AuditLog,
+    Entitlement,
+    LicenseHistory,
+    LicensePlan,
+    LicenseProduct,
     SystemSetting,
     Tenant,
+    TenantLicense,
     TenantBootstrapRequest,
     TenantOffboardMode,
     TenantOffboardRequest,
@@ -13,8 +18,9 @@ from app.models import (
     User,
     Webhook,
 )
+from app.api.v1.tenant import router as tenant_router
 from app.services.tenant import get_tenant_service
-from app.utils.enums import UserRole, UserStatus
+from app.utils.enums import LicenseHistoryAction, UserRole, UserStatus
 
 
 def _session() -> Session:
@@ -74,6 +80,123 @@ def test_tenant_bootstrap_creates_tenant_defaults_admin_and_log() -> None:
         assert audit.action_type == "tenant.bootstrap"
         assert audit.resource == "tenant:acme-fibre"
         assert audit.after["admin_user_id"] == str(admin.id)
+
+
+def test_tenant_bootstrap_seeds_default_license_when_schema_exists() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[
+            Tenant.__table__,
+            TenantOperationLog.__table__,
+            AuditLog.__table__,
+            User.__table__,
+            SystemSetting.__table__,
+            Webhook.__table__,
+            LicenseProduct.__table__,
+            LicensePlan.__table__,
+            Entitlement.__table__,
+            TenantLicense.__table__,
+            LicenseHistory.__table__,
+        ],
+    )
+    service = get_tenant_service()
+
+    with Session(engine) as session:
+        response = service.bootstrap_tenant(
+            TenantBootstrapRequest(
+                name="Samo Telecoms",
+                slug="samo-telecoms",
+                admin_email="admin@samo.example.com",
+                admin_name="Samo",
+                admin_surname="Admin",
+                admin_password="Password1",
+            ),
+            session,
+        )
+
+        assert response.tenant.feature_keys == ["*"]
+        assert response.tenant.licenses[0].product_sku == "FIELDCORE"
+        assert response.tenant.licenses[0].plan_code == "OPS-PRO"
+
+        tenant_license = session.exec(
+            select(TenantLicense).where(TenantLicense.tenant_id == "samo-telecoms")
+        ).one()
+        assert tenant_license.ends_at is None
+
+        history = session.exec(
+            select(LicenseHistory).where(LicenseHistory.tenant_license_id == tenant_license.id)
+        ).one()
+        assert history.action == LicenseHistoryAction.ASSIGNED
+
+
+def test_tenant_directory_routes_are_registered() -> None:
+    get_routes = {
+        route.path
+        for route in tenant_router.routes
+        if "GET" in getattr(route, "methods", set())
+    }
+
+    assert "/tenants/" in get_routes
+    assert "/tenants/{tenant_id}" in get_routes
+
+
+def test_tenant_service_lists_and_reads_tenants() -> None:
+    service = get_tenant_service()
+
+    with _session() as session:
+        session.add(Tenant(id="tenant-beta", slug="tenant-beta", name="Tenant Beta"))
+        session.add(Tenant(id="tenant-alpha", slug="tenant-alpha", name="Tenant Alpha"))
+        session.commit()
+
+        tenants = service.list_tenants(session)
+        assert [tenant.id for tenant in tenants] == ["tenant-alpha", "tenant-beta"]
+
+        tenant = service.read_tenant("tenant-alpha", session)
+        assert tenant.name == "Tenant Alpha"
+
+
+def test_tenant_response_includes_active_license_entitlements() -> None:
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[
+            Tenant.__table__,
+            LicenseProduct.__table__,
+            LicensePlan.__table__,
+            Entitlement.__table__,
+            TenantLicense.__table__,
+        ],
+    )
+    service = get_tenant_service()
+
+    with Session(engine) as session:
+        session.add(Tenant(id="samo-telecoms", slug="samo-telecoms", name="Samo Telecoms"))
+        product = LicenseProduct(sku="FIELDCORE", name="FieldCore")
+        session.add(product)
+        session.flush()
+        plan = LicensePlan(
+            license_product_id=product.id,
+            code="OPS-PRO",
+            name="FieldCore OPS Pro",
+        )
+        session.add(plan)
+        session.flush()
+        session.add(
+            Entitlement(
+                license_plan_id=plan.id,
+                feature_key="*",
+                feature_name="Full access",
+            )
+        )
+        session.add(TenantLicense(tenant_id="samo-telecoms", license_plan_id=plan.id))
+        session.commit()
+
+        response = service.read_tenant("samo-telecoms", session)
+
+        assert response.feature_keys == ["*"]
+        assert response.featureKeys == ["*"]
+        assert response.licenses[0].plan_code == "OPS-PRO"
 
 
 def test_operational_import_dry_run_previews_without_mutating_rows() -> None:
