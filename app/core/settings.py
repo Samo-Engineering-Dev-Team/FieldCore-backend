@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 from pathlib import Path
 
@@ -19,6 +19,8 @@ except Exception:
 
 class AppSettings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    model_config = SettingsConfigDict(env_file=".env")
 
     # Database
     DB_HOST: str = ""
@@ -115,8 +117,5 @@ class AppSettings(BaseSettings):
             f"{self.DB_NAME}"
         )
     
-    class Config:
-        env_file = ".env"
-
 
 app_settings = AppSettings()
