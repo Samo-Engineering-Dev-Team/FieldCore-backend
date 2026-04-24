@@ -4,7 +4,7 @@ from sqlmodel import SQLModel, Index, Field, Relationship, Column
 from abc import ABC
 from pydantic import EmailStr
 from typing import TYPE_CHECKING, List
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, Enum as SAEnum, func
 
 from .base import BaseDB
 from app.utils.enums import UserRole, UserStatus
@@ -30,7 +30,13 @@ class BaseUser(SQLModel, ABC):
         schema_extra={"examples": {"Kubeka", "Smith"}},
     )
     email: EmailStr = Field(nullable=False, index=True, schema_extra={"examples": {"moses@samotelecoms.co.za"}})
-    role: UserRole = Field(description="The role of the user in the system")
+    role: UserRole = Field(
+        sa_column=Column(
+            SAEnum(UserRole, name="userrole", omit_aliases=False),
+            nullable=False,
+        ),
+        description="The role of the user in the system",
+    )
 
 
 class User(BaseDB, BaseUser, table=True):

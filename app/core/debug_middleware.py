@@ -88,8 +88,11 @@ class DebugMiddleware(BaseHTTPMiddleware):
         # Start timing
         start_time = time.perf_counter()
         
-        # Log request if enabled
-        if settings.get("enable_request_logging"):
+        request_logging_enabled = self._is_request_logging_enabled(settings)
+        performance_headers_enabled = self._is_performance_headers_enabled(settings)
+
+        # Log request if debug mode and request logging are enabled.
+        if request_logging_enabled:
             await self._log_request(request)
         
         # Process the request
@@ -99,12 +102,12 @@ class DebugMiddleware(BaseHTTPMiddleware):
         process_time = (time.perf_counter() - start_time) * 1000  # Convert to ms
         
         # Add performance header if enabled
-        if settings.get("enable_performance_headers"):
+        if performance_headers_enabled:
             response.headers["X-Response-Time"] = f"{process_time:.2f}ms"
             response.headers["X-Debug-Mode"] = "enabled"
         
-        # Log response if enabled
-        if settings.get("enable_request_logging"):
+        # Log response if debug mode and request logging are enabled.
+        if request_logging_enabled:
             self._log_response(request, response, process_time)
         
         return response
@@ -195,6 +198,14 @@ class DebugMiddleware(BaseHTTPMiddleware):
                 redacted[key] = value
         
         return redacted
+
+    @staticmethod
+    def _is_request_logging_enabled(settings: dict[str, Any]) -> bool:
+        return bool(settings.get("debug_mode")) and bool(settings.get("enable_request_logging"))
+
+    @staticmethod
+    def _is_performance_headers_enabled(settings: dict[str, Any]) -> bool:
+        return bool(settings.get("debug_mode")) and bool(settings.get("enable_performance_headers"))
 
 
 def invalidate_debug_cache() -> None:

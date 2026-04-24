@@ -16,6 +16,7 @@ from app.exceptions.http import UnauthorizedException
 from app.core.settings import app_settings
 
 router = APIRouter(prefix="/settings", tags=["System Settings"])
+public_router = APIRouter(prefix="/settings", tags=["System Settings"])
 
 
 def _require_admin(current_user):
@@ -60,7 +61,7 @@ def get_debug_config(
     return service.get_debug_config(session)
 
 
-@router.get("/debug/status", response_model=dict, status_code=200)
+@public_router.get("/debug/status", response_model=dict, status_code=200)
 def get_debug_status(
     service: SystemSettingsService,
     session: Session,
@@ -170,14 +171,18 @@ def toggle_debug_mode(
     
     # Also toggle related debug settings
     service.update_setting("enable_request_logging", SystemSettingUpdate(value=new_value), session)
+    service.update_setting("enable_sql_logging", SystemSettingUpdate(value=new_value), session)
     service.update_setting("enable_performance_headers", SystemSettingUpdate(value=new_value), session)
+    service.update_setting("log_level", SystemSettingUpdate(value="DEBUG" if new_value else "INFO"), session)
     
     return {
         "debug_mode": new_value,
+        "log_level": "DEBUG" if new_value else "INFO",
         "message": f"Debug mode {'enabled' if new_value else 'disabled'}",
         "affected_settings": [
             "debug_mode",
             "enable_request_logging", 
+            "enable_sql_logging",
             "enable_performance_headers",
             "log_level"
         ]

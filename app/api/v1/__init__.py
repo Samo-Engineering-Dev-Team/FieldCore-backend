@@ -16,6 +16,7 @@ from .file import router as file_router
 from .client import router as client_router
 from .webhook import router as webhook_router
 from .presence import router as sessions_router
+from .system_settings import public_router as public_system_settings_router
 from .system_settings import router as system_settings_router
 from .incident_report import router as incident_report_router
 from .maintenance_schedule import router as maintenance_schedule_router
@@ -28,6 +29,7 @@ if _allow_dev:
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
+router.include_router(public_system_settings_router)
 router.include_router(user_router, dependencies=[Depends(get_current_user)])
 router.include_router(technician_router, dependencies=[Depends(get_current_user)])
 router.include_router(site_router, dependencies=[Depends(get_current_user)])
