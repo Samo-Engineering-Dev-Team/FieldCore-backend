@@ -1,4 +1,5 @@
 import urllib.request
+import re
 from urllib.parse import urlparse, unquote
 from io import BytesIO
 from datetime import datetime
@@ -9,17 +10,19 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
-from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.shapes import Circle, Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarChart
+from xml.sax.saxutils import escape
 
 from loguru import logger as LOG
 from app.core.settings import app_settings
 from app.models import Report
 from app.utils.enums import ReportType
+from app.utils.funcs import utcnow
 
 # Imported lazily inside generate_incident_report_pdf to avoid circular import at module load
 # from app.models import IncidentReport
@@ -33,6 +36,12 @@ _INC_WARM_GRAY  = "#4a5568"   # warm gray — body text
 _INC_LIGHT_GRAY = "#718096"   # light gray — running header, labels, captions
 _INC_DIVIDER    = "#e2e8f0"   # very light gray — thin separator lines
 _INC_DARK_LABEL = "#2d3748"   # dark gray — metadata values
+
+_FIELDCORE_BRAND = "FIELD CORE"
+_FIELDCORE_REPORT_LABEL = "Field Report - FIELD CORE"
+_FIELDCORE_CONFIDENTIAL = "CONFIDENTIAL - FOR FIELD CORE INTERNAL USE ONLY"
+_FIELDCORE_MARK_ASSET = "fieldcore-logo-mark.png"
+_FIELDCORE_LOCKUP_ASSET = "fieldcore-logo-lockup.png"
 
 
 class PDFService:
@@ -175,6 +184,49 @@ class PDFService:
         }
         return palettes.get(cover_key or "base", palettes["base"])
 
+    def _load_brand_logo(
+        self,
+        filename: str,
+        *,
+        max_width_mm: float,
+        max_height_mm: float,
+    ) -> Image | None:
+        """Load a logo and fit it inside requested bounds while preserving aspect ratio."""
+        path = self.assets_path / filename
+        if not path.exists():
+            return None
+
+        try:
+            reader = ImageReader(str(path))
+            src_width, src_height = reader.getSize()
+            if not src_width or not src_height:
+                return None
+
+            scale = min(max_width_mm / src_width, max_height_mm / src_height)
+            draw_width_mm = src_width * scale
+            draw_height_mm = src_height * scale
+            return Image(
+                str(path),
+                width=draw_width_mm * mm,
+                height=draw_height_mm * mm,
+            )
+        except Exception:
+            return None
+
+    def _load_fieldcore_mark(self, *, max_width_mm: float, max_height_mm: float) -> Image | None:
+        return self._load_brand_logo(
+            _FIELDCORE_MARK_ASSET,
+            max_width_mm=max_width_mm,
+            max_height_mm=max_height_mm,
+        )
+
+    def _load_fieldcore_lockup(self, *, max_width_mm: float, max_height_mm: float) -> Image | None:
+        return self._load_brand_logo(
+            _FIELDCORE_LOCKUP_ASSET,
+            max_width_mm=max_width_mm,
+            max_height_mm=max_height_mm,
+        )
+
     def _configure_first_page_background(
         self,
         cover_key: str | None,
@@ -249,26 +301,14 @@ class PDFService:
 
         Args:
             title:    Large headline (e.g. "Incident Report")
-            subtitle: Smaller descriptor below title (e.g. "Severity: CRITICAL - SAMO TELECOMS x SEACOM")
+            subtitle: Smaller descriptor below title (e.g. "Severity: CRITICAL - FIELD CORE")
             details:  List of [label, value] rows for the info table
         """
         elements = []
         primary_color, accent_color = self._cover_palette(cover_key)
 
-        # Load logos
-        samo_logo = seacom_logo = None
-        try:
-            p = self.assets_path / "samo-logo.png"
-            if p.exists():
-                samo_logo = Image(str(p), width=55 * mm, height=20 * mm)
-        except Exception:
-            pass
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=55 * mm, height=20 * mm)
-        except Exception:
-            pass
+        mark_logo = self._load_fieldcore_mark(max_width_mm=22, max_height_mm=20)
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=52, max_height_mm=18)
 
         # ── Blue header band (logos + brand name) ────────────────────────────
         brand_style = ParagraphStyle(
@@ -280,9 +320,9 @@ class PDFService:
             fontName='Helvetica-Bold',
         )
         header_data = [[
-            samo_logo or Paragraph("<b>SAMO</b>", self.styles['CompanyHeader']),
-            Paragraph("SAMO TELECOMS &amp; SEACOM", brand_style),
-            seacom_logo or Paragraph("<b>SEACOM</b>", self.styles['CompanyHeader']),
+            mark_logo or Paragraph("<b>FC</b>", self.styles['CompanyHeader']),
+            Paragraph(_FIELDCORE_BRAND, brand_style),
+            lockup_logo or Paragraph("<b>FIELD CORE</b>", self.styles['CompanyHeader']),
         ]]
         header_table = Table(header_data, colWidths=[60 * mm, 50 * mm, 60 * mm], rowHeights=[32 * mm])
         header_table.setStyle(TableStyle([
@@ -347,7 +387,7 @@ class PDFService:
             ]))
             elements.append(det_table)
 
-        elements.append(Spacer(1, 30 * mm))
+        elements.append(Spacer(1, 18 * mm))
 
         # ── Confidentiality footer ────────────────────────────────────────────
         conf_style = ParagraphStyle(
@@ -359,7 +399,7 @@ class PDFService:
             fontName='Helvetica-Oblique',
         )
         elements.append(Paragraph(
-            "CONFIDENTIAL - FOR SAMO TELECOMS AND SEACOM USE ONLY",
+            _FIELDCORE_CONFIDENTIAL,
             conf_style,
         ))
         elements.append(Spacer(1, 3 * mm))
@@ -374,7 +414,355 @@ class PDFService:
 
     # ── Field reports ────────────────────────────────────────────────────────
 
-    def generate_report_pdf(self, report: Report) -> BytesIO:
+    def _build_brand_logo_row(
+        self,
+        *,
+        mark_width_mm: float,
+        mark_height_mm: float,
+        lockup_width_mm: float,
+        lockup_height_mm: float,
+        gap_mm: float = 4,
+        fallback_color: str = "#1f2a44",
+    ) -> Table:
+        """Build a shared Field Core mark + lockup row for report layouts."""
+        fallback_s = ParagraphStyle(
+            "BrandLogoFallback",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(fallback_color),
+            alignment=TA_CENTER,
+        )
+
+        mark_logo = self._load_fieldcore_mark(
+            max_width_mm=mark_width_mm,
+            max_height_mm=mark_height_mm,
+        )
+        lockup_logo = self._load_fieldcore_lockup(
+            max_width_mm=lockup_width_mm,
+            max_height_mm=lockup_height_mm,
+        )
+
+        logos = Table(
+            [[
+                mark_logo or Paragraph("<b>FC</b>", fallback_s),
+                lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
+            ]],
+            colWidths=[mark_width_mm * mm, lockup_width_mm * mm],
+        )
+        logos.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (0, 0), gap_mm * mm),
+        ]))
+        return logos
+
+    def _build_field_cover_page(
+        self,
+        *,
+        report_type_label: str,
+        title: str,
+        site: str,
+        subtitle: str,
+        descriptor: str,
+        detail_items: list[tuple[str, str]],
+        generated_at: str,
+        accent_hex: str,
+    ) -> list:
+        """Build the newer light field-report cover used by the latest exports."""
+        accent = colors.HexColor(accent_hex)
+        border = colors.HexColor("#d9e2ec")
+        body_text = colors.HexColor("#5b6d88")
+        title_color = colors.HexColor("#1b2540")
+
+        kicker_s = ParagraphStyle(
+            "FieldCoverKicker",
+            parent=self.styles["Normal"],
+            fontSize=9.5,
+            fontName="Helvetica-Bold",
+            textColor=accent,
+            leading=11,
+        )
+        brand_s = ParagraphStyle(
+            "FieldCoverBrand",
+            parent=self.styles["Normal"],
+            fontSize=16,
+            fontName="Helvetica-Bold",
+            textColor=accent,
+            leading=18,
+        )
+        type_s = ParagraphStyle(
+            "FieldCoverType",
+            parent=self.styles["Normal"],
+            fontSize=11,
+            fontName="Helvetica-Bold",
+            textColor=accent,
+            leading=13,
+        )
+        title_s = ParagraphStyle(
+            "FieldCoverTitle",
+            parent=self.styles["Normal"],
+            fontSize=31,
+            fontName="Helvetica-Bold",
+            textColor=title_color,
+            leading=33,
+        )
+        site_s = ParagraphStyle(
+            "FieldCoverSite",
+            parent=self.styles["Normal"],
+            fontSize=16,
+            fontName="Helvetica-Bold",
+            textColor=accent,
+            leading=19,
+        )
+        subtitle_s = ParagraphStyle(
+            "FieldCoverSubtitle",
+            parent=self.styles["Normal"],
+            fontSize=12.5,
+            fontName="Helvetica",
+            textColor=body_text,
+            leading=15,
+        )
+        descriptor_s = ParagraphStyle(
+            "FieldCoverDescriptor",
+            parent=self.styles["Normal"],
+            fontSize=11,
+            fontName="Helvetica",
+            textColor=body_text,
+            leading=16,
+        )
+        footer_s = ParagraphStyle(
+            "FieldCoverFooter",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#70819b"),
+            leading=10,
+        )
+
+        header = Table(
+            [[
+                [
+                    Paragraph("FIELD OPERATIONS REPORT", kicker_s),
+                    Spacer(1, 1.5 * mm),
+                    Paragraph(_FIELDCORE_BRAND, brand_s),
+                ],
+                self._build_brand_logo_row(
+                    mark_width_mm=34,
+                    mark_height_mm=15,
+                    lockup_width_mm=40,
+                    lockup_height_mm=16,
+                    fallback_color="#1b2540",
+                ),
+            ]],
+            colWidths=[97 * mm, 73 * mm],
+        )
+        header.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.6, border),
+            ("LINEBELOW", (0, 0), (-1, -1), 2.2, accent),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]))
+
+        footer = Table(
+            [[
+                Paragraph(
+                    _FIELDCORE_CONFIDENTIAL,
+                    footer_s,
+                ),
+                Paragraph(f"Generated {escape(generated_at)}", footer_s),
+            ]],
+            colWidths=[120 * mm, 50 * mm],
+        )
+        footer.setStyle(TableStyle([
+            ("LINEABOVE", (0, 0), (-1, 0), 0.6, border),
+            ("ALIGN", (0, 0), (0, 0), "LEFT"),
+            ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 10),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        elements: list = [
+            header,
+            Spacer(1, 18 * mm),
+            Paragraph(escape(report_type_label.upper()), type_s),
+            Spacer(1, 2 * mm),
+            Paragraph(escape(title), title_s),
+            Paragraph(escape(site or "N/A"), site_s),
+            Spacer(1, 2 * mm),
+            Paragraph(escape(subtitle), subtitle_s),
+            Spacer(1, 4 * mm),
+            Paragraph(escape(descriptor), descriptor_s),
+            Spacer(1, 10 * mm),
+            self._create_divider(color_hex=accent_hex),
+            Spacer(1, 8 * mm),
+        ]
+        elements.extend(self._build_metadata_cards(detail_items))
+        elements.extend([
+            Spacer(1, 18 * mm),
+            footer,
+            PageBreak(),
+        ])
+        return elements
+
+    def _build_field_page_header(
+        self,
+        *,
+        title: str,
+        subtitle: str,
+        accent_hex: str,
+    ) -> list:
+        """Build the light header used on field-report content pages."""
+        header = Table(
+            [[
+                [
+                    Paragraph(
+                        escape(title),
+                        ParagraphStyle(
+                            "FieldPageHeaderTitle",
+                            parent=self.styles["Normal"],
+                            fontSize=18,
+                            fontName="Helvetica-Bold",
+                            textColor=colors.HexColor("#1b2540"),
+                            leading=21,
+                        ),
+                    ),
+                    Spacer(1, 1.5 * mm),
+                    Paragraph(
+                        escape(subtitle),
+                        ParagraphStyle(
+                            "FieldPageHeaderSubtitle",
+                            parent=self.styles["Normal"],
+                            fontSize=8.8,
+                            fontName="Helvetica",
+                            textColor=colors.HexColor("#64748b"),
+                            leading=12,
+                        ),
+                    ),
+                ],
+                self._build_brand_logo_row(
+                    mark_width_mm=26,
+                    mark_height_mm=11,
+                    lockup_width_mm=33,
+                    lockup_height_mm=13,
+                    fallback_color="#1b2540",
+                ),
+            ]],
+            colWidths=[102 * mm, 68 * mm],
+        )
+        header.setStyle(TableStyle([
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d9e2ec")),
+            ("LINEBELOW", (0, 0), (-1, -1), 2.2, colors.HexColor(accent_hex)),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]))
+        return [header, Spacer(1, 4 * mm)]
+
+    def _build_field_overview_cards(
+        self,
+        items: list[tuple[str, str]],
+        *,
+        accent_hex: str,
+    ) -> list:
+        """Build the four-up overview cards on field report page two."""
+        if not items:
+            return []
+
+        label_s = ParagraphStyle(
+            "FieldOverviewLabel",
+            parent=self.styles["Normal"],
+            fontSize=7.5,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#6b7b94"),
+            leading=9,
+        )
+        value_s = ParagraphStyle(
+            "FieldOverviewValue",
+            parent=self.styles["Normal"],
+            fontSize=15,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#1b2540"),
+            leading=18,
+        )
+
+        data = [
+            [Paragraph(escape(label.upper()), label_s) for label, _ in items],
+            [Paragraph(escape(value or "N/A"), value_s) for _, value in items],
+        ]
+        widths = [(170 * mm) / len(items)] * len(items)
+        table = Table(data, colWidths=widths)
+        table.setStyle(TableStyle([
+            ("LINEABOVE", (0, 0), (-1, 0), 1.8, colors.HexColor(accent_hex)),
+            ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#d9e2ec")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+            ("TOPPADDING", (0, 1), (-1, 1), 4),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 10),
+        ]))
+        return [table, Spacer(1, 5 * mm)]
+
+    def _build_field_metric_cards(
+        self,
+        items: list[tuple[str, str]],
+        *,
+        accent_hex: str,
+    ) -> Table:
+        """Build the compact KPI cards used in the diesel summary block."""
+        label_s = ParagraphStyle(
+            "FieldMetricLabel",
+            parent=self.styles["Normal"],
+            fontSize=7.5,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#6b7b94"),
+            leading=9,
+        )
+        value_s = ParagraphStyle(
+            "FieldMetricValue",
+            parent=self.styles["Normal"],
+            fontSize=14.5,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#1b2540"),
+            leading=17,
+        )
+
+        widths = [(170 * mm) / len(items)] * len(items)
+        table = Table(
+            [
+                [Paragraph(escape(label.upper()), label_s) for label, _ in items],
+                [Paragraph(escape(value or "N/A"), value_s) for _, value in items],
+            ],
+            colWidths=widths,
+        )
+        table.setStyle(TableStyle([
+            ("LINEABOVE", (0, 0), (-1, 0), 1.8, colors.HexColor(accent_hex)),
+            ("GRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#d9e2ec")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, 0), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+            ("TOPPADDING", (0, 1), (-1, 1), 4),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), 9),
+        ]))
+        return table
+
+    def generate_report_pdf_legacy(self, report: Report) -> BytesIO:
         """
         Generate a professional PDF document for a completed report with logos and rounded design elements.
 
@@ -427,7 +815,7 @@ class PDFService:
             primary_hex, accent_hex = self._cover_palette(report_cover_key)
             story.extend(self._build_cover_page(
                 title=f"{report_type_display} Report",
-                subtitle="Field Report - SAMO TELECOMS x SEACOM",
+                subtitle=_FIELDCORE_REPORT_LABEL,
                 details=cover_details,
                 cover_key=report_cover_key,
             ))
@@ -435,7 +823,7 @@ class PDFService:
             # ── Page 2: banner header ─────────────────────────────────────────
             story.extend(self._build_page_header(
                 title=f"{report_type_display} Report",
-                subtitle=f"Field Report - SAMO TELECOMS x SEACOM  |  {self._format_datetime(report.created_at)}",
+                subtitle=f"{_FIELDCORE_REPORT_LABEL}  |  {self._format_datetime(report.created_at)}",
                 primary_hex=primary_hex,
                 accent_hex=accent_hex,
             ))
@@ -469,37 +857,42 @@ class PDFService:
             if report.data:
                 if report.report_type == ReportType.REPEATER:
                     self._render_repeater_body(report, story, primary_hex, accent_hex)
+                elif report.report_type == ReportType.DIESEL:
+                    self._render_diesel_body(report, story, primary_hex, accent_hex)
                 else:
                     story.extend(self._repeater_section_header("Report Details", primary_hex, accent_hex))
                     story.extend(self._render_report_data(report.data))
 
             # Attachments Section
             if report.attachments:
-                story.append(Spacer(1, 16))
-                story.extend(self._repeater_section_header("Attachments", primary_hex, accent_hex))
+                if report.report_type == ReportType.DIESEL:
+                    self._render_diesel_attachments(report, story, primary_hex, accent_hex)
+                else:
+                    story.append(Spacer(1, 16))
+                    story.extend(self._repeater_section_header("Attachments", primary_hex, accent_hex))
 
-                attachment_data = [["Field Name", "Value"]]
-                for key, value in report.attachments.items():
-                    attachment_data.append([key, str(value)[:60]])
+                    attachment_data = [["Field Name", "Value"]]
+                    for key, value in report.attachments.items():
+                        attachment_data.append([key, str(value)[:60]])
 
-                if len(attachment_data) > 1:
-                    att_table = Table(attachment_data, colWidths=[140, 330])
-                    att_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a365d')),
-                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
-                        ('FONTNAME', (1, 1), (-1, -1), 'Helvetica'),
-                        ('FONTSIZE', (0, 0), (-1, -1), 9),
-                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#ffffff')),
-                        ('TEXTCOLOR', (1, 1), (-1, -1), colors.HexColor('#4a5568')),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
-                        ('TOPPADDING', (0, 0), (-1, -1), 6),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e0')),
-                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ffffff'), colors.HexColor('#f7fafc')]),
-                    ]))
-                    story.append(att_table)
+                    if len(attachment_data) > 1:
+                        att_table = Table(attachment_data, colWidths=[140, 330])
+                        att_table.setStyle(TableStyle([
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a365d')),
+                            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                            ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                            ('FONTNAME', (1, 1), (-1, -1), 'Helvetica'),
+                            ('FONTSIZE', (0, 0), (-1, -1), 9),
+                            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#ffffff')),
+                            ('TEXTCOLOR', (1, 1), (-1, -1), colors.HexColor('#4a5568')),
+                            ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                            ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                            ('TOPPADDING', (0, 0), (-1, -1), 6),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#cbd5e0')),
+                            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#ffffff'), colors.HexColor('#f7fafc')]),
+                        ]))
+                        story.append(att_table)
 
             # Footer
             story.append(Spacer(1, 24))
@@ -525,6 +918,156 @@ class PDFService:
         return buffer
 
     # ── Incident reports ─────────────────────────────────────────────────────
+
+    def generate_report_pdf(self, report: Report) -> BytesIO:
+        """Generate a field report PDF using the latest light-weight branded layout."""
+        buffer = BytesIO()
+
+        try:
+            doc = SimpleDocTemplate(
+                buffer,
+                pagesize=A4,
+                rightMargin=20 * mm,
+                leftMargin=20 * mm,
+                topMargin=20 * mm,
+                bottomMargin=20 * mm,
+                title=f"Report_{report.report_type.value}_{report.id}",
+            )
+
+            story: list = []
+            report_type_display = self._format_report_type(report.report_type)
+            status_display = report.status.value.upper()
+            service_provider_display = report.service_provider or "N/A"
+            technician_name = "N/A"
+            phone_display = "N/A"
+            reference_display = "N/A"
+            site_display = "N/A"
+            region_display = "N/A"
+
+            try:
+                if report.technician and report.technician.user:
+                    user = report.technician.user
+                    technician_name = f"{user.name} {user.surname}"
+                    phone_display = report.technician.phone or "N/A"
+            except Exception:
+                pass
+
+            try:
+                if report.task:
+                    if report.task.seacom_ref:
+                        reference_display = report.task.seacom_ref
+                    if report.task.site:
+                        site_display = report.task.site.name
+                        region_display = report.task.site.region.value.replace("-", " ").title()
+            except Exception:
+                pass
+
+            created_display = self._format_datetime(report.created_at)
+            report_cover_key = report.report_type.value if getattr(report, "report_type", None) else "base"
+            primary_hex, accent_hex = self._cover_palette(report_cover_key)
+
+            story.extend(self._build_field_cover_page(
+                report_type_label=report_type_display,
+                title=f"{report_type_display} Report",
+                site=site_display,
+                subtitle=_FIELDCORE_REPORT_LABEL,
+                descriptor=(
+                    f"Prepared for {service_provider_display}. Structured field document "
+                    "for operational review, archive, and audit traceability."
+                ),
+                detail_items=[
+                    ("Report Type", report_type_display),
+                    ("Status", status_display),
+                    ("Service Provider", service_provider_display),
+                    ("Technician", technician_name),
+                    ("Phone", phone_display),
+                    ("Reference", reference_display),
+                    ("Site", site_display),
+                    ("Region", region_display),
+                    ("Generated", created_display),
+                ],
+                generated_at=created_display,
+                accent_hex=accent_hex,
+            ))
+
+            story.extend(self._build_field_page_header(
+                title=f"{report_type_display} Report",
+                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {created_display}",
+                accent_hex=accent_hex,
+            ))
+            story.extend(self._build_field_overview_cards(
+                [
+                    ("Status", status_display),
+                    ("Service Provider", service_provider_display),
+                    ("Technician", technician_name),
+                    ("Site", site_display),
+                ],
+                accent_hex=accent_hex,
+            ))
+            story.append(self._build_field_kv_table([
+                ("Report Type", report_type_display),
+                ("Created", created_display),
+                ("Phone", phone_display),
+                ("Reference", reference_display),
+                ("Region", region_display),
+            ]))
+            story.append(Spacer(1, 6 * mm))
+
+            if report.data:
+                if report.report_type == ReportType.REPEATER:
+                    self._render_repeater_body(report, story, primary_hex, accent_hex)
+                elif report.report_type == ReportType.DIESEL:
+                    self._render_diesel_body(report, story, primary_hex, accent_hex)
+                else:
+                    story.extend(self._repeater_section_header("Report Details", primary_hex, accent_hex))
+                    story.extend(self._render_report_data(report.data))
+
+            if report.attachments:
+                if report.report_type == ReportType.DIESEL:
+                    self._render_diesel_attachments(report, story, primary_hex, accent_hex)
+                else:
+                    story.append(Spacer(1, 16))
+                    story.extend(self._repeater_section_header("Attachments", primary_hex, accent_hex))
+
+                    attachment_data = [["Field Name", "Value"]]
+                    for key, value in report.attachments.items():
+                        attachment_data.append([key, str(value)[:60]])
+
+                    if len(attachment_data) > 1:
+                        att_table = Table(attachment_data, colWidths=[140, 330])
+                        att_table.setStyle(TableStyle([
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a365d")),
+                            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                            ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+                            ("FONTNAME", (1, 1), (-1, -1), "Helvetica"),
+                            ("FONTSIZE", (0, 0), (-1, -1), 9),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#ffffff")),
+                            ("TEXTCOLOR", (1, 1), (-1, -1), colors.HexColor("#4a5568")),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                            ("TOPPADDING", (0, 0), (-1, -1), 6),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                            ("GRID", (0, 0), (-1, -1), 1, colors.HexColor("#cbd5e0")),
+                            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#ffffff"), colors.HexColor("#f7fafc")]),
+                        ]))
+                        story.append(att_table)
+
+            story.append(Spacer(1, 24))
+            story.append(self._create_divider())
+            story.append(Spacer(1, 8))
+            story.append(Paragraph(
+                f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC | "
+                f"Report ID: {str(report.id)[:8]}",
+                self.styles["Footer"],
+            ))
+
+            doc.build(story)
+
+        except Exception:
+            raise
+
+        buffer.seek(0)
+        return buffer
 
     def _extract_supabase_file_path(self, url_or_path: str) -> str | None:
         """Extract storage file path from a Supabase URL or return raw path."""
@@ -659,9 +1202,9 @@ class PDFService:
         elements.append(Spacer(1, 5 * mm))
         return elements
 
-    # ── Incident report: Operations-Report-style cover page ───────────────────
+    # ── Legacy incident cover kept only as historical reference ───────────────
 
-    def _build_incident_cover_page(
+    def _build_incident_cover_page_legacy(
         self,
         seacom_ref: str,
         site: str,
@@ -669,19 +1212,24 @@ class PDFService:
         severity: str,
         report_date: str,
         report_date_obj: "datetime | None" = None,
+        generated_at: datetime | None = None,
     ) -> list:
         """
         Build a dark-background-compatible cover page matching the
-        SEACOM Operations Report style: logos + pill badge top bar, large white
+        Field Core incident style: logos + pill badge top bar, large white
         title, frosted info boxes at the bottom.
         """
         elements = []
 
         # ── Local styles (all white text — canvas dark background shows through) ─
         wh = "#ffffff"
+        dim_wh = "#dbe7f5"
         teal_lbl = "#63b3ed"   # label text in info boxes
         box_fill  = "#dce8f5"  # frosted info box fill (light on dark bg)
         box2_fill = "#1e3a5f"  # darker confidentiality box
+        chip_fill = "#24486f"
+        ref_fill = "#f3f7fb"
+        ref_text = "#102940"
         badge_bdr = "#93c5fd"  # pill badge outline
 
         fb_s = ParagraphStyle(
@@ -715,6 +1263,14 @@ class PDFService:
             textColor=colors.HexColor(wh),
             alignment=TA_LEFT,
         )
+        kicker_s = ParagraphStyle(
+            "IncCovKicker_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#9ec5ea"),
+            alignment=TA_LEFT,
+        )
         title1_s = ParagraphStyle(
             "IncCovTitle1_local",
             parent=self.styles["Normal"],
@@ -741,6 +1297,15 @@ class PDFService:
             textColor=colors.HexColor(wh),
             alignment=TA_LEFT,
         )
+        descriptor_s = ParagraphStyle(
+            "IncCovDescriptor_local",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            leading=15,
+            textColor=colors.HexColor(dim_wh),
+            alignment=TA_LEFT,
+        )
         lbl_s = ParagraphStyle(
             "IncCovInfoLbl_local",
             parent=self.styles["Normal"],
@@ -755,6 +1320,29 @@ class PDFService:
             fontName="Helvetica-Bold",
             textColor=colors.HexColor(wh),
         )
+        chip_s = ParagraphStyle(
+            "IncCovChip_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(wh),
+            alignment=TA_CENTER,
+        )
+        ref_label_s = ParagraphStyle(
+            "IncCovRefLabel_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#526477"),
+        )
+        ref_value_s = ParagraphStyle(
+            "IncCovRefValue_local",
+            parent=self.styles["Normal"],
+            fontSize=18,
+            fontName="Helvetica-Bold",
+            leading=22,
+            textColor=colors.HexColor(ref_text),
+        )
         conf_s = ParagraphStyle(
             "IncCovConf2_local",
             parent=self.styles["Normal"],
@@ -767,20 +1355,9 @@ class PDFService:
         # ── 1. Top breathing room ─────────────────────────────────────────────
         elements.append(Spacer(1, 6 * mm))
 
-        # ── 2. Top bar: SAMO logo | "INCIDENT REPORT" pill | SEACOM logo ─────
-        samo_logo = seacom_logo = None
-        try:
-            p = self.assets_path / "samo-logo.png"
-            if p.exists():
-                samo_logo = Image(str(p), width=40 * mm, height=15 * mm)
-        except Exception:
-            pass
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=45 * mm, height=16 * mm)
-        except Exception:
-            pass
+        # ── 2. Top bar: Field Core mark | "INCIDENT REPORT" pill | Field Core lockup ─────
+        mark_logo = self._load_fieldcore_mark(max_width_mm=40, max_height_mm=15)
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=45, max_height_mm=16)
 
         # Pill badge (nested table with white border)
         pill_inner = Table(
@@ -797,9 +1374,9 @@ class PDFService:
 
         top_bar = Table(
             [[
-                samo_logo or Paragraph("<b>SAMO</b>", fb_s),
+                mark_logo or Paragraph("<b>FC</b>", fb_s),
                 pill_inner,
-                seacom_logo or Paragraph("<b>SEACOM</b>", fb_r_s),
+                lockup_logo or Paragraph("<b>FIELD CORE</b>", fb_r_s),
             ]],
             colWidths=[50 * mm, 70 * mm, 50 * mm],
         )
@@ -816,11 +1393,13 @@ class PDFService:
         elements.append(top_bar)
 
         # ── 3. Vertical space before title ───────────────────────────────────
-        elements.append(Spacer(1, 30 * mm))
+        elements.append(Spacer(1, 18 * mm))
 
         # ── 4. Brand line ─────────────────────────────────────────────────────
-        elements.append(Paragraph("SAMO  TELECOMS    \u00d7    SEACOM", brand_s))
-        elements.append(Spacer(1, 4 * mm))
+        elements.append(Paragraph("FIELD OPERATIONS DOSSIER", kicker_s))
+        elements.append(Spacer(1, 2 * mm))
+        elements.append(Paragraph(_FIELDCORE_BRAND, brand_s))
+        elements.append(Spacer(1, 5 * mm))
 
         # ── 5. Large title ────────────────────────────────────────────────────
         elements.append(Paragraph("Post-Resolution", title1_s))
@@ -829,22 +1408,88 @@ class PDFService:
 
         # ── 6. Subtitle: severity | site ─────────────────────────────────────
         elements.append(Paragraph(f"{severity}  |  {site}", subtitle_s))
-        elements.append(Spacer(1, 28 * mm))
+        elements.append(Spacer(1, 3 * mm))
+        elements.append(Paragraph(
+            "Operational close-out summary covering incident context, engineering response, "
+            "service restoration, and formal technician sign-off.",
+            descriptor_s,
+        ))
+        elements.append(Spacer(1, 7 * mm))
 
         # ── 7. Frosted info box ────────────────────────────────────────────────
-        generated_ts = datetime.now().strftime("%d %B %Y  %H:%M UTC")
+        generated_ts = (generated_at or utcnow()).strftime("%d %B %Y  %H:%M UTC")
+        severity_key = (severity or "UNSPECIFIED").strip().upper()
+        severity_fill = {
+            "CRITICAL": "#b42318",
+            "MAJOR": "#c2410c",
+            "MEDIUM": "#1d4ed8",
+            "MINOR": "#0f766e",
+        }.get(severity_key, chip_fill)
+        severity_chip = Table(
+            [[Paragraph(f"SEVERITY  {severity_key}", chip_s)]],
+            colWidths=[42 * mm],
+        )
+        severity_chip.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(severity_fill)),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(severity_fill)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        site_chip = Table(
+            [[Paragraph(f"SITE  {site}", chip_s)]],
+            colWidths=[58 * mm],
+        )
+        site_chip.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(chip_fill)),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(badge_bdr)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        hero_meta = Table([[severity_chip, site_chip]], colWidths=[46 * mm, 62 * mm])
+        hero_meta.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        elements.append(hero_meta)
+        elements.append(Spacer(1, 11 * mm))
+
+        ref_band = Table(
+            [[
+                Paragraph("INCIDENT REFERENCE", ref_label_s),
+                Paragraph(seacom_ref, ref_value_s),
+            ]],
+            colWidths=[44 * mm, 122 * mm],
+        )
+        ref_band.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(ref_fill)),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#c7d8ea")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 12),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+            ("TOPPADDING", (0, 0), (-1, -1), 9),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]))
+        elements.append(ref_band)
+        elements.append(Spacer(1, 9 * mm))
         info_data = [
             [
-                [Paragraph("INCIDENT REF", lbl_s), Paragraph(seacom_ref, val_s)],
                 [Paragraph("SITE", lbl_s), Paragraph(site, val_s)],
-            ],
-            [
                 [Paragraph("TECHNICIAN", lbl_s), Paragraph(technician, val_s)],
-                [Paragraph("SEVERITY", lbl_s), Paragraph(severity, val_s)],
             ],
             [
+                [Paragraph("SEVERITY", lbl_s), Paragraph(severity, val_s)],
                 [Paragraph("REPORT DATE", lbl_s), Paragraph(report_date, val_s)],
+            ],
+            [
                 [Paragraph("GENERATED", lbl_s), Paragraph(generated_ts, val_s)],
+                [Paragraph("DOCUMENT CLASS", lbl_s), Paragraph("Internal Controlled Copy", val_s)],
             ],
         ]
         info_box = Table(info_data, colWidths=[85 * mm, 85 * mm])
@@ -864,7 +1509,7 @@ class PDFService:
         # ── 8. Confidentiality footer box ─────────────────────────────────────
         conf_box = Table(
             [[Paragraph(
-                f"Ref: {seacom_ref}  \u2014  Confidential, Samo Engineering and SEACOM internal use.",
+                f"Ref: {seacom_ref}  \u2014  Confidential, Field Core internal use.",
                 conf_s,
             )]],
             colWidths=[170 * mm],
@@ -880,6 +1525,148 @@ class PDFService:
 
         elements.append(PageBreak())
         return elements
+
+    def _incident_markup(
+        self,
+        value: str | None,
+        *,
+        fallback: str = "Not provided.",
+    ) -> str:
+        """Escape incident text for ReportLab while preserving user line breaks."""
+        cleaned = (value or "").strip()
+        if not cleaned:
+            return f"<i>{escape(fallback)}</i>"
+        return escape(cleaned).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
+
+    def _build_incident_cover_icon(self) -> Drawing:
+        """Build simple incident icon inspired by clean form-style reference art."""
+        brand = colors.HexColor("#0f7c73")
+        accent = colors.HexColor("#f4c542")
+
+        drawing = Drawing(40 * mm, 28 * mm)
+        drawing.add(Circle(23 * mm, 11 * mm, 11 * mm, fillColor=brand, strokeColor=brand))
+        drawing.add(Circle(10 * mm, 20 * mm, 7 * mm, fillColor=brand, strokeColor=brand))
+        drawing.add(String(
+            23 * mm,
+            9.5 * mm,
+            "IR",
+            fontName="Helvetica-Bold",
+            fontSize=13,
+            fillColor=colors.white,
+            textAnchor="middle",
+        ))
+        drawing.add(String(
+            10 * mm,
+            16.5 * mm,
+            "!",
+            fontName="Helvetica-Bold",
+            fontSize=15,
+            fillColor=accent,
+            textAnchor="middle",
+        ))
+        return drawing
+
+    def _build_incident_panel(
+        self,
+        title: str,
+        content: Any,
+        *,
+        width: float = 170 * mm,
+        fill_hex: str = "#d8efee",
+        border_hex: str = "#63736f",
+        title_hex: str = "#0f7c73",
+    ) -> Table:
+        """Wrap content in a soft report-form panel."""
+        title_s = ParagraphStyle(
+            "IncPanelTitle_local",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(title_hex),
+        )
+        content_items = content if isinstance(content, list) else [content]
+        panel = Table(
+            [[[Paragraph(escape(title), title_s), Spacer(1, 2.5 * mm), *content_items]]],
+            colWidths=[width],
+        )
+        panel.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(fill_hex)),
+            ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor(border_hex)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        return panel
+
+    def _build_incident_grid_table(
+        self,
+        rows: list[list[Any]],
+        col_widths: list[float],
+        *,
+        fill_hex: str = "#d8efee",
+        border_hex: str = "#63736f",
+    ) -> Table:
+        """Build thin-lined table matching reference form layout."""
+        table = Table(rows, colWidths=col_widths)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(fill_hex)),
+            ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor(border_hex)),
+            ("INNERGRID", (0, 0), (-1, -1), 0.6, colors.HexColor(border_hex)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 7),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        return table
+
+    def _draw_incident_body_chrome(
+        self,
+        canv: canvas.Canvas,
+        doc: SimpleDocTemplate,
+        *,
+        seacom_ref: str,
+        severity: str,
+        generated_at: datetime,
+    ) -> None:
+        """Draw running header and footer for incident-report body pages."""
+        page_w, page_h = doc.pagesize
+        left = doc.leftMargin
+        right = page_w - doc.rightMargin
+
+        canv.saveState()
+        try:
+            header_y = page_h - 18 * mm
+            header_h = 10 * mm
+            canv.setFillColor(colors.HexColor("#0f2747"))
+            canv.roundRect(left, header_y, doc.width, header_h, 3 * mm, stroke=0, fill=1)
+
+            canv.setFillColor(colors.white)
+            canv.setFont("Helvetica-Bold", 8)
+            canv.drawString(left + 5 * mm, header_y + 6.2 * mm, "INCIDENT REPORT")
+
+            canv.setFont("Helvetica", 7.5)
+            canv.drawString(left + 44 * mm, header_y + 6.2 * mm, f"Ref {seacom_ref}")
+
+            canv.setFont("Helvetica-Bold", 7.5)
+            canv.drawRightString(right - 5 * mm, header_y + 6.2 * mm, f"Severity {severity}")
+
+            footer_y = 11 * mm
+            canv.setStrokeColor(colors.HexColor("#cbd5e0"))
+            canv.setLineWidth(0.6)
+            canv.line(left, footer_y + 5 * mm, right, footer_y + 5 * mm)
+
+            canv.setFillColor(colors.HexColor("#64748b"))
+            canv.setFont("Helvetica", 7)
+            footer_text = (
+                f"CONFIDENTIAL | Generated {generated_at.strftime('%d %B %Y %H:%M UTC')} | "
+                f"Ref {seacom_ref} | Page {canv.getPageNumber()}"
+            )
+            canv.drawCentredString(page_w / 2, footer_y + 1.2 * mm, footer_text)
+        finally:
+            canv.restoreState()
 
     # ── Incident report: dark navy running header bar ─────────────────────────
 
@@ -923,79 +1710,153 @@ class PDFService:
 
     # ── Incident report: 4-card KPI row ───────────────────────────────────────
 
-    def _build_incident_kpi_cards(
+    def _build_incident_overview_section(
         self,
         site: str,
         seacom_ref: str,
         technician: str,
         severity: str,
+        incident_status: str,
+        report_date: str,
+        incident_summary: str | None = None,
     ) -> list:
-        """Build a 4-card KPI row matching the Operations Report style."""
-        nav  = "#1a365d"  # dark navy — values
-        teal = "#2b6cb0"  # medium blue — left accent strip
-        gray = "#718096"  # gray — labels
-        bord = "#cbd5e0"  # border
+        """Build a cleaner overview section with readable metadata cards."""
+        elements: list = []
+        nav = "#0f2747"
+        teal = "#2563eb"
+        gray = "#64748b"
+        bord = "#dbe4f0"
+        fill = "#f8fbff"
 
-        # Severity colour
         sev_upper = severity.upper()
         if "CRITICAL" in sev_upper:
             sev_color = "#c53030"
-        elif "HIGH" in sev_upper:
-            sev_color = "#d69e2e"
+        elif "HIGH" in sev_upper or "MAJOR" in sev_upper:
+            sev_color = "#d97706"
         elif "MINOR" in sev_upper or "LOW" in sev_upper:
-            sev_color = "#276749"
+            sev_color = "#15803d"
         else:
             sev_color = nav
 
+        eyebrow_s = ParagraphStyle(
+            "IncOvEyebrow_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(teal),
+            spaceAfter=2,
+        )
+        title_s = ParagraphStyle(
+            "IncOvTitle_local",
+            parent=self.styles["Normal"],
+            fontSize=18,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(nav),
+            leading=21,
+            spaceAfter=6,
+        )
         lbl_s = ParagraphStyle(
-            "IncKpiLbl_local",
+            "IncOvLbl_local",
             parent=self.styles["Normal"],
             fontSize=7.5,
             fontName="Helvetica-Bold",
             textColor=colors.HexColor(gray),
         )
         val_nav_s = ParagraphStyle(
-            "IncKpiValNav_local",
+            "IncOvValNav_local",
             parent=self.styles["Normal"],
-            fontSize=14,
+            fontSize=12,
             fontName="Helvetica-Bold",
             textColor=colors.HexColor(nav),
-            leading=17,
+            leading=15,
         )
         val_sev_s = ParagraphStyle(
-            "IncKpiValSev_local",
+            "IncOvValSev_local",
             parent=self.styles["Normal"],
-            fontSize=14,
+            fontSize=12,
             fontName="Helvetica-Bold",
             textColor=colors.HexColor(sev_color),
-            leading=17,
+            leading=15,
+        )
+        summary_lbl_s = ParagraphStyle(
+            "IncOvSummaryLbl_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(teal),
+            spaceAfter=3,
+        )
+        summary_body_s = ParagraphStyle(
+            "IncOvSummaryBody_local",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#334155"),
+            leading=15,
         )
 
+        elements.append(Paragraph("INCIDENT SUMMARY", eyebrow_s))
+        elements.append(Paragraph("Incident Overview", title_s))
+
+        def _overview_card(label: str, value: str, *, severity_card: bool = False) -> Table:
+            value_style = val_sev_s if severity_card else val_nav_s
+            accent = sev_color if severity_card else teal
+            card = Table(
+                [[Paragraph(label, lbl_s)], [Paragraph(self._incident_markup(value, fallback="N/A"), value_style)]],
+                colWidths=[82 * mm],
+            )
+            card.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(fill)),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(bord)),
+                ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor(accent)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            return card
+
         cards = [
-            [Paragraph("SITE", lbl_s), Paragraph(site, val_nav_s)],
-            [Paragraph("INCIDENT REF", lbl_s), Paragraph(seacom_ref, val_nav_s)],
-            [Paragraph("TECHNICIAN", lbl_s), Paragraph(technician, val_nav_s)],
-            [Paragraph("SEVERITY", lbl_s), Paragraph(severity, val_sev_s)],
+            _overview_card("INCIDENT REF", seacom_ref),
+            _overview_card("SITE", site),
+            _overview_card("TECHNICIAN", technician),
+            _overview_card("SEVERITY", severity, severity_card=True),
+            _overview_card("INCIDENT STATUS", incident_status),
+            _overview_card("REPORT DATE", report_date),
         ]
 
-        tbl = Table([cards], colWidths=[42 * mm, 42 * mm, 43 * mm, 43 * mm])
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-            ("BOX", (0, 0), (0, -1), 0.5, colors.HexColor(bord)),
-            ("BOX", (1, 0), (1, -1), 0.5, colors.HexColor(bord)),
-            ("BOX", (2, 0), (2, -1), 0.5, colors.HexColor(bord)),
-            ("BOX", (3, 0), (3, -1), 0.5, colors.HexColor(bord)),
-            ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor(teal)),
-            ("LINEBEFORE", (1, 0), (1, -1), 3, colors.HexColor(teal)),
-            ("LINEBEFORE", (2, 0), (2, -1), 3, colors.HexColor(teal)),
-            ("LINEBEFORE", (3, 0), (3, -1), 3, colors.HexColor(teal)),
-            ("LEFTPADDING", (0, 0), (-1, -1), 10),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        grid = Table(
+            [[cards[0], cards[1]], [cards[2], cards[3]], [cards[4], cards[5]]],
+            colWidths=[83 * mm, 83 * mm],
+        )
+        grid.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ]))
-        return [tbl, Spacer(1, 7 * mm)]
+        elements.append(grid)
+
+        if (incident_summary or "").strip():
+            summary_box = Table(
+                [[Paragraph("INCIDENT DESCRIPTION", summary_lbl_s), Paragraph(self._incident_markup(incident_summary), summary_body_s)]],
+                colWidths=[170 * mm],
+            )
+            summary_box.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(fill)),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor(bord)),
+                ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor(teal)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            elements.append(summary_box)
+            elements.append(Spacer(1, 3 * mm))
+
+        return elements
 
     # ── Incident report: bordered narrative section box ───────────────────────
 
@@ -1006,19 +1867,18 @@ class PDFService:
         body: str | None,
     ) -> list:
         """
-        Build a numbered narrative section matching the Operations Report
-        bordered-box style: teal-accented header row + white body.
+        Build a numbered narrative section with cleaner hierarchy and flowing body text.
         """
-        nav  = "#1a365d"  # dark navy — header label text
-        teal = "#2b6cb0"  # medium blue — header bg, number, border top
-        hdr_bg = "#ebf4ff"  # light teal-blue — header row fill
-        body_c = "#2d3748"  # body text
-        bord = "#cbd5e0"    # outer box border
+        nav = "#0f2747"
+        teal = "#2563eb"
+        hdr_bg = "#eff6ff"
+        body_c = "#334155"
+        bord = "#dbe4f0"
 
         num_s = ParagraphStyle(
             f"IncNarNum{number}_local",
             parent=self.styles["Normal"],
-            fontSize=13,
+            fontSize=12,
             fontName="Helvetica-Bold",
             textColor=colors.HexColor(teal),
             alignment=TA_CENTER,
@@ -1036,67 +1896,61 @@ class PDFService:
             fontSize=10,
             fontName="Helvetica",
             textColor=colors.HexColor(body_c),
-            leading=15,
+            leading=14,
+            backColor=colors.white,
+            borderColor=colors.HexColor(bord),
+            borderWidth=0.5,
+            borderPadding=6,
         )
 
-        safe_body = (body or "").strip() or "<i>Not provided.</i>"
+        safe_body = self._incident_markup(body)
 
-        # Header row: number | section label
         hdr_row = Table(
-            [[Paragraph(f"{number:02d}", num_s), Paragraph(label.upper(), head_s)]],
+            [[Paragraph(f"{number:02d}", num_s), Paragraph(escape(label), head_s)]],
             colWidths=[16 * mm, 154 * mm],
         )
         hdr_row.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(hdr_bg)),
-            ("LINEABOVE", (0, 0), (-1, 0), 0.5, colors.HexColor(teal)),
             ("LINEBELOW", (0, 0), (-1, 0), 1.0, colors.HexColor(teal)),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(bord)),
             ("LEFTPADDING", (0, 0), (-1, -1), 8),
             ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
         ]))
+        body_para = Paragraph(safe_body, body_s)
 
-        # Body row
-        body_row = Table(
-            [[Paragraph(safe_body, body_s)]],
-            colWidths=[170 * mm],
-        )
-        body_row.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.white),
-            ("LEFTPADDING", (0, 0), (-1, -1), 12),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
-        ]))
+        return [hdr_row, Spacer(1, 1 * mm), body_para, Spacer(1, 2 * mm)]
 
-        # Outer wrapper to apply the border box across both rows
-        outer = Table(
-            [[hdr_row], [body_row]],
-            colWidths=[170 * mm],
-        )
-        outer.setStyle(TableStyle([
-            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(bord)),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-        ]))
-
-        return [outer, Spacer(1, 5 * mm)]
-
-    def generate_incident_report_pdf(self, report: "IncidentReport") -> BytesIO:  # type: ignore[name-defined]
-        """Generate a professional PDF for an incident report, matching the Operations Report style."""
+    def generate_incident_report_pdf_legacy(self, report: "IncidentReport", incident: Any | None = None) -> BytesIO:  # type: ignore[name-defined]
+        """Legacy incident PDF layout kept for reference only."""
         from app.models.incident_report import IncidentReport  # noqa: F401
 
         # ── Derived metadata ──────────────────────────────────────────────────
-        inc_severity = str(getattr(report, "severity", "minor")).upper() \
-            if hasattr(report, "severity") else "N/A"
-        seacom_ref = getattr(report, "seacom_ref", None) \
+        generated_at = utcnow()
+        incident_severity = getattr(incident, "severity", getattr(report, "severity", None))
+        severity_value = getattr(incident_severity, "value", incident_severity)
+        inc_severity = str(severity_value).replace("-", " ").upper() if severity_value else "N/A"
+        seacom_ref = (
+            getattr(incident, "seacom_ref", None)
+            or getattr(incident, "ref_no", None)
+            or getattr(report, "seacom_ref", None)
             or str(report.incident_id)[:8].upper()
+        )
+        incident_status = (
+            str(getattr(getattr(incident, "status", None), "value", getattr(incident, "status", "")) or "N/A")
+            .replace("-", " ")
+            .title()
+        )
+        incident_summary = getattr(incident, "description", None)
         report_date_str = (
             report.report_date.strftime("%d %B %Y").upper()
+            if report.report_date else "N/A"
+        )
+        report_date_display = (
+            report.report_date.strftime("%d %b %Y")
             if report.report_date else "N/A"
         )
 
@@ -1106,8 +1960,8 @@ class PDFService:
             pagesize=A4,
             rightMargin=20 * mm,
             leftMargin=20 * mm,
-            topMargin=18 * mm,
-            bottomMargin=20 * mm,
+            topMargin=26 * mm,
+            bottomMargin=18 * mm,
             title=f"Incident_Report_{report.id}",
         )
 
@@ -1121,42 +1975,23 @@ class PDFService:
             severity=inc_severity,
             report_date=report_date_str,
             report_date_obj=report.report_date,
+            generated_at=generated_at,
         ))
 
         # ── Page 2+: dark navy running header bar ─────────────────────────────
-        story.extend(self._build_incident_running_header(report_date_str))
-
-        # ── Section heading: INCIDENT SUMMARY ────────────────────────────────
-        sec_head_s = ParagraphStyle(
-            "IncSecHead_local",
-            parent=self.styles["Normal"],
-            fontSize=26,
-            fontName="Helvetica-Bold",
-            textColor=colors.HexColor("#1a365d"),
-            leading=30,
-        )
-        sec_head_tbl = Table(
-            [[Paragraph("INCIDENT SUMMARY", sec_head_s)]],
-            colWidths=[170 * mm],
-        )
-        sec_head_tbl.setStyle(TableStyle([
-            ("LINEBELOW", (0, 0), (-1, -1), 1.5, colors.HexColor("#2b6cb0")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING", (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-        ]))
-        story.append(sec_head_tbl)
-        story.append(Spacer(1, 6 * mm))
-
-        # ── 4-card KPI row ────────────────────────────────────────────────────
-        story.extend(self._build_incident_kpi_cards(
+        story.extend(self._build_incident_overview_section(
             site=report.site_name or "N/A",
             seacom_ref=seacom_ref,
             technician=report.technician_name or "N/A",
             severity=inc_severity,
+            incident_status=incident_status,
+            report_date=report_date_display,
+            incident_summary=incident_summary,
         ))
+        story.append(Spacer(1, 1 * mm))
 
+        # ── Section heading: INCIDENT SUMMARY ────────────────────────────────
+        # ── 4-card KPI row ────────────────────────────────────────────────────
         # ── Narrative sections ────────────────────────────────────────────────
         narrative_sections = [
             (1, "Introduction",        report.introduction),
@@ -1245,10 +2080,10 @@ class PDFService:
                 for name, buf in row_items:
                     try:
                         buf.seek(0)
-                        img = Image(ImageReader(buf), width=PHOTO_W, height=PHOTO_H)
+                        img = Image(buf, width=PHOTO_W, height=PHOTO_H)
                         img.hAlign = "CENTER"
                         img_row.append(img)
-                        cap_row.append(Paragraph(name[:35], caption_s))
+                        cap_row.append(Paragraph(escape(name[:35]), caption_s))
                     except Exception:
                         img_row.append(Paragraph("<i>(unavailable)</i>", caption_s))
                         cap_row.append(Paragraph("", caption_s))
@@ -1282,92 +2117,713 @@ class PDFService:
             story.append(Spacer(1, 4 * mm))
 
         # ── Signature block: PREPARED BY / APPROVED BY ───────────────────────
-        story.append(Spacer(1, 8 * mm))
+        story.append(Spacer(1, 3 * mm))
 
         sig_hdr_s = ParagraphStyle(
             "IncSigHdr_local",
             parent=self.styles["Normal"],
             fontSize=8,
             fontName="Helvetica-Bold",
-            textColor=colors.HexColor("#ffffff"),
+            textColor=colors.HexColor("#2563eb"),
         )
         sig_name_s = ParagraphStyle(
             "IncSigName_local",
             parent=self.styles["Normal"],
             fontSize=11,
             fontName="Helvetica-Bold",
-            textColor=colors.HexColor("#1a365d"),
-            spaceAfter=4,
+            textColor=colors.HexColor("#0f2747"),
+            spaceAfter=2,
         )
         sig_line_s = ParagraphStyle(
             "IncSigLine_local",
             parent=self.styles["Normal"],
             fontSize=9,
             fontName="Helvetica",
-            textColor=colors.HexColor("#4a5568"),
+            textColor=colors.HexColor("#475569"),
+        )
+        sig_intro_s = ParagraphStyle(
+            "IncSigIntro_local",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#64748b"),
+            leading=13,
         )
         sig_table = Table(
             [[
                 [
                     Paragraph("PREPARED BY", sig_hdr_s),
-                    Spacer(1, 4),
+                    Spacer(1, 3),
                     Paragraph(report.technician_name or "N/A", sig_name_s),
-                    Paragraph("Signature:  _________________________________", sig_line_s),
+                    Paragraph(f"Prepared on {report_date_display}", sig_intro_s),
                     Spacer(1, 4),
-                    Paragraph("Date:  _____  /  _____  /  __________", sig_line_s),
+                    Paragraph("Signature:  _________________________________", sig_line_s),
+                    Spacer(1, 3),
+                    Paragraph(f"Date:  {report_date_display}", sig_line_s),
                 ],
                 [
                     Paragraph("APPROVED BY", sig_hdr_s),
-                    Spacer(1, 4),
+                    Spacer(1, 3),
                     Paragraph("___________________________", sig_name_s),
-                    Paragraph("Signature:  _________________________________", sig_line_s),
+                    Paragraph("Operations / NOC Authorisation", sig_intro_s),
                     Spacer(1, 4),
+                    Paragraph("Signature:  _________________________________", sig_line_s),
+                    Spacer(1, 3),
                     Paragraph("Date:  _____  /  _____  /  __________", sig_line_s),
                 ],
             ]],
             colWidths=[85 * mm, 85 * mm],
         )
         sig_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (0, 0), colors.HexColor("#2b6cb0")),
-            ("BACKGROUND", (1, 0), (1, 0), colors.HexColor("#2b6cb0")),
-            ("BOX", (0, 0), (0, 0), 0.5, colors.HexColor("#cbd5e0")),
-            ("BOX", (1, 0), (1, 0), 0.5, colors.HexColor("#cbd5e0")),
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fbff")),
+            ("BOX", (0, 0), (0, 0), 0.6, colors.HexColor("#dbe4f0")),
+            ("BOX", (1, 0), (1, 0), 0.6, colors.HexColor("#dbe4f0")),
+            ("LINEBEFORE", (0, 0), (0, 0), 3, colors.HexColor("#2563eb")),
+            ("LINEBEFORE", (1, 0), (1, 0), 3, colors.HexColor("#2563eb")),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 12),
             ("RIGHTPADDING", (0, 0), (-1, -1), 12),
             ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
-        story.append(sig_table)
+        story.append(KeepTogether([sig_table]))
 
         # ── Footer ────────────────────────────────────────────────────────────
-        story.append(Spacer(1, 8 * mm))
-        story.append(self._create_divider(color_hex="#cbd5e0"))
-        story.append(Spacer(1, 3))
-        footer_s = ParagraphStyle(
-            "IncFooter_local",
-            parent=self.styles["Normal"],
-            fontSize=7,
-            fontName="Helvetica",
-            textColor=colors.HexColor("#718096"),
-            alignment=TA_CENTER,
-        )
-        story.append(Paragraph(
-            f"CONFIDENTIAL \u2014 SAMO TELECOMS \u00d7 SEACOM  \u2502  "
-            f"Generated {datetime.now().strftime('%d %B %Y %H:%M')} UTC  \u2502  "
-            f"Ref: {seacom_ref}",
-            footer_s,
-        ))
-
         self._configure_first_page_background("incident", _INC_PRIMARY, "#991b1b")
         try:
-            doc.build(story, onFirstPage=self._draw_first_page_background)
+            doc.build(
+                story,
+                onFirstPage=self._draw_first_page_background,
+                onLaterPages=lambda canv, doc: self._draw_incident_body_chrome(
+                    canv,
+                    doc,
+                    seacom_ref=seacom_ref,
+                    severity=inc_severity,
+                    generated_at=generated_at,
+                ),
+            )
         finally:
             self._clear_first_page_background()
         buffer.seek(0)
         return buffer
 
     # ── Executive summary PDF (management) ───────────────────────────────────
+
+    def _build_incident_cover_page(
+        self,
+        seacom_ref: str,
+        site: str,
+        technician: str,
+        severity: str,
+        report_date: str,
+        report_date_obj: "datetime | None" = None,
+        generated_at: datetime | None = None,
+        incident_status: str = "N/A",
+        incident_summary: str | None = None,
+        response_note: str | None = None,
+    ) -> list:
+        """Build clean reference-inspired incident cover page."""
+        elements: list = []
+        brand = "#0f7c73"
+        ink = "#182524"
+        muted = "#566765"
+
+        top_l_s = ParagraphStyle(
+            "IncCovTopLRef_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor(ink),
+        )
+        top_r_s = ParagraphStyle(
+            "IncCovTopRRef_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(ink),
+            alignment=TA_RIGHT,
+        )
+        title_s = ParagraphStyle(
+            "IncCovTitleRef2_local",
+            parent=self.styles["Normal"],
+            fontSize=28,
+            fontName="Helvetica-Bold",
+            leading=31,
+            textColor=colors.HexColor(brand),
+        )
+        subtitle_s = ParagraphStyle(
+            "IncCovSubtitleRef2_local",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            leading=14,
+            textColor=colors.HexColor(muted),
+        )
+        label_s = ParagraphStyle(
+            "IncCovLabelRef2_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(ink),
+        )
+        value_s = ParagraphStyle(
+            "IncCovValueRef2_local",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            leading=13,
+            textColor=colors.HexColor(ink),
+        )
+        footer_label_s = ParagraphStyle(
+            "IncCovFooterLabelRef_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(ink),
+        )
+        footer_value_s = ParagraphStyle(
+            "IncCovFooterValueRef_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor(ink),
+        )
+
+        generated_dt = generated_at or utcnow()
+        generated_ts = generated_dt.strftime("%d %B %Y  %H:%M UTC")
+        time_value = (
+            report_date_obj.strftime("%H:%M UTC")
+            if report_date_obj is not None
+            else generated_dt.strftime("%H:%M UTC")
+        )
+
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=43, max_height_mm=15)
+
+        header = Table(
+            [[
+                Paragraph("Field Core incident services", top_l_s),
+                lockup_logo or Paragraph("FIELD CORE", top_r_s),
+            ]],
+            colWidths=[109 * mm, 61 * mm],
+        )
+        header.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(header)
+        elements.append(Spacer(1, 10 * mm))
+
+        hero = Table(
+            [[
+                self._build_incident_cover_icon(),
+                [
+                    Paragraph("Incident", title_s),
+                    Paragraph("Report Form", title_s),
+                    Spacer(1, 2 * mm),
+                    Paragraph(
+                        "Post-resolution field record capturing incident context, "
+                        "restoration outcome, and submission details.",
+                        subtitle_s,
+                    ),
+                ],
+            ]],
+            colWidths=[46 * mm, 124 * mm],
+        )
+        hero.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(hero)
+        elements.append(Spacer(1, 8 * mm))
+
+        meta_rows = [
+            [Paragraph("Date of Service", label_s), Paragraph(report_date, value_s)],
+            [Paragraph("Time", label_s), Paragraph(time_value, value_s)],
+            [Paragraph("Staff Name", label_s), Paragraph(self._incident_markup(technician, fallback="N/A"), value_s)],
+            [Paragraph("Incident Reference", label_s), Paragraph(self._incident_markup(seacom_ref, fallback="N/A"), value_s)],
+            [Paragraph("Severity", label_s), Paragraph(self._incident_markup(severity, fallback="N/A"), value_s)],
+            [Paragraph("Site", label_s), Paragraph(self._incident_markup(site, fallback="N/A"), value_s)],
+        ]
+        elements.append(self._build_incident_panel(
+            "Document Control:",
+            self._build_incident_grid_table(meta_rows, [48 * mm, 122 * mm]),
+        ))
+        elements.append(Spacer(1, 5 * mm))
+
+        detail_rows = [
+            [Paragraph("Nature of Incident", label_s), Paragraph(self._incident_markup(incident_summary, fallback="Operational incident record."), value_s)],
+            [Paragraph("Current Resolution Status", label_s), Paragraph(self._incident_markup(incident_status, fallback="N/A"), value_s)],
+            [Paragraph("Detailed Feedback", label_s), Paragraph(self._incident_markup(incident_summary, fallback="No narrative summary provided."), value_s)],
+            [Paragraph("Further Action Needed", label_s), Paragraph(self._incident_markup(response_note, fallback="Close-out recorded in main report body."), value_s)],
+        ]
+        elements.append(self._build_incident_panel(
+            "Details of Incident Report:",
+            self._build_incident_grid_table(detail_rows, [48 * mm, 122 * mm]),
+        ))
+        elements.append(Spacer(1, 5 * mm))
+
+        submission_rows = [
+            [
+                Paragraph("Reported by", label_s),
+                Paragraph(self._incident_markup(technician, fallback="N/A"), value_s),
+                Paragraph("Date Submitted", label_s),
+                Paragraph(report_date, value_s),
+            ],
+            [
+                Paragraph("Document Class", label_s),
+                Paragraph("Internal Controlled Copy", value_s),
+                Paragraph("Generated", label_s),
+                Paragraph(generated_ts, value_s),
+            ],
+        ]
+        elements.append(self._build_incident_panel(
+            "Submission Record:",
+            self._build_incident_grid_table(
+                submission_rows,
+                [28 * mm, 57 * mm, 28 * mm, 57 * mm],
+            ),
+        ))
+        elements.append(Spacer(1, 8 * mm))
+
+        footer = Table(
+            [[
+                Paragraph("Reported by:", footer_label_s),
+                Paragraph(self._incident_markup(technician, fallback="N/A"), footer_value_s),
+                Paragraph("Date Submitted:", footer_label_s),
+                Paragraph(report_date, footer_value_s),
+            ]],
+            colWidths=[21 * mm, 61 * mm, 28 * mm, 60 * mm],
+        )
+        footer.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        elements.append(footer)
+        elements.append(Spacer(1, 1.5 * mm))
+
+        footer2 = Table(
+            [[
+                Paragraph("Designation:", footer_label_s),
+                Paragraph("Field Technician", footer_value_s),
+                Paragraph("Reference:", footer_label_s),
+                Paragraph(self._incident_markup(seacom_ref, fallback="N/A"), footer_value_s),
+            ]],
+            colWidths=[21 * mm, 61 * mm, 21 * mm, 67 * mm],
+        )
+        footer2.setStyle(TableStyle([
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]))
+        elements.append(footer2)
+        elements.append(PageBreak())
+        return elements
+
+    def _draw_incident_body_chrome(
+        self,
+        canv: canvas.Canvas,
+        doc: SimpleDocTemplate,
+        *,
+        seacom_ref: str,
+        severity: str,
+        generated_at: datetime,
+    ) -> None:
+        """Draw light reference-style running header and footer."""
+        page_w, page_h = doc.pagesize
+        left = doc.leftMargin
+        right = page_w - doc.rightMargin
+        brand = colors.HexColor("#0f7c73")
+        ink = colors.HexColor("#182524")
+        muted = colors.HexColor("#647874")
+
+        canv.saveState()
+        try:
+            header_y = page_h - 12 * mm
+            canv.setFillColor(ink)
+            canv.setFont("Helvetica", 8)
+            canv.drawString(left, header_y, "Samo Engineering // Incident Report")
+            canv.setFont("Helvetica-Bold", 8)
+            canv.drawRightString(right, header_y, f"Ref {seacom_ref}")
+
+            canv.setStrokeColor(brand)
+            canv.setLineWidth(1)
+            canv.line(left, header_y - 2.5 * mm, right, header_y - 2.5 * mm)
+
+            footer_y = 10 * mm
+            canv.setStrokeColor(colors.HexColor("#c8dddb"))
+            canv.setLineWidth(0.6)
+            canv.line(left, footer_y + 5 * mm, right, footer_y + 5 * mm)
+            canv.setFillColor(muted)
+            canv.setFont("Helvetica", 7)
+            footer_text = (
+                f"Generated {generated_at.strftime('%d %B %Y %H:%M UTC')} | "
+                f"Severity {severity} | Ref {seacom_ref} | Page {canv.getPageNumber()}"
+            )
+            canv.drawCentredString(page_w / 2, footer_y + 1.1 * mm, footer_text)
+        finally:
+            canv.restoreState()
+
+    def _build_incident_overview_section(
+        self,
+        site: str,
+        seacom_ref: str,
+        technician: str,
+        severity: str,
+        incident_status: str,
+        report_date: str,
+        incident_summary: str | None = None,
+    ) -> list:
+        """Build light form-style overview section."""
+        elements: list = []
+        brand = "#0f7c73"
+        ink = "#182524"
+
+        heading_s = ParagraphStyle(
+            "IncOverviewHeadingRef_local",
+            parent=self.styles["Normal"],
+            fontSize=16,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(brand),
+            spaceAfter=4,
+        )
+        label_s = ParagraphStyle(
+            "IncOverviewLabelRef_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(ink),
+        )
+        value_s = ParagraphStyle(
+            "IncOverviewValueRef_local",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            leading=13,
+            textColor=colors.HexColor(ink),
+        )
+
+        elements.append(Paragraph("Incident Overview", heading_s))
+        meta_rows = [
+            [
+                Paragraph("Incident Reference", label_s),
+                Paragraph(self._incident_markup(seacom_ref, fallback="N/A"), value_s),
+                Paragraph("Site", label_s),
+                Paragraph(self._incident_markup(site, fallback="N/A"), value_s),
+            ],
+            [
+                Paragraph("Technician", label_s),
+                Paragraph(self._incident_markup(technician, fallback="N/A"), value_s),
+                Paragraph("Severity", label_s),
+                Paragraph(self._incident_markup(severity, fallback="N/A"), value_s),
+            ],
+            [
+                Paragraph("Incident Status", label_s),
+                Paragraph(self._incident_markup(incident_status, fallback="N/A"), value_s),
+                Paragraph("Report Date", label_s),
+                Paragraph(self._incident_markup(report_date, fallback="N/A"), value_s),
+            ],
+        ]
+        elements.append(self._build_incident_panel(
+            "Details of Incident Report:",
+            self._build_incident_grid_table(
+                meta_rows,
+                [34 * mm, 51 * mm, 34 * mm, 51 * mm],
+            ),
+        ))
+
+        if (incident_summary or "").strip():
+            summary_rows = [[
+                Paragraph("Incident Description", label_s),
+                Paragraph(self._incident_markup(incident_summary), value_s),
+            ]]
+            elements.append(Spacer(1, 4 * mm))
+            elements.append(self._build_incident_panel(
+                "Details of Service Report:",
+                self._build_incident_grid_table(summary_rows, [48 * mm, 122 * mm]),
+            ))
+
+        elements.append(Spacer(1, 4 * mm))
+        return elements
+
+    def _build_incident_resolution_panel(
+        self,
+        rows: list[tuple[str, str | None]],
+    ) -> list:
+        """Build main incident narrative as single reference-style panel."""
+        ink = "#182524"
+        label_s = ParagraphStyle(
+            "IncResolutionLabelRef_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(ink),
+        )
+        value_s = ParagraphStyle(
+            "IncResolutionValueRef_local",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            leading=13,
+            textColor=colors.HexColor(ink),
+        )
+
+        table_rows = [
+            [
+                Paragraph(escape(label), label_s),
+                Paragraph(self._incident_markup(body), value_s),
+            ]
+            for label, body in rows
+        ]
+        panel = self._build_incident_panel(
+            "Details of Resolution Report:",
+            self._build_incident_grid_table(table_rows, [48 * mm, 122 * mm]),
+        )
+        return [panel, Spacer(1, 4 * mm)]
+
+    def _build_incident_submission_footer(
+        self,
+        *,
+        technician: str,
+        report_date: str,
+        seacom_ref: str,
+        designation: str = "Field Technician",
+    ) -> KeepTogether:
+        """Build simple footer metadata row like reference form."""
+        ink = "#182524"
+        label_s = ParagraphStyle(
+            "IncSubmitFooterLabel_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(ink),
+        )
+        value_s = ParagraphStyle(
+            "IncSubmitFooterValue_local",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor(ink),
+        )
+
+        row1 = Table(
+            [[
+                Paragraph("Reported by:", label_s),
+                Paragraph(self._incident_markup(technician, fallback="N/A"), value_s),
+                Paragraph("Date Submitted:", label_s),
+                Paragraph(self._incident_markup(report_date, fallback="N/A"), value_s),
+            ]],
+            colWidths=[21 * mm, 61 * mm, 28 * mm, 60 * mm],
+        )
+        row2 = Table(
+            [[
+                Paragraph("Designation:", label_s),
+                Paragraph(designation, value_s),
+                Paragraph("Reference:", label_s),
+                Paragraph(self._incident_markup(seacom_ref, fallback="N/A"), value_s),
+            ]],
+            colWidths=[21 * mm, 61 * mm, 21 * mm, 67 * mm],
+        )
+        for tbl in (row1, row2):
+            tbl.setStyle(TableStyle([
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+        return KeepTogether([row1, Spacer(1, 1.5 * mm), row2])
+
+    def generate_incident_report_pdf(self, report: "IncidentReport", incident: Any | None = None) -> BytesIO:  # type: ignore[name-defined]
+        """Generate reference-inspired incident PDF layout."""
+        from app.models.incident_report import IncidentReport  # noqa: F401
+
+        generated_at = utcnow()
+        incident_severity = getattr(incident, "severity", getattr(report, "severity", None))
+        severity_value = getattr(incident_severity, "value", incident_severity)
+        inc_severity = str(severity_value).replace("-", " ").upper() if severity_value else "N/A"
+        seacom_ref = (
+            getattr(incident, "seacom_ref", None)
+            or getattr(incident, "ref_no", None)
+            or getattr(report, "seacom_ref", None)
+            or str(report.incident_id)[:8].upper()
+        )
+        incident_status = (
+            str(getattr(getattr(incident, "status", None), "value", getattr(incident, "status", "")) or "N/A")
+            .replace("-", " ")
+            .title()
+        )
+        incident_summary = getattr(incident, "description", None)
+        response_note = report.conclusion or report.actions_taken or report.root_cause_analysis
+        report_date_str = (
+            report.report_date.strftime("%d %B %Y").upper()
+            if report.report_date else "N/A"
+        )
+        report_date_display = (
+            report.report_date.strftime("%d %B %Y")
+            if report.report_date else "N/A"
+        )
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20 * mm,
+            leftMargin=20 * mm,
+            topMargin=20 * mm,
+            bottomMargin=16 * mm,
+            title=f"Incident_Report_{report.id}",
+        )
+
+        story: list = []
+        story.extend(self._build_incident_cover_page(
+            seacom_ref=seacom_ref,
+            site=report.site_name or "N/A",
+            technician=report.technician_name or "N/A",
+            severity=inc_severity,
+            report_date=report_date_str,
+            report_date_obj=report.report_date,
+            generated_at=generated_at,
+            incident_status=incident_status,
+            incident_summary=incident_summary,
+            response_note=response_note,
+        ))
+        story.extend(self._build_incident_overview_section(
+            site=report.site_name or "N/A",
+            seacom_ref=seacom_ref,
+            technician=report.technician_name or "N/A",
+            severity=inc_severity,
+            incident_status=incident_status,
+            report_date=report_date_display,
+            incident_summary=incident_summary,
+        ))
+        story.extend(self._build_incident_resolution_panel([
+            ("Introduction", report.introduction),
+            ("Problem Statement", report.problem_statement),
+            ("Findings on Site", report.findings),
+            ("Actions Taken", report.actions_taken),
+            ("Root Cause Analysis", report.root_cause_analysis),
+            ("Conclusion", report.conclusion),
+        ]))
+
+        photos_raw: list = []
+        try:
+            attachments = report.attachments or {}
+            photos_raw = attachments.get("photos", []) or []
+        except Exception:
+            pass
+
+        photo_buffers: list[tuple[str, BytesIO]] = []
+        for photo in photos_raw:
+            url = photo.get("url") or photo.get("public_url")
+            if not url:
+                continue
+            buf = self._fetch_image_bytes(url)
+            if buf:
+                photo_buffers.append((photo.get("original_name") or "Photo", buf))
+
+        if photo_buffers:
+            photo_label_s = ParagraphStyle(
+                "IncPhotoLabelRef_local",
+                parent=self.styles["Normal"],
+                fontSize=8,
+                fontName="Helvetica-Bold",
+                textColor=colors.HexColor("#182524"),
+            )
+            photo_caption_s = ParagraphStyle(
+                "IncPhotoCaptionRef_local",
+                parent=self.styles["Normal"],
+                fontSize=7,
+                fontName="Helvetica",
+                textColor=colors.HexColor("#566765"),
+                alignment=TA_CENTER,
+            )
+
+            count_label = len(photo_buffers)
+            photo_header_rows = [[
+                Paragraph("Photos Attached", photo_label_s),
+                Paragraph(f"{count_label} image{'s' if count_label != 1 else ''}", photo_label_s),
+            ]]
+            story.append(self._build_incident_panel(
+                "Site Photos:",
+                self._build_incident_grid_table(photo_header_rows, [120 * mm, 50 * mm]),
+            ))
+            story.append(Spacer(1, 4 * mm))
+
+            cols = 3
+            photo_w = (170 * mm - (cols - 1) * 4 * mm) / cols
+            photo_h = photo_w * 0.68
+            rows = [photo_buffers[i: i + cols] for i in range(0, len(photo_buffers), cols)]
+            for row_items in rows:
+                img_row: list = []
+                cap_row: list = []
+                for name, buf in row_items:
+                    try:
+                        buf.seek(0)
+                        img = Image(buf, width=photo_w, height=photo_h)
+                        img.hAlign = "CENTER"
+                        img_row.append(img)
+                        cap_row.append(Paragraph(escape(name[:35]), photo_caption_s))
+                    except Exception:
+                        img_row.append(Paragraph("<i>(unavailable)</i>", photo_caption_s))
+                        cap_row.append(Paragraph("", photo_caption_s))
+
+                while len(img_row) < cols:
+                    img_row.append(Spacer(photo_w, photo_h))
+                    cap_row.append(Paragraph("", photo_caption_s))
+
+                col_widths = [photo_w + 2 * mm] * cols
+                img_table = Table([img_row], colWidths=col_widths)
+                img_table.setStyle(TableStyle([
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#63736f")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.6, colors.HexColor("#63736f")),
+                ]))
+                story.append(img_table)
+
+                cap_table = Table([cap_row], colWidths=col_widths)
+                cap_table.setStyle(TableStyle([
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]))
+                story.append(cap_table)
+
+            story.append(Spacer(1, 3 * mm))
+
+        story.append(self._build_incident_submission_footer(
+            technician=report.technician_name or "N/A",
+            report_date=report_date_display,
+            seacom_ref=seacom_ref,
+        ))
+
+        doc.build(
+            story,
+            onLaterPages=lambda canv, doc: self._draw_incident_body_chrome(
+                canv,
+                doc,
+                seacom_ref=seacom_ref,
+                severity=inc_severity,
+                generated_at=generated_at,
+            ),
+        )
+        buffer.seek(0)
+        return buffer
 
     def generate_executive_summary_pdf(
         self,
@@ -1418,7 +2874,7 @@ class PDFService:
         ]
         story.extend(self._build_cover_page(
             title="Executive Management Report",
-            subtitle=f"{month_label} - SAMO TELECOMS x SEACOM",
+            subtitle=f"{month_label} - {_FIELDCORE_BRAND}",
             details=cover_details,
             cover_key="executive",
         ))
@@ -1427,7 +2883,7 @@ class PDFService:
         exec_primary, exec_accent = self._cover_palette("executive")
         story.extend(self._build_page_header(
             title="Executive Management Report",
-            subtitle=f"{month_label}  |  SAMO TELECOMS x SEACOM",
+            subtitle=f"{month_label}  |  {_FIELDCORE_BRAND}",
             primary_hex=exec_primary,
             accent_hex=exec_accent,
         ))
@@ -1568,21 +3024,10 @@ class PDFService:
         """
         Build a full-width dark banner for the top of every content page.
         Mirrors the .content-header style from the client HTML report:
-        [ samo logo | title + subtitle | seacom logo ]
+        [ Field Core mark | title + subtitle | Field Core lockup ]
         """
-        samo_logo = seacom_logo = None
-        try:
-            p = self.assets_path / "samo-logo.png"
-            if p.exists():
-                samo_logo = Image(str(p), width=46 * mm, height=16 * mm)
-        except Exception:
-            pass
-        try:
-            p = self.assets_path / "seacom-logo.png"
-            if p.exists():
-                seacom_logo = Image(str(p), width=46 * mm, height=16 * mm)
-        except Exception:
-            pass
+        mark_logo = self._load_fieldcore_mark(max_width_mm=46, max_height_mm=16)
+        lockup_logo = self._load_fieldcore_lockup(max_width_mm=46, max_height_mm=16)
 
         title_s = ParagraphStyle(
             "BnrTitle",
@@ -1611,9 +3056,9 @@ class PDFService:
 
         banner = Table(
             [[
-                samo_logo or Paragraph("<b>SAMO</b>", fallback_s),
+                mark_logo or Paragraph("<b>FC</b>", fallback_s),
                 [Paragraph(title, title_s), Spacer(1, 2), Paragraph(subtitle, sub_s)],
-                seacom_logo or Paragraph("<b>SEACOM</b>", fallback_s),
+                lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
             ]],
             colWidths=[46 * mm, 78 * mm, 46 * mm],
         )
@@ -1782,22 +3227,22 @@ class PDFService:
     # ── Repeater report rendering ─────────────────────────────────────────────
 
     def _repeater_section_header(self, title: str, primary_hex: str, accent_hex: str) -> list:
-        """Render a styled section header for repeater report sections."""
+        """Render the light field-report section header used by repeater/diesel pages."""
         badge_style = ParagraphStyle(
             "RptSecBadge",
             parent=self.styles["Normal"],
             fontSize=11,
             fontName="Helvetica-Bold",
-            textColor=colors.white,
+            textColor=colors.HexColor("#1b2540"),
         )
         header = Table([[Paragraph(title, badge_style)]], colWidths=[170 * mm])
         header.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(primary_hex)),
-            ("LINEBELOW", (0, 0), (-1, -1), 2, colors.HexColor(accent_hex)),
+            ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d9e2ec")),
+            ("LINEBEFORE", (0, 0), (0, 0), 3, colors.HexColor(accent_hex)),
             ("LEFTPADDING", (0, 0), (-1, -1), 10),
             ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-            ("TOPPADDING", (0, 0), (-1, -1), 7),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("TOPPADDING", (0, 0), (-1, -1), 8),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
         ]))
         return [header, Spacer(1, 3 * mm)]
 
@@ -2034,6 +3479,40 @@ class PDFService:
 
         return elements
 
+    def _get_media_source(self, item: Any) -> str:
+        """Return the best available media source from a string or attachment dict."""
+        if isinstance(item, str):
+            return item.strip()
+        if isinstance(item, dict):
+            for key in ("signed_url", "url", "public_url", "file_path", "path"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return ""
+
+    def _get_media_name(self, item: Any, default: str = "Photo") -> str:
+        """Return a human-friendly media name for captions."""
+        if isinstance(item, dict):
+            for key in ("original_name", "name", "filename", "label"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return default
+
+    def _is_renderable_image_item(self, item: Any) -> bool:
+        """Check whether an attachment item looks like an image."""
+        source = self._get_media_source(item)
+        if not source:
+            return False
+
+        if isinstance(item, dict):
+            content_type = str(item.get("content_type") or item.get("mime_type") or "").strip().lower()
+            if content_type.startswith("image/"):
+                return True
+
+        lowered = source.lower().split("?", 1)[0].split("#", 1)[0]
+        return lowered.endswith((".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff"))
+
     def _render_photo_grid(self, photos: list, story: list, cols: int = 3) -> None:
         """Render a list of photo URLs or dicts as a grid of images."""
         caption_style = ParagraphStyle(
@@ -2050,19 +3529,10 @@ class PDFService:
 
         photo_buffers: list[tuple[str, BytesIO | None]] = []
         for photo in photos:
-            if isinstance(photo, str):
-                url, name = photo, "Photo"
-            elif isinstance(photo, dict):
-                url = (
-                    photo.get("signed_url")
-                    or photo.get("url")
-                    or photo.get("public_url")
-                    or photo.get("file_path")
-                    or ""
-                )
-                name = photo.get("original_name") or photo.get("name") or "Photo"
-            else:
+            url = self._get_media_source(photo)
+            if not url:
                 continue
+            name = self._get_media_name(photo)
             buf = self._fetch_image_bytes(url) if url else None
             photo_buffers.append((name, buf))
 
@@ -2074,7 +3544,7 @@ class PDFService:
                 if buf:
                     try:
                         buf.seek(0)
-                        img = Image(ImageReader(buf), width=PHOTO_W, height=PHOTO_H)
+                        img = Image(buf, width=PHOTO_W, height=PHOTO_H)
                         img.hAlign = "CENTER"
                         img_row.append(img)
                     except Exception:
@@ -2107,6 +3577,313 @@ class PDFService:
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ]))
             story.append(cap_tbl)
+
+    def _build_field_kv_table(self, rows: list[tuple[str, str]]) -> Table:
+        """Build a clean two-column key/value table."""
+        label_style = ParagraphStyle(
+            "DieselKvLabel",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#2d3748"),
+        )
+        value_style = ParagraphStyle(
+            "DieselKvValue",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#4a5568"),
+        )
+
+        table_rows = [
+            [Paragraph(escape(label), label_style), Paragraph(escape(value), value_style)]
+            for label, value in rows
+        ]
+        table = Table(table_rows, colWidths=[62 * mm, 108 * mm])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#f0f4f8")),
+            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+            ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("ALIGN", (0, 0), (0, -1), "RIGHT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 7),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.HexColor("#ffffff"), colors.HexColor("#f7fafc")]),
+        ]))
+        return table
+
+    def _build_field_data_table(
+        self,
+        headers: list[str],
+        rows: list[list[str]],
+        *,
+        col_widths: list[float],
+        primary_hex: str,
+    ) -> Table:
+        """Build a multi-column data table with header row."""
+        header_style = ParagraphStyle(
+            "DieselDataHeader",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.white,
+            alignment=TA_CENTER,
+        )
+        cell_style = ParagraphStyle(
+            "DieselDataCell",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#2d3748"),
+            leading=11,
+        )
+
+        table_rows: list[list[Any]] = [
+            [Paragraph(escape(header), header_style) for header in headers]
+        ]
+        for row in rows:
+            table_rows.append([Paragraph(escape(str(value)), cell_style) for value in row])
+
+        table = Table(table_rows, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(primary_hex)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#ffffff"), colors.HexColor("#f7fafc")]),
+        ]))
+        return table
+
+    def _parse_diesel_runtime_minutes(self, value: Any) -> int | None:
+        """Parse runtime stored as hours, numeric string, or H/M notation."""
+        if isinstance(value, bool) or value is None:
+            return None
+
+        if isinstance(value, (int, float)):
+            if not value or value < 0:
+                return None
+            total_minutes = round(float(value) * 60)
+            return total_minutes if total_minutes > 0 else None
+
+        if not isinstance(value, str):
+            return None
+
+        normalized = value.strip().upper().replace(" ", "")
+        if not normalized:
+            return None
+
+        runtime_match = re.fullmatch(r"(?:(\d+)H(?:(\d{1,2})M)?|(\d+)M)", normalized)
+        if runtime_match:
+            hours = int(runtime_match.group(1) or 0)
+            minutes = int(runtime_match.group(2) or runtime_match.group(3) or 0)
+            if minutes >= 60:
+                return None
+            total_minutes = (hours * 60) + minutes
+            return total_minutes if total_minutes > 0 else None
+
+        try:
+            numeric_hours = float(normalized)
+        except ValueError:
+            return None
+
+        if numeric_hours <= 0:
+            return None
+        total_minutes = round(numeric_hours * 60)
+        return total_minutes if total_minutes > 0 else None
+
+    def _format_diesel_runtime(self, value: Any) -> str:
+        """Format diesel runtime using the same compact H/M style as technician print."""
+        total_minutes = self._parse_diesel_runtime_minutes(value)
+        return self._format_runtime_minutes(total_minutes)
+
+    def _format_runtime_minutes(self, total_minutes: int | None) -> str:
+        """Format duration minutes in compact H/M notation."""
+        if total_minutes is None:
+            return "N/A"
+
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        if hours > 0 and minutes > 0:
+            return f"{hours}H{minutes:02d}M"
+        if hours > 0:
+            return f"{hours}H"
+        return f"{minutes}M"
+
+    def _format_diesel_liters(self, value: Any, *, fixed: bool = False) -> str:
+        """Format liter values consistently for diesel tables."""
+        try:
+            liters = float(value)
+        except (TypeError, ValueError):
+            return "N/A"
+
+        if fixed or not liters.is_integer():
+            return f"{liters:.2f} L"
+        return f"{int(liters)} L"
+
+    def _format_diesel_liters_plain(self, value: Any) -> str:
+        """Format liter values without a unit suffix for compact diesel tables."""
+        try:
+            liters = float(value)
+        except (TypeError, ValueError):
+            return "N/A"
+        return f"{liters:.2f}"
+
+    def _render_diesel_body(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render diesel report body to match technician-side export layout."""
+        data = report.data if isinstance(report.data, dict) else {}
+        diesel_fillups = data.get("diesel_fillups") if isinstance(data.get("diesel_fillups"), list) else []
+
+        body_style = ParagraphStyle(
+            "DieselBodyNote",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#2d3748"),
+            leading=15,
+        )
+
+        task = getattr(report, "task", None)
+        task_site = getattr(task, "site", None)
+        task_site_name = getattr(task_site, "name", None)
+        task_site_id = getattr(task_site, "id", None) or getattr(task, "site_id", None)
+
+        def resolve_site_name(entry: dict[str, Any]) -> str:
+            explicit_name = entry.get("site_name")
+            if isinstance(explicit_name, str) and explicit_name.strip():
+                return explicit_name.strip()
+
+            site_id = entry.get("site_id")
+            if task_site_name and site_id and task_site_id and str(site_id) == str(task_site_id):
+                return str(task_site_name)
+
+            if task_site_name:
+                return str(task_site_name)
+
+            if site_id:
+                return str(site_id)
+            return "N/A"
+
+        valid_entries = [entry for entry in diesel_fillups if isinstance(entry, dict)]
+        total_liters = sum(float(entry.get("liters_filled") or 0) for entry in valid_entries)
+
+        primary_sites: list[str] = []
+        serviced_generators: list[str] = []
+        fill_reasons: list[str] = []
+        runtimes: list[int] = []
+        detail_rows: list[list[str]] = []
+
+        for index, entry in enumerate(valid_entries, start=1):
+            site_name = resolve_site_name(entry)
+            if site_name != "N/A" and site_name not in primary_sites:
+                primary_sites.append(site_name)
+
+            runtime_minutes = self._parse_diesel_runtime_minutes(entry.get("gen_runtime_hours"))
+            if runtime_minutes is not None:
+                runtimes.append(runtime_minutes)
+
+            gen_no = entry.get("gen_no")
+            generator_label = f"Gen {gen_no}" if gen_no not in (None, "") else "Gen N/A"
+            if generator_label not in serviced_generators:
+                serviced_generators.append(generator_label)
+
+            fill_reason = str(entry.get("fill_reason") or "Not specified")
+            if fill_reason not in fill_reasons:
+                fill_reasons.append(fill_reason)
+
+            detail_rows.append([
+                str(index),
+                site_name,
+                generator_label,
+                self._format_diesel_liters_plain(entry.get("liters_filled")),
+                self._format_diesel_runtime(entry.get("gen_runtime_hours")),
+                fill_reason,
+            ])
+
+        story.extend(self._repeater_section_header("1. Diesel Summary", primary_hex, accent_hex))
+        story.append(self._build_field_metric_cards([
+            ("Fill Entries", str(len(valid_entries))),
+            ("Total Liters", self._format_diesel_liters(total_liters, fixed=True)),
+            ("Generators", str(len(serviced_generators))),
+            ("Runtime Records", str(len(runtimes))),
+        ], accent_hex=accent_hex))
+        story.append(Spacer(1, 4 * mm))
+        story.append(self._build_field_kv_table([
+            ("Primary Site", ", ".join(primary_sites) or (str(task_site_name) if task_site_name else "N/A")),
+            ("Serviced Generators", ", ".join(serviced_generators) or "N/A"),
+            ("Highest Runtime", self._format_runtime_minutes(max(runtimes) if runtimes else None)),
+            ("Fill Reasons", ", ".join(fill_reasons) or "Not specified"),
+        ]))
+        story.append(Spacer(1, 6 * mm))
+
+        story.extend(self._repeater_section_header("2. Fill-up Entries", primary_hex, accent_hex))
+
+        if detail_rows:
+            story.append(self._build_field_data_table(
+                headers=["#", "Site", "Generator", "Liters", "Runtime", "Fill Reason"],
+                rows=detail_rows,
+                col_widths=[12 * mm, 40 * mm, 20 * mm, 24 * mm, 28 * mm, 46 * mm],
+                primary_hex=primary_hex,
+            ))
+        else:
+            story.append(Paragraph("<i>No diesel fillup entries recorded.</i>", body_style))
+
+        story.append(Spacer(1, 6 * mm))
+
+    def _render_diesel_attachments(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render diesel report image attachments using the same gallery idea as technician print."""
+        attachments = report.attachments if isinstance(report.attachments, dict) else {}
+        candidates: list[Any] = []
+
+        files = attachments.get("files")
+        if isinstance(files, list):
+            candidates.extend(files)
+        else:
+            for value in attachments.values():
+                if isinstance(value, list):
+                    candidates.extend(value)
+                else:
+                    candidates.append(value)
+
+        photos: list[Any] = []
+        seen_sources: set[str] = set()
+        for item in candidates:
+            if not self._is_renderable_image_item(item):
+                continue
+            source = self._get_media_source(item)
+            if not source or source in seen_sources:
+                continue
+            seen_sources.add(source)
+            photos.append(item)
+
+        if not photos:
+            return
+
+        story.append(Spacer(1, 16))
+        story.extend(self._repeater_section_header("Uploaded Attachments", primary_hex, accent_hex))
+        self._render_photo_grid(photos, story, cols=3)
 
     def _render_repeater_body(
         self,
@@ -2148,6 +3925,24 @@ class PDFService:
         info_lbl_s = ParagraphStyle("RpInfoL", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"))
         info_val_s = ParagraphStyle("RpInfoV", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.HexColor("#4a5568"))
         body_s = ParagraphStyle("RpBody", parent=self.styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.HexColor("#2d3748"), leading=16)
+        subhead_s = ParagraphStyle(
+            "RpSubhead",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor(primary_hex),
+            spaceBefore=2,
+            spaceAfter=4,
+        )
+        photo_note_style = ParagraphStyle(
+            "RpPhotoNote",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#4a5568"),
+            leading=13,
+            spaceAfter=4,
+        )
 
         def _info_table(rows: list[list[str]]) -> Table:
             t = Table(rows, colWidths=[80 * mm, 90 * mm])
@@ -2170,11 +3965,56 @@ class PDFService:
             return t
 
         # ── 1. Routine Information ──────────────────────────────────────────
+        def _text_value(value: Any) -> str:
+            if value is None:
+                return "N/A"
+            if isinstance(value, str):
+                cleaned = value.strip()
+                return cleaned or "N/A"
+            if isinstance(value, bool):
+                return "Yes" if value else "No"
+            return str(value)
+
+        power_systems: dict[str, Any] = data.get("powerSystems") or {}
+        ups_a: dict[str, Any] = power_systems.get("upsA") or {}
+        ups_b: dict[str, Any] = power_systems.get("upsB") or {}
+        rect_a: dict[str, Any] = power_systems.get("rectA") or {}
+        rect_b: dict[str, Any] = power_systems.get("rectB") or {}
+
         story.extend(self._repeater_section_header("1. Routine Information", primary_hex, accent_hex))
         story.append(_info_table([
+            ["Service Provider", report.service_provider or "N/A"],
+            ["Routine Type", _text_value(data.get("routineType"))],
             ["Date Routine Performed", data.get("dateRoutinePerformed") or "N/A"],
             ["NOC Routine Ticket Reference", data.get("nocRoutineTicketReference") or "N/A"],
         ]))
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph("UPS Display Panel Readings", subhead_s))
+        story.append(self._build_field_data_table(
+            headers=["Reading", "UPS A", "UPS B"],
+            rows=[
+                ["UPS Status", _text_value(ups_a.get("upsStatus")), _text_value(ups_b.get("upsStatus"))],
+                ["UPS battery charge status %", _text_value(ups_a.get("batteryChargeStatus")), _text_value(ups_b.get("batteryChargeStatus"))],
+                ["UPS load %", _text_value(ups_a.get("loadPercent")), _text_value(ups_b.get("loadPercent"))],
+                ["UPS runtime h:m", _text_value(ups_a.get("runtime")), _text_value(ups_b.get("runtime"))],
+            ],
+            col_widths=[74 * mm, 48 * mm, 48 * mm],
+            primary_hex=primary_hex,
+        ))
+        story.append(Spacer(1, 4 * mm))
+        story.append(Paragraph("Rectifier Display Panel Readings", subhead_s))
+        story.append(self._build_field_data_table(
+            headers=["Reading", "Rect A", "Rect B"],
+            rows=[
+                ["Rectifier load current", _text_value(rect_a.get("loadCurrent")), _text_value(rect_b.get("loadCurrent"))],
+                ["Rectifier output voltage", _text_value(rect_a.get("outputVoltage")), _text_value(rect_b.get("outputVoltage"))],
+                ["Number of installed rectifier modules", _text_value(rect_a.get("installedModules")), _text_value(rect_b.get("installedModules"))],
+                ["Rectifier modules on-line", _text_value(rect_a.get("modulesOnLine")), _text_value(rect_b.get("modulesOnLine"))],
+                ["Rectifier battery charge status", _text_value(rect_a.get("batteryChargeStatus")), _text_value(rect_b.get("batteryChargeStatus"))],
+            ],
+            col_widths=[74 * mm, 48 * mm, 48 * mm],
+            primary_hex=primary_hex,
+        ))
         story.append(Spacer(1, 6 * mm))
 
         # ── 2 & 3. Generator Inspections ──────────────────────────────────
@@ -2274,19 +4114,43 @@ class PDFService:
                     out.append(item)
             return out
 
-        picture_groups: dict[str, list[Any]] = {}
+        picture_groups: dict[str, dict[str, Any]] = {}
 
-        def _add_picture_group(title: str, values: Any) -> None:
+        def _add_picture_group(title: str, values: Any, remarks: Any = None) -> None:
             photos = _unique_photos(values)
             if not photos:
                 return
-            existing = picture_groups.get(title, [])
-            picture_groups[title] = _unique_photos([*existing, *photos])
+            normalized_remarks = str(remarks or "").strip()
+            existing = picture_groups.get(title, {"photos": [], "remarks": ""})
+            picture_groups[title] = {
+                "photos": _unique_photos([*existing.get("photos", []), *photos]),
+                "remarks": existing.get("remarks") or normalized_remarks,
+            }
 
         concerns_pictures = (concerns or {}).get("pictures")
         site_pics: dict = data.get("sitePictures") or {}
         _add_picture_group("Site Concerns", concerns_pictures)
         _add_picture_group("Site Pictures", site_pics.get("pictures"))
+
+        picture_categories = site_pics.get("categories") if isinstance(site_pics, dict) else {}
+        if isinstance(picture_categories, dict):
+            category_labels = {
+                "siteViews": "Site - front, rear, left and right view",
+                "siteAssets": "Site - rear cage, generators, Gates",
+                "generatorControls": "Generators - PLC Gen A, Gen B, battery chargers Gen A and Gen B",
+                "fireAndAircon": "Fire Panel, FM200 level display, Aircon controller",
+                "rectifierAndOdf": "Display, rectifier B, display, ODF top half, ODF bottom half",
+                "cabinetAlarms": "Cabinets with Alarms present",
+            }
+            for key, title in category_labels.items():
+                category_data = picture_categories.get(key)
+                if not isinstance(category_data, dict):
+                    continue
+                _add_picture_group(
+                    title,
+                    category_data.get("pictures"),
+                    category_data.get("remarks"),
+                )
 
         gen1_data: dict = data.get("gen1") or {}
         gen2_data: dict = data.get("gen2") or {}
@@ -2315,9 +4179,12 @@ class PDFService:
                 spaceBefore=4,
                 spaceAfter=2,
             )
-            for title, photos in picture_groups.items():
+            for title, group in picture_groups.items():
                 story.append(Paragraph(title, photo_group_title_style))
-                self._render_photo_grid(photos, story, cols=3)
+                remarks = str(group.get("remarks") or "").strip()
+                if remarks:
+                    story.append(Paragraph(escape(remarks), photo_note_style))
+                self._render_photo_grid(group.get("photos", []), story, cols=3)
                 story.append(Spacer(1, 3 * mm))
 
 

@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, EmailStr, Field
 from uuid import uuid4, UUID
 from datetime import datetime
@@ -46,6 +48,11 @@ class TokenData(BaseModel):
         description="The last name of the authenticated user",
         examples=["Doe"]
     )
+    must_change_password: bool = Field(
+        default=False,
+        description="Whether user must set a new password before accessing the app",
+        examples=[False]
+    )
     exp: datetime | None = Field(
         default=None,
         description="Expiration datetime of the token in UTC",
@@ -70,6 +77,7 @@ class TokenData(BaseModel):
                 "role": "user",
                 "name": "John",
                 "surname": "Doe",
+                "must_change_password": False,
                 "exp": "2024-12-31T23:59:59",
                 "token_type": "access",
                 "iat": "2024-01-01T00:00:00"
@@ -104,3 +112,77 @@ class PasswordChange(BaseModel):
         description="Confirm the new password",
         examples=["NewPassword456"]
     )
+
+
+class AdminPasswordReset(BaseModel):
+    """Schema for admin-initiated password reset."""
+
+    new_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="The replacement password (8-16 characters)",
+        examples=["ResetPassword456"]
+    )
+    confirm_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="Confirm the replacement password",
+        examples=["ResetPassword456"]
+    )
+
+
+class PasswordResetCompletion(BaseModel):
+    """Schema for user-completed password reset after temporary login."""
+
+    new_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="The user's final replacement password (8-16 characters)",
+        examples=["FinalPassword456"]
+    )
+    confirm_password: str = Field(
+        min_length=8,
+        max_length=16,
+        description="Confirm the user's final replacement password",
+        examples=["FinalPassword456"]
+    )
+
+
+class PasskeyCeremonyStart(BaseModel):
+    """"""
+
+    ceremony_id: UUID
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class PasskeyCredentialResponse(BaseModel):
+    """"""
+
+    id: UUID
+    name: str
+    created_at: datetime
+    last_used_at: datetime | None = None
+    device_type: str | None = None
+    backed_up: bool | None = None
+    transports: list[str] = Field(default_factory=list)
+
+
+class PasskeyRegistrationVerification(BaseModel):
+    """"""
+
+    ceremony_id: UUID
+    credential: dict[str, Any] = Field(default_factory=dict)
+    name: str | None = Field(default=None, max_length=100)
+
+
+class PasskeyAuthenticationVerification(BaseModel):
+    """"""
+
+    ceremony_id: UUID
+    credential: dict[str, Any] = Field(default_factory=dict)
+
+
+class PasskeyMutationResponse(BaseModel):
+    """"""
+
+    message: str

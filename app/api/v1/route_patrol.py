@@ -10,8 +10,6 @@ from fastapi import APIRouter, Query
 from typing import List
 from uuid import UUID
 
-from sqlmodel import select
-
 from app.models.route_patrol import (
     RoutePatrolCreate,
     RoutePatrolUpdate,
@@ -21,7 +19,6 @@ from app.services.route_patrol import RoutePatrolService
 from app.services import CurrentUser
 from app.services.auth import NocOrManagerOrAdminUser
 from app.database import Session
-from app.utils.enums import UserRole
 
 router = APIRouter(prefix="/route-patrols", tags=["Route Patrols"])
 
@@ -33,7 +30,7 @@ def create_patrol(
     session: Session,
     current_user: CurrentUser,
 ) -> RoutePatrolResponse:
-    return service.create(payload, session)
+    return service.create(payload, session, current_user)
 
 
 @router.get("/", response_model=List[RoutePatrolResponse], status_code=200)
@@ -50,14 +47,7 @@ def list_patrols(
     Technicians are automatically scoped to their own patrols.
     NOC / Manager / Admin can filter freely or omit filters to see all.
     """
-    if current_user.role == UserRole.TECHNICIAN:
-        from app.models import Technician
-        tech = session.exec(
-            select(Technician).where(Technician.user_id == current_user.user_id)
-        ).first()
-        technician_id = tech.id if tech else None
-
-    return service.list_patrols(session, technician_id, site_id, limit, offset)
+    return service.list_patrols(session, current_user, technician_id, site_id, limit, offset)
 
 
 @router.get("/{patrol_id}", response_model=RoutePatrolResponse, status_code=200)
@@ -67,7 +57,7 @@ def get_patrol(
     session: Session,
     current_user: CurrentUser,
 ) -> RoutePatrolResponse:
-    return service.get(patrol_id, session)
+    return service.get(patrol_id, session, current_user)
 
 
 @router.patch("/{patrol_id}", response_model=RoutePatrolResponse, status_code=200)

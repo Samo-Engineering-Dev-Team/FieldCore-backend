@@ -42,7 +42,7 @@ def read_tasks(
     limit: int = Query(default=100, le=1000)
 ) -> List[TaskResponse]:
     """"""
-    return service.read_tasks(session, technician_id, task_type, status, offset, limit)
+    return service.read_tasks(session, current_user, technician_id, task_type, status, offset, limit)
 
 
 @router.get("/{task_id}", response_model=TaskResponse, status_code=200)
@@ -53,7 +53,7 @@ def read_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
-    return service.read_task(task_id, session)
+    return service.read_task(task_id, session, current_user)
 
 
 @router.patch("/{task_id}", response_model=TaskResponse, status_code=200)
@@ -65,7 +65,7 @@ def update_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
-    return service.update_task(task_id, payload, session)
+    return service.update_task(task_id, payload, session, current_user)
 
 
 @router.delete("/{task_id}", status_code=204)
@@ -76,7 +76,7 @@ def delete_task(
     current_user: CurrentUser,
 ) -> None:
     """"""
-    service.delete_task(task_id, session)
+    service.delete_task(task_id, session, current_user)
 
 
 @router.patch("/{task_id}/start", response_model=TaskResponse, status_code=200)
@@ -87,7 +87,7 @@ def start_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
-    return service.start_task(task_id, session)
+    return service.start_task(task_id, session, current_user)
 
 
 @router.patch("/{task_id}/complete", response_model=TaskResponse, status_code=200)
@@ -98,7 +98,7 @@ def complete_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
-    return service.complete_task(task_id, session)
+    return service.complete_task(task_id, session, current_user)
 
 
 @router.patch("/{task_id}/fail", response_model=TaskResponse, status_code=200)
@@ -109,7 +109,7 @@ def fail_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
-    return service.fail_task(task_id, session)
+    return service.fail_task(task_id, session, current_user)
 
 
 @router.post("/{task_id}/feedback", response_model=TaskResponse, status_code=200)
@@ -125,7 +125,7 @@ def submit_task_feedback(
     Sets the feedback text and marks the task as COMPLETED.
     RHS tasks do not require a formal report — this feedback is the record.
     """
-    return service.submit_feedback(task_id, payload.feedback, session)
+    return service.submit_feedback(task_id, payload.feedback, session, current_user)
 
 
 @router.patch("/{task_id}/hold", response_model=TaskResponse, status_code=200)
@@ -137,7 +137,7 @@ def hold_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """Put a started task on hold — technician will continue the next day."""
-    return service.hold_task(task_id, payload.reason, session)
+    return service.hold_task(task_id, payload.reason, session, current_user)
 
 
 @router.patch("/{task_id}/resume", response_model=TaskResponse, status_code=200)
@@ -148,4 +148,4 @@ def resume_task(
     current_user: CurrentUser,
 ) -> TaskResponse:
     """Resume an on-hold task, restoring it to started status."""
-    return service.resume_task(task_id, session)
+    return service.resume_task(task_id, session, current_user)

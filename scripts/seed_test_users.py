@@ -77,8 +77,8 @@ def main():
             user_id = uuid.uuid4()
             conn.execute(
                 text("""
-                    INSERT INTO users (id, name, surname, email, role, status, password_hash, created_at, updated_at)
-                    VALUES (:id, :name, :surname, :email, :role, 'ACTIVE', :password_hash, :now, :now)
+                    INSERT INTO users (id, name, surname, email, role, status, password_hash, must_change_password, created_at, updated_at)
+                    VALUES (:id, :name, :surname, :email, :role, 'ACTIVE', :password_hash, true, :now, :now)
                 """),
                 {
                     "id": str(user_id),
@@ -94,6 +94,7 @@ def main():
 
     print("\n✅ Done! All test users created.")
     print(f"   Password for all accounts: {SHARED_PASSWORD}")
+    print("   First login requires password change.")
 
 
 if __name__ == "__main__":
