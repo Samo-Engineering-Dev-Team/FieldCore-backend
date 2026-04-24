@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from uuid import uuid4, UUID
 from datetime import datetime
 
@@ -69,9 +69,8 @@ class TokenData(BaseModel):
         examples=[datetime(2024, 1, 1, 0, 0, 0)]
     )
 
-    class Config:
-        """Pydantic model configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "user_id": "123e4567-e89b-12d3-a456-426614174000",
                 "role": "user",
@@ -83,6 +82,7 @@ class TokenData(BaseModel):
                 "iat": "2024-01-01T00:00:00"
             }
         }
+    )
 
 
 class LoginForm(BaseModel):
