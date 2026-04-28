@@ -5,9 +5,10 @@ Usage:
     cd seacom-app-backend
     uv run python scripts/seed_test_users.py
 
-All users share the password: Test@1234
+All users share the password from SEED_TEST_USER_PASSWORD.
 """
 
+import os
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -21,8 +22,11 @@ from app.core.settings import app_settings
 from app.core.security import SecurityUtils
 
 # ── Configuration ────────────────────────────────────────────
-SHARED_PASSWORD = "Test@1234"
+SHARED_PASSWORD = os.getenv("SEED_TEST_USER_PASSWORD")
 EMAIL_DOMAIN = "@samotelecoms.dev"
+
+if not SHARED_PASSWORD:
+    raise RuntimeError("Set SEED_TEST_USER_PASSWORD before running this script.")
 
 USERS = [
     {
@@ -93,7 +97,7 @@ def main():
             print(f"  ✅  {user['role']:<12} {user['email']}  (id: {user_id})")
 
     print("\n✅ Done! All test users created.")
-    print(f"   Password for all accounts: {SHARED_PASSWORD}")
+    print("   Shared test password is set via SEED_TEST_USER_PASSWORD.")
     print("   First login requires password change.")
 
 

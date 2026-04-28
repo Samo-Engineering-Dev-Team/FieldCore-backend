@@ -39,7 +39,9 @@ class AppSettings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     JWT_SECRET_KEY: str = Field(..., min_length=32)
     JWT_ALGORITHM: str = "HS256"
-    ALLOWED_ORIGINS: str = Field(default="http://localhost:3000,http://localhost:5173")
+    ALLOWED_ORIGINS: str = Field(
+        default="http://localhost:3000,http://localhost:5173,https://field-core-frontend.vercel.app"
+    )
     PASSKEY_RP_NAME: str = Field(default="FieldCore")
     PASSKEY_RP_ID: str = Field(default="")
     PASSKEY_ALLOWED_ORIGINS: str = Field(default="")
@@ -97,14 +99,22 @@ class AppSettings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         """Parse allowed origins from comma-separated string."""
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+        return [
+            origin.strip().strip('"').strip("'")
+            for origin in self.ALLOWED_ORIGINS.split(",")
+            if origin.strip().strip('"').strip("'")
+        ]
 
     @property
     def passkey_allowed_origins(self) -> list[str]:
         """Origins allowed to initiate WebAuthn ceremonies."""
         raw = self.PASSKEY_ALLOWED_ORIGINS.strip()
         if raw:
-            return [origin.strip() for origin in raw.split(",") if origin.strip()]
+            return [
+                origin.strip().strip('"').strip("'")
+                for origin in raw.split(",")
+                if origin.strip().strip('"').strip("'")
+            ]
         return self.allowed_origins
 
     @property

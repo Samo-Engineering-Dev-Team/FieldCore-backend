@@ -12,8 +12,8 @@
 set -euo pipefail
 
 BASE_URL="http://localhost:8000/api/v1"
-EMAIL="admin@samotelecoms.co.za"
-PASSWORD="Admin@1234"
+EMAIL="${BRUNO_EMAIL:-admin@samotelecoms.co.za}"
+PASSWORD="${BRUNO_PASSWORD:?Set BRUNO_PASSWORD before running Bruno tests}"
 
 # ── 1. Login and grab token ───────────────────────────────────────────────────
 echo "Logging in as $EMAIL ..."
