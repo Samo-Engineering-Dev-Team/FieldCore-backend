@@ -124,16 +124,16 @@ async def test_email(
         return {
             "ok": False,
             "message": "SMTP is not configured. Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD in .env.",
-            "smtp_host": app_settings.SMTP_HOST or "(not set)",
-            "recipients": [],
+            "smtp_configured": False,
+            "recipient_count": 0,
         }
 
     if not app_settings.noc_email_list:
         return {
             "ok": False,
             "message": "NOC_EMAIL_ADDRESSES is empty — no recipients to send to.",
-            "smtp_host": app_settings.SMTP_HOST,
-            "recipients": [],
+            "smtp_configured": True,
+            "recipient_count": 0,
         }
 
     from app.services.email import EmailService
@@ -148,10 +148,8 @@ async def test_email(
     return {
         "ok": True,
         "message": "Test email queued. Check your Mailtrap inbox in a few seconds.",
-        "smtp_host": app_settings.SMTP_HOST,
-        "smtp_port": app_settings.SMTP_PORT,
-        "from": f"{app_settings.SMTP_FROM_NAME} <{app_settings.SMTP_USER}>",
-        "recipients": app_settings.noc_email_list,
+        "smtp_configured": True,
+        "recipient_count": len(app_settings.noc_email_list),
     }
 
 

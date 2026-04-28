@@ -123,7 +123,7 @@ class DebugMiddleware(BaseHTTPMiddleware):
             "type": "REQUEST",
             "method": request.method,
             "path": request.url.path,
-            "query_params": dict(request.query_params),
+            "query_params": self._redact_sensitive(dict(request.query_params)),
             "client_ip": request.client.host if request.client else "unknown",
             "user_agent": request.headers.get("user-agent", "unknown"),
         }
@@ -176,7 +176,8 @@ class DebugMiddleware(BaseHTTPMiddleware):
         """Redact sensitive fields from logged data."""
         sensitive_fields = [
             "password", "password_hash", "token", "access_token", "refresh_token",
-            "secret", "api_key", "authorization", "cookie", "session"
+            "secret", "api_key", "authorization", "cookie", "session", "jwt",
+            "credential", "signed_url"
         ]
         
         if not isinstance(data, dict):

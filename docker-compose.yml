@@ -6,7 +6,7 @@ services:
     container_name: seacom_db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: experimental123
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: seacom_experimental_db
     ports:
       - "5433:5432"
@@ -37,7 +37,7 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: postgres
-      DB_PASSWORD: experimental123
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       DB_NAME: seacom_experimental_db
       REDIS_URL: redis://redis:6379/0
     ports:

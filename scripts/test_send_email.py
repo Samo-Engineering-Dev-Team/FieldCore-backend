@@ -20,8 +20,13 @@ except Exception:
 
 from app.services.email import EmailService
 
-print('NOC list:', os.environ.get('NOC_EMAIL_ADDRESSES'))
-print('SMTP host:', os.environ.get('SMTP_HOST'))
+noc_recipients = [
+    address.strip()
+    for address in os.environ.get('NOC_EMAIL_ADDRESSES', '').split(',')
+    if address.strip()
+]
+print('NOC recipients:', len(noc_recipients))
+print('SMTP configured:', bool(os.environ.get('SMTP_HOST') and os.environ.get('SMTP_USER')))
 
 print('Triggering EmailService.send_task_completed()')
 EmailService.send_task_completed(
