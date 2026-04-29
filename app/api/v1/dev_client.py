@@ -1,6 +1,4 @@
 from fastapi import APIRouter
-import os
-from typing import List
 
 from app.models import ClientCreate, ClientResponse
 from app.services.client import ClientServiceDep

@@ -9,7 +9,7 @@ from loguru import logger as LOG
 
 from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
-from app.models import Incident, IncidentCreate, IncidentUpdate, IncidentResponse, Site, Technician, User, Client
+from app.models import Incident, IncidentCreate, IncidentUpdate, IncidentResponse, Site, Technician, User
 from app.models.auth import TokenData
 from app.exceptions.http import (
     ConflictException,
@@ -197,8 +197,8 @@ class _IncidentService:
             incident_data["start_time"] = utcnow()
 
         # Capture names before commit while relationships are loaded in the current transaction
-        tech_name = f"{technician.user.name} {technician.user.surname}"
-        site_name = site.name
+        _tech_name = f"{technician.user.name} {technician.user.surname}"
+        _site_name = site.name
 
         incident: Incident = Incident(
             **incident_data,

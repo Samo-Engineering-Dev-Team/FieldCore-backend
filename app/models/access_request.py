@@ -4,7 +4,7 @@ from sqlmodel import SQLModel, Field, DateTime, Relationship
 from abc import ABC
 from datetime import datetime
 
-from app.utils.enums import AccessRequestStatus, ReportType
+from app.utils.enums import AccessRequestStatus
 from app.utils.funcs import utcnow
 from .base import BaseDB
 

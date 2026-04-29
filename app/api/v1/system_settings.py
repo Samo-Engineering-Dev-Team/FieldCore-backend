@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Query
-from typing import Any
 
 from app.models.system_settings import (
     SystemSettingResponse,

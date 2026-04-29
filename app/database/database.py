@@ -6,7 +6,6 @@ from fastapi import Depends
 from datetime import datetime
 from contextlib import contextmanager
 
-from app.core.settings import app_settings
 
 
 class Database:

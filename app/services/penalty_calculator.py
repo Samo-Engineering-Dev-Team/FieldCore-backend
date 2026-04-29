@@ -15,7 +15,6 @@ Contract values:
   SEACOM termination right: 3+ faults missed in a quarter (Annexure H)
 """
 
-from datetime import datetime
 from typing import Any
 
 from app.utils.funcs import utcnow

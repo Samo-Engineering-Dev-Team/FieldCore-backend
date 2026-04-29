@@ -65,7 +65,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_incident_sla_monitoring"
+            total_query = "SELECT COUNT(*) FROM v_incident_sla_monitoring"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)
@@ -113,7 +113,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_task_performance"
+            total_query = "SELECT COUNT(*) FROM v_task_performance"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)
@@ -152,7 +152,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_site_risk_reliability"
+            total_query = "SELECT COUNT(*) FROM v_site_risk_reliability"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)
@@ -188,7 +188,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_technician_performance"
+            total_query = "SELECT COUNT(*) FROM v_technician_performance"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)
@@ -227,7 +227,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_access_request_sla"
+            total_query = "SELECT COUNT(*) FROM v_access_request_sla"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)
@@ -273,7 +273,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_sla_trend_analysis"
+            total_query = "SELECT COUNT(*) FROM v_sla_trend_analysis"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)
@@ -312,7 +312,7 @@ class ManagementDashboardService:
         with Database.session() as session:
             result = session.execute(text(query), params)
             rows = result.fetchall()
-            total_query = f"SELECT COUNT(*) FROM v_sla_alerts_escalation"
+            total_query = "SELECT COUNT(*) FROM v_sla_alerts_escalation"
             if conditions:
                 total_query += " WHERE " + " AND ".join(conditions)
             total_result = session.execute(text(total_query), params)

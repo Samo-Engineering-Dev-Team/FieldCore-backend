@@ -5,13 +5,11 @@ Provides access to SLA monitoring views and real-time metrics
 
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
-from typing import List, Optional
+from typing import Optional
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 from app.database import Database
 from app.services.auth import AdminUser, ManagerOrAdminUser, NocOrManagerOrAdminUser
-from app.models.user import User
 import os
 import shutil
 from datetime import datetime, timezone
@@ -94,7 +92,7 @@ def get_incident_sla_monitoring(
             total = count_result.scalar() or 0
 
             # Get paginated results
-            query += f" ORDER BY sla_deadline ASC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY sla_deadline ASC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -184,7 +182,7 @@ def get_task_performance(
             total = count_result.scalar() or 0
 
             # Get paginated results
-            query += f" ORDER BY sla_deadline ASC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY sla_deadline ASC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -251,7 +249,7 @@ def get_site_risk_reliability(
             total = count_result.scalar() or 0
 
             # Get paginated results
-            query += f" ORDER BY incident_count DESC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY incident_count DESC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -318,7 +316,7 @@ def get_technician_performance(
             total = count_result.scalar() or 0
 
             # Get paginated results
-            query += f" ORDER BY total_workload DESC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY total_workload DESC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -385,7 +383,7 @@ def get_access_request_sla(
             total = count_result.scalar() or 0
 
             # Get paginated results
-            query += f" ORDER BY sla_deadline ASC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY sla_deadline ASC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -444,7 +442,7 @@ def get_sla_trend_analysis(
             total = count_result.scalar() or 0
 
             # Get paginated results - ordered by date DESC (most recent first)
-            query += f" ORDER BY metric_date DESC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY metric_date DESC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -488,7 +486,7 @@ def get_sla_alerts(
             total = count_result.scalar() or 0
 
             # Get paginated results - ordered by priority
-            query += f" ORDER BY priority_order ASC, sla_deadline ASC LIMIT :limit OFFSET :offset"
+            query += " ORDER BY priority_order ASC, sla_deadline ASC LIMIT :limit OFFSET :offset"
             params["limit"] = limit
             params["offset"] = offset
 
@@ -846,7 +844,7 @@ def dashboard_health(
             },
             "presence": presence_info,
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=503,
             detail="Dashboard health check failed"
@@ -1045,7 +1043,7 @@ def get_executive_summary_pdf(
                 text("SELECT compliance_percentage, total_items FROM v_executive_sla_overview LIMIT 1")
             ).fetchone()
             sla_compliance = float(sla_row._mapping.get("compliance_percentage", 0)) if sla_row else 0.0
-            total_items = int(sla_row._mapping.get("total_items", 0)) if sla_row else 0
+            _total_items = int(sla_row._mapping.get("total_items", 0)) if sla_row else 0
 
             # Total incidents and tasks (last 30 days)
             counts = session.execute(

@@ -7,7 +7,7 @@ from typing import Annotated
 from datetime import timedelta
 
 from fastapi import Depends
-from sqlmodel import Session, select, and_
+from sqlmodel import Session, select
 
 from app.models.maintenance_schedule import (
     MaintenanceSchedule,

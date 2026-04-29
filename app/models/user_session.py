@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from sqlmodel import SQLModel, Field, DateTime
+from sqlmodel import Field, DateTime
 from uuid import UUID
 from app.models.base import BaseDB
 

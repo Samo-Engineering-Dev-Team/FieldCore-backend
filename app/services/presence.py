@@ -272,7 +272,7 @@ class PresenceService:
                     s.commit()
                     return
             if user_id:
-                q = select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active == True)
+                q = select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active)
                 rows = s.exec(q).all()
                 for r in rows:
                     r.is_active = False
@@ -287,7 +287,7 @@ class PresenceService:
             q = select(UserSession, User).join(User, User.id == UserSession.user_id).where(
                 and_(
                     User.role == UserRole.NOC,
-                    UserSession.is_active == True,
+                    UserSession.is_active,
                     UserSession.last_seen.is_not(None),
                 )
             )

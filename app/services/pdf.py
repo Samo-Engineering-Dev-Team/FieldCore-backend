@@ -9,7 +9,7 @@ from pathlib import Path
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch, mm
+from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfgen import canvas
@@ -911,7 +911,7 @@ class PDFService:
             finally:
                 self._clear_first_page_background()
 
-        except Exception as e:
+        except Exception:
             raise
 
         buffer.seek(0)
@@ -1924,7 +1924,7 @@ class PDFService:
 
         return [hdr_row, Spacer(1, 1 * mm), body_para, Spacer(1, 2 * mm)]
 
-    def generate_incident_report_pdf_legacy(self, report: "IncidentReport", incident: Any | None = None) -> BytesIO:  # type: ignore[name-defined]
+    def generate_incident_report_pdf_legacy(self, report: "IncidentReport", incident: Any | None = None) -> BytesIO:  # type: ignore[name-defined]  # noqa: F821
         """Legacy incident PDF layout kept for reference only."""
         from app.models.incident_report import IncidentReport  # noqa: F401
 
@@ -2644,7 +2644,7 @@ class PDFService:
             ]))
         return KeepTogether([row1, Spacer(1, 1.5 * mm), row2])
 
-    def generate_incident_report_pdf(self, report: "IncidentReport", incident: Any | None = None) -> BytesIO:  # type: ignore[name-defined]
+    def generate_incident_report_pdf(self, report: "IncidentReport", incident: Any | None = None) -> BytesIO:  # type: ignore[name-defined]  # noqa: F821
         """Generate reference-inspired incident PDF layout."""
         from app.models.incident_report import IncidentReport  # noqa: F401
 
@@ -3415,8 +3415,8 @@ class PDFService:
         elements: list = []
 
         sub_lbl = ParagraphStyle("EnvSL", parent=self.styles["Normal"], fontSize=10, fontName="Helvetica-Bold", textColor=colors.HexColor(primary_hex), spaceBefore=8, spaceAfter=3)
-        kv_lbl = ParagraphStyle("EnvKL", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"))
-        kv_val = ParagraphStyle("EnvKV", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.HexColor("#4a5568"))
+        _kv_lbl = ParagraphStyle("EnvKL", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"))
+        _kv_val = ParagraphStyle("EnvKV", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.HexColor("#4a5568"))
 
         def _kv(rows: list[list[str]]) -> Table:
             t = Table(rows, colWidths=[100 * mm, 70 * mm])
@@ -3922,8 +3922,8 @@ class PDFService:
             "noDamageNeeded": "No Damage Requiring Repair",
         }
 
-        info_lbl_s = ParagraphStyle("RpInfoL", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"))
-        info_val_s = ParagraphStyle("RpInfoV", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.HexColor("#4a5568"))
+        _info_lbl_s = ParagraphStyle("RpInfoL", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"))
+        _info_val_s = ParagraphStyle("RpInfoV", parent=self.styles["Normal"], fontSize=9, fontName="Helvetica", textColor=colors.HexColor("#4a5568"))
         body_s = ParagraphStyle("RpBody", parent=self.styles["Normal"], fontSize=10, fontName="Helvetica", textColor=colors.HexColor("#2d3748"), leading=16)
         subhead_s = ParagraphStyle(
             "RpSubhead",

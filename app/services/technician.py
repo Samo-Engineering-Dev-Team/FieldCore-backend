@@ -1,17 +1,15 @@
 from uuid import UUID
 from fastapi import Depends
 from typing import List, Annotated
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import text
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
 from loguru import logger as LOG
 
 from app.models import Technician, TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate, User, Site
 from app.exceptions.http import (
     ConflictException,
-    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
@@ -229,7 +227,7 @@ class _TechnicianService:
         )
         
         if available_only:
-            statement = statement.where(Technician.is_available == True)
+            statement = statement.where(Technician.is_available)
         
         if max_distance_km:
             # Filter by max distance (convert km to meters)
@@ -305,7 +303,7 @@ class _TechnicianService:
         statement = (
             select(Technician)
             .where(Technician.deleted_at.is_(None))
-            .where(Technician.is_available == True)
+            .where(Technician.is_available)
             .where(
                 (Technician.last_location_update.is_(None)) |
                 (Technician.last_location_update < cutoff)

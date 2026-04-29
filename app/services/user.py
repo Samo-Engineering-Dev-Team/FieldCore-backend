@@ -12,7 +12,7 @@ from app.exceptions.http import (
     InternalServerErrorException,
     NotFoundException,
 )
-from app.utils.enums import UserRole, UserStatus
+from app.utils.enums import UserStatus
 from app.core import SecurityUtils
 from app.utils.funcs import utcnow
 

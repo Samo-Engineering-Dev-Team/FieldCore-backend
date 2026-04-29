@@ -5,7 +5,6 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
-from shapely.geometry import Point
 
 from app.utils.enums import Region
 from app.models import Site, SiteCreate, SiteUpdate, SiteResponse, Task, Incident

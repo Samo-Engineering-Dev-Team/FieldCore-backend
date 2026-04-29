@@ -1,11 +1,11 @@
 from uuid import UUID
-from typing import List, Any, Annotated
+from typing import List, Annotated
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 from fastapi import Depends
 
-from app.models import RoutineInspection, RoutineInspectionCreate, RoutineInspectionUpdate, RoutineInspectionResponse, Task, Technician, Site
+from app.models import RoutineInspection, RoutineInspectionCreate, RoutineInspectionUpdate, RoutineInspectionResponse, Task, Technician
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,

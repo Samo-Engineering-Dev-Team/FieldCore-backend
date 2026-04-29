@@ -66,6 +66,7 @@ __all__ = [
     "TechnicianCreate",
     "TechnicianUpdate",
     "TechnicianResponse",
+    "TechnicianLocationUpdate",
     "Site",
     "SiteCreate",
     "SiteUpdate",

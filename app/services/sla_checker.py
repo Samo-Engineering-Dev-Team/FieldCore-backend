@@ -10,7 +10,6 @@ Notifications are fired per-milestone, not per-incident, so each breach
 is flagged independently even if prior milestones were met.
 """
 
-from datetime import timedelta
 from typing import List, Tuple
 
 from sqlalchemy import and_

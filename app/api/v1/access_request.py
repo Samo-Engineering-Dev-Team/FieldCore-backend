@@ -5,7 +5,7 @@ from uuid import UUID
 from app.models import AccessRequestCreate, AccessRequestUpdate, AccessRequestResponse
 from app.services import AccessRequestService, CurrentUser
 from app.database import Session
-from app.utils.enums import AccessRequestStatus, UserRole
+from app.utils.enums import AccessRequestStatus
 from app.services.authorization import require_management
 
 router = APIRouter(prefix="/access-requests", tags=["Access Requests"])

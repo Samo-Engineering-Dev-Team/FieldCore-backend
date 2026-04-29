@@ -6,7 +6,6 @@ from sqlmodel import Session, select
 from sqlalchemy import func
 
 from app.models import Client, ClientCreate, ClientUpdate, ClientResponse
-from app.database import get_session
 from app.exceptions.http import NotFoundException, ConflictException
 
 
@@ -20,7 +19,7 @@ class ClientService:
             select(Client).where(
                 func.lower(Client.name) == payload.name.lower(),
                 Client.deleted_at.is_(None),  # Not soft-deleted
-                Client.is_active == True  # Still active
+                Client.is_active  # Still active
             )
         ).first()
         if existing:
@@ -72,7 +71,7 @@ class ClientService:
         """Read all clients."""
         query = select(Client)
         if active_only:
-            query = query.where(Client.is_active == True)
+            query = query.where(Client.is_active)
         query = query.order_by(Client.name).offset(offset).limit(limit)
         
         clients = session.exec(query).all()
@@ -150,7 +149,7 @@ class ClientService:
         client = session.exec(
             select(Client).where(
                 Client.name == name,
-                Client.is_active == False
+                ~Client.is_active
             )
         ).first()
         if client:

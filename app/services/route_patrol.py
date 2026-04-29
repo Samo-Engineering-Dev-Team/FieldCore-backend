@@ -73,7 +73,7 @@ class _RoutePatrolService:
                 MaintenanceSchedule.assigned_technician_id == technician_id,
                 MaintenanceSchedule.schedule_type == "routine_drive",
                 MaintenanceSchedule.deleted_at.is_(None),  # type: ignore
-                MaintenanceSchedule.is_active == True,  # type: ignore noqa: E712
+                MaintenanceSchedule.is_active,  # type: ignore
             )
         ).first()
 

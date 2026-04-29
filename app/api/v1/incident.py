@@ -1,11 +1,12 @@
 from fastapi import APIRouter, BackgroundTasks, Query
-from typing import List
+from typing import List, Literal
 from uuid import UUID
+from pydantic import BaseModel
 
 from app.models import IncidentCreate, IncidentUpdate, IncidentResponse
 from app.models.fault_update import FaultUpdateCreate, FaultUpdateResponse
 from app.services import IncidentService, CurrentUser
-from app.services.fault_update import _FaultUpdateService, get_fault_update_service
+from app.services.fault_update import get_fault_update_service
 from app.services.incident import _bg_notify_incident_created, _bg_notify_incident_started, _bg_notify_incident_resolved
 from app.database import Session
 from app.utils.enums import IncidentStatus, UserRole
@@ -306,9 +307,6 @@ def get_incident_sla_status(
 
 
 # ── Technician Help Alert ──────────────────────────────────────────────────────
-
-from pydantic import BaseModel
-from typing import Literal
 
 
 class HelpAlertRequest(BaseModel):

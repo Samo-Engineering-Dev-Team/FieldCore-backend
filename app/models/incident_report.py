@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, DateTime
 from sqlalchemy.dialects.postgresql import JSONB

@@ -8,7 +8,6 @@ Three mandatory scheduled task types per SAMO/SEACOM agreement:
 """
 
 from uuid import UUID
-from typing import TYPE_CHECKING
 from datetime import datetime
 from sqlmodel import SQLModel, Field, DateTime
 
