@@ -55,7 +55,6 @@ from app.database import Database
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     LOG.info("Starting application lifespan")
-    LOG.debug(f"Origins: {app_settings.allowed_origins}")
     try:
         Database.connect(app_settings.database_url)
         LOG.info("Database connected")
@@ -104,7 +103,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 # CORS must be outermost so preflight OPTIONS requests are handled before anything else
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=app_settings.allowed_origins or ["*"],
+    allow_origins=app_settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

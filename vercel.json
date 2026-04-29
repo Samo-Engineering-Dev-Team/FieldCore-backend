@@ -1,0 +1,42 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "app/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "app/main.py"
+    }
+  ],
+  "env": {
+    "DB_HOST": "@db_host",
+    "DB_USER": "@db_user",
+    "DB_PASSWORD": "@db_password",
+    "DB_PORT": "@db_port",
+    "DB_NAME": "@db_name",
+    "SUPABASE_URL": "@supabase_url",
+    "SUPABASE_SERVICE_KEY": "@supabase_service_key",
+    "SUPABASE_STORAGE_BUCKET": "@supabase_storage_bucket",
+    "JWT_SECRET_KEY": "@jwt_secret_key",
+    "JWT_ALGORITHM": "@jwt_algorithm",
+    "JWT_TOKEN_EXPIRE_MINUTES": "@jwt_token_expire_minutes",
+    "JWT_REFRESH_TOKEN_EXPIRE_DAYS": "@jwt_refresh_token_expire_days",
+    "ALLOWED_ORIGINS": "@allowed_origins",
+    "PASSKEY_RP_ID": "@passkey_rp_id",
+    "PASSKEY_RP_NAME": "@passkey_rp_name",
+    "PASSKEY_ALLOWED_ORIGINS": "@passkey_allowed_origins",
+    "PRESENCE_BACKEND": "@presence_backend",
+    "REDIS_URL": "@redis_url",
+    "SMTP_HOST": "@smtp_host",
+    "SMTP_PORT": "@smtp_port",
+    "SMTP_USER": "@smtp_user",
+    "SMTP_PASSWORD": "@smtp_password",
+    "SMTP_FROM_NAME": "@smtp_from_name",
+    "SMTP_USE_TLS": "@smtp_use_tls",
+    "NOC_EMAIL_ADDRESSES": "@noc_email_addresses"
+  }
+}
