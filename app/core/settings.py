@@ -22,7 +22,7 @@ class AppSettings(BaseSettings):
     # Security
     JWT_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    JWT_SECRET_KEY: str = Field("", min_length=32)
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = Field(
         default="http://localhost:3000,http://localhost:5173,https://field-core-frontend.vercel.app"
