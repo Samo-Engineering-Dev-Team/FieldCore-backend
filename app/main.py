@@ -1,4 +1,4 @@
-import asyncio
+# import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -22,34 +22,34 @@ from app.database import Database
 
 
 # Background task for SLA checking
-async def sla_check_background_task():
-    """Background task that periodically checks for SLA breaches."""
-    from loguru import logger as LOG
+# async def sla_check_background_task():
+#     """Background task that periodically checks for SLA breaches."""
+#     from loguru import logger as LOG
 
-    # Wait for startup to complete
-    await asyncio.sleep(30)
+#     # Wait for startup to complete
+#     await asyncio.sleep(30)
 
-    while True:
-        try:
-            from sqlmodel import Session
+#     while True:
+#         try:
+#             from sqlmodel import Session
 
-            from app.services.sla_checker import check_sla_breaches
+#             from app.services.sla_checker import check_sla_breaches
 
-            with Session(Database.connection) as session:
-                warnings, breaches = check_sla_breaches(session)
+#             with Session(Database.connection) as session:
+#                 warnings, breaches = check_sla_breaches(session)
 
-                if warnings or breaches:
-                    LOG.info(
-                        f"SLA Check: {len(warnings)} warnings, {len(breaches)} breaches found"
-                    )
-        except Exception as e:
-            LOG.error(f"SLA check error: {e}")
-            import traceback
+#                 if warnings or breaches:
+#                     LOG.info(
+#                         f"SLA Check: {len(warnings)} warnings, {len(breaches)} breaches found"
+#                     )
+#         except Exception as e:
+#             LOG.error(f"SLA check error: {e}")
+#             import traceback
 
-            LOG.error(f"SLA check traceback: {traceback.format_exc()}")
+#             LOG.error(f"SLA check traceback: {traceback.format_exc()}")
 
-        # Check every 15 minutes
-        await asyncio.sleep(15 * 60)
+#         # Check every 15 minutes
+#         await asyncio.sleep(15 * 60)
 
 
 @asynccontextmanager
@@ -103,15 +103,15 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 
 # Middleware order: last added = outermost (processes request first)
 # CORS must be outermost so preflight OPTIONS requests are handled before anything else
-app.add_middleware(DebugMiddleware)
-app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(DebugMiddleware)
+app.add_middleware(SlowAPIMiddleware)
 
 app.include_router(router)
 
