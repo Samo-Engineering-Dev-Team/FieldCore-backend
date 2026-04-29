@@ -23,9 +23,7 @@ class AppSettings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
-    ALLOWED_ORIGINS: str = Field(
-        default="http://localhost:3000,http://localhost:5173,https://field-core-frontend.vercel.app"
-    )
+    ALLOWED_ORIGINS: str = ""
     PASSKEY_RP_NAME: str = Field(default="FieldCore")
     PASSKEY_RP_ID: str = Field(default="")
     PASSKEY_ALLOWED_ORIGINS: str = Field(default="")
@@ -106,7 +104,7 @@ class AppSettings(BaseSettings):
             origin.strip()
             for origin in self.ALLOWED_ORIGINS.split(",")
             if origin.strip()
-        ]
+        ] or ["*"]
 
     @property
     def database_url(self) -> str:
