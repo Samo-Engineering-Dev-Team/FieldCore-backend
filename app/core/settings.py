@@ -5,7 +5,6 @@ from pydantic_settings import BaseSettings
 class AppSettings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    model_config = SettingsConfigDict(env_file=".env")
 
     # Database
     DB_HOST: str = ""
