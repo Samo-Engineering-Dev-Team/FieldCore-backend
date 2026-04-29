@@ -8,7 +8,7 @@ Three independent SLA milestones per fault:
   3. Temp restore  — service temporarily restored (permanent repair follows separately)
 """
 
-from datetime import datetime, timedelta, time, date, timezone
+from datetime import datetime, timedelta, time, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # SA is UTC+2 year-round (no DST).  Use ZoneInfo when tzdata is installed
@@ -149,8 +149,8 @@ def get_milestone_status(deadline: datetime | None, actual: datetime | None, now
         }
 
     time_remaining = (deadline - now).total_seconds()
-    total = (deadline - (deadline - timedelta(hours=1))).total_seconds()  # context window
-    pct_used = max(0.0, 1.0 - (time_remaining / max((deadline - deadline).total_seconds() + 3600, 3600)))
+    _total = (deadline - (deadline - timedelta(hours=1))).total_seconds()  # context window
+    _pct_used = max(0.0, 1.0 - (time_remaining / max((deadline - deadline).total_seconds() + 3600, 3600)))
 
     if time_remaining <= 0:
         status = "breached"

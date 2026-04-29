@@ -21,7 +21,7 @@ from sqlmodel import select
 
 def check_settings():
     print("PRESENCE_BACKEND:", app_settings.PRESENCE_BACKEND)
-    print("REDIS_URL:", app_settings.REDIS_URL)
+    print("REDIS_URL:", "(set)" if app_settings.REDIS_URL else "(not set)")
 
 
 def ensure_users():

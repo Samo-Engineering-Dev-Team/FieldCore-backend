@@ -16,7 +16,12 @@ $env:DB_HOST = "localhost"
 $env:DB_PORT = "5432"
 $env:DB_NAME = "seacom_experimental_db"
 $env:DB_USER = "postgres"
-$env:DB_PASSWORD = "admin123"
+
+if (-not $env:EXPERIMENTAL_DB_PASSWORD) {
+    throw "Set EXPERIMENTAL_DB_PASSWORD before running this script."
+}
+
+$env:DB_PASSWORD = $env:EXPERIMENTAL_DB_PASSWORD
 
 # Run the application
 uv run uvicorn app.main:app --reload --port 8000

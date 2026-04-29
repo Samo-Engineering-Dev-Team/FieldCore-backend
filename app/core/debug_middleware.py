@@ -88,8 +88,11 @@ class DebugMiddleware(BaseHTTPMiddleware):
         # Start timing
         start_time = time.perf_counter()
         
-        # Log request if enabled
-        if settings.get("enable_request_logging"):
+        request_logging_enabled = self._is_request_logging_enabled(settings)
+        performance_headers_enabled = self._is_performance_headers_enabled(settings)
+
+        # Log request if debug mode and request logging are enabled.
+        if request_logging_enabled:
             await self._log_request(request)
         
         # Process the request
@@ -99,12 +102,12 @@ class DebugMiddleware(BaseHTTPMiddleware):
         process_time = (time.perf_counter() - start_time) * 1000  # Convert to ms
         
         # Add performance header if enabled
-        if settings.get("enable_performance_headers"):
+        if performance_headers_enabled:
             response.headers["X-Response-Time"] = f"{process_time:.2f}ms"
             response.headers["X-Debug-Mode"] = "enabled"
         
-        # Log response if enabled
-        if settings.get("enable_request_logging"):
+        # Log response if debug mode and request logging are enabled.
+        if request_logging_enabled:
             self._log_response(request, response, process_time)
         
         return response
@@ -120,7 +123,7 @@ class DebugMiddleware(BaseHTTPMiddleware):
             "type": "REQUEST",
             "method": request.method,
             "path": request.url.path,
-            "query_params": dict(request.query_params),
+            "query_params": self._redact_sensitive(dict(request.query_params)),
             "client_ip": request.client.host if request.client else "unknown",
             "user_agent": request.headers.get("user-agent", "unknown"),
         }
@@ -173,7 +176,8 @@ class DebugMiddleware(BaseHTTPMiddleware):
         """Redact sensitive fields from logged data."""
         sensitive_fields = [
             "password", "password_hash", "token", "access_token", "refresh_token",
-            "secret", "api_key", "authorization", "cookie", "session"
+            "secret", "api_key", "authorization", "cookie", "session", "jwt",
+            "credential", "signed_url"
         ]
         
         if not isinstance(data, dict):
@@ -195,6 +199,14 @@ class DebugMiddleware(BaseHTTPMiddleware):
                 redacted[key] = value
         
         return redacted
+
+    @staticmethod
+    def _is_request_logging_enabled(settings: dict[str, Any]) -> bool:
+        return bool(settings.get("debug_mode")) and bool(settings.get("enable_request_logging"))
+
+    @staticmethod
+    def _is_performance_headers_enabled(settings: dict[str, Any]) -> bool:
+        return bool(settings.get("debug_mode")) and bool(settings.get("enable_performance_headers"))
 
 
 def invalidate_debug_cache() -> None:

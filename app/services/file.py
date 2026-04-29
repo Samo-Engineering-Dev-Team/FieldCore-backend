@@ -1,6 +1,5 @@
 import uuid
 import httpx
-from typing import BinaryIO
 from fastapi import HTTPException, status
 
 from app.core.settings import app_settings

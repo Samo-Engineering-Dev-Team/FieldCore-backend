@@ -24,6 +24,9 @@ from loguru import logger as LOG
 _redis_client = None
 _redis_retry_after_ts = 0.0
 
+def _utc_timestamp_iso(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+
 def _get_redis():
     global _redis_client, _redis_retry_after_ts
     if _redis_client:
@@ -90,7 +93,7 @@ class PresenceService:
             "user_id": str(user_id),
             "role": role,
             "session_id": session_id,
-            "last_seen": datetime.utcfromtimestamp(now_ts).isoformat(),
+            "last_seen": _utc_timestamp_iso(now_ts),
         }
         if expires_at:
             meta["expires_at"] = expires_at.isoformat()
@@ -115,9 +118,9 @@ class PresenceService:
             meta_json = r.hget(key, "meta")
             if meta_json:
                 meta = json.loads(meta_json)
-                meta["last_seen"] = datetime.utcfromtimestamp(now_ts).isoformat()
+                meta["last_seen"] = _utc_timestamp_iso(now_ts)
             else:
-                meta = {"user_id": str(user_id), "role": role, "session_id": session_id, "last_seen": datetime.utcfromtimestamp(now_ts).isoformat()}
+                meta = {"user_id": str(user_id), "role": role, "session_id": session_id, "last_seen": _utc_timestamp_iso(now_ts)}
             r.hset(key, mapping={"meta": json.dumps(meta)})
             r.zadd(cls._ZKEY_ROLE.format(role=role), {session_id: now_ts})
             r.expire(key, int(cls.HEARTBEAT_TTL.total_seconds()) * 2)
@@ -133,7 +136,7 @@ class PresenceService:
                 continue
             meta = json.loads(meta_json)
             if meta.get("user_id") == str(user_id):
-                meta["last_seen"] = datetime.utcfromtimestamp(now_ts).isoformat()
+                meta["last_seen"] = _utc_timestamp_iso(now_ts)
                 r.hset(cls._HASH_SESSION.format(session_id=m), mapping={"meta": json.dumps(meta)})
                 r.zadd(pattern, {m: now_ts})
                 r.expire(cls._HASH_SESSION.format(session_id=m), int(cls.HEARTBEAT_TTL.total_seconds()) * 2)
@@ -269,7 +272,7 @@ class PresenceService:
                     s.commit()
                     return
             if user_id:
-                q = select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active == True)
+                q = select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active)
                 rows = s.exec(q).all()
                 for r in rows:
                     r.is_active = False
@@ -284,7 +287,7 @@ class PresenceService:
             q = select(UserSession, User).join(User, User.id == UserSession.user_id).where(
                 and_(
                     User.role == UserRole.NOC,
-                    UserSession.is_active == True,
+                    UserSession.is_active,
                     UserSession.last_seen.is_not(None),
                 )
             )

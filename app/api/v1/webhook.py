@@ -1,12 +1,11 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
+from pydantic import BaseModel
 from app.models import Webhook
 from app.services.webhook import WebhookService
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
-
-from pydantic import BaseModel
 
 class WebhookCreate(BaseModel):
     url: str

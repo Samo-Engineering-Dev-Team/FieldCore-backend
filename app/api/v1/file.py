@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from app.services.file import FileService
 from app.services import CurrentUser
+from app.services.authorization import require_management
 
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -130,6 +131,7 @@ async def upload_multiple_files(
 @router.delete("/{file_path:path}", status_code=204)
 async def delete_file(file_path: str, current_user: CurrentUser) -> None:
     """Delete a file from storage."""
+    require_management(current_user, "Only NOC, managers, or admins can delete files.")
     file_service = FileService()
     deleted = await file_service.delete_file(file_path)
     
@@ -151,6 +153,7 @@ async def get_signed_url(
     
     Useful for private files that need temporary access.
     """
+    require_management(current_user, "Only NOC, managers, or admins can generate signed URLs.")
     file_service = FileService()
     signed_url = await file_service.get_signed_url(file_path, expires_in)
     return {"signed_url": signed_url, "expires_in": expires_in}

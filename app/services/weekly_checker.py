@@ -16,7 +16,6 @@ the current ISO week (Monday 00:00 UTC → Sunday 23:59 UTC).
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import List
 
 from sqlmodel import Session, select
 
@@ -42,7 +41,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
 
     Returns a summary dict describing what alerts were sent.
     """
-    from app.services.notification import _NotificationService, NotificationTemplates
+    from app.services.notification import _NotificationService
 
     notification_service = _NotificationService()
     now = utcnow()
@@ -64,7 +63,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             )
         ).all()
     ]
-    manager_user_ids: list = [
+    _manager_user_ids: list = [
         u.id for u in session.exec(
             select(User).where(User.role == UserRole.MANAGER, User.deleted_at.is_(None))
         ).all()

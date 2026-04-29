@@ -5,14 +5,16 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
 from app.utils.enums import UserRole
-from app.models import User, UserCreate, UserUpdate, UserResponse
+from app.models import User, UserCreate, UserUpdate, UserResponse, AdminPasswordReset
 from app.exceptions.http import (
+    BadRequestException,
     ConflictException,
     InternalServerErrorException,
     NotFoundException,
 )
-from app.utils.enums import UserRole, UserStatus
+from app.utils.enums import UserStatus
 from app.core import SecurityUtils
+from app.utils.funcs import utcnow
 
 
 class _UserService:
@@ -21,9 +23,10 @@ class _UserService:
 
     def create_user(self, data: UserCreate, session: Session) -> UserResponse:
         user = User(
-            **data.model_dump(exclude={"password"}), 
-            password_hash=SecurityUtils.hash_password(data.password)
-            )
+            **data.model_dump(exclude={"password"}),
+            password_hash=SecurityUtils.hash_password(data.password),
+            must_change_password=True,
+        )
         try:
             session.add(user)
             session.commit()
@@ -115,6 +118,33 @@ class _UserService:
         session.commit()
         session.refresh(user)
         return self.user_to_response(user)
+
+    def reset_password(
+        self, user_id: UUID, payload: AdminPasswordReset, session: Session
+    ) -> dict:
+        user = self._get_user(user_id, session)
+
+        if payload.new_password != payload.confirm_password:
+            raise BadRequestException("New password and confirmation do not match")
+
+        if SecurityUtils.check_password(payload.new_password, user.password_hash):
+            raise BadRequestException("New password must be different from current password")
+
+        user.password_hash = SecurityUtils.hash_password(payload.new_password)
+        user.credentials_updated_at = utcnow()
+        user.must_change_password = True
+        user.touch()
+
+        try:
+            session.commit()
+            session.refresh(user)
+            return {"message": "Password reset successfully"}
+        except IntegrityError as e:
+            session.rollback()
+            raise ConflictException(f"Error resetting password: {e.orig}")
+        except Exception as e:
+            session.rollback()
+            raise InternalServerErrorException(f"Unexpected error resetting password: {e}")
 
     def _get_user(self, user_id: UUID, session: Session) -> User:
         statement = select(User).where(User.id == user_id, User.deleted_at.is_(None))  # type: ignore

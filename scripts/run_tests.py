@@ -8,7 +8,7 @@ os.environ.setdefault('REDIS_URL', 'redis://localhost:6379/0')
 os.environ.setdefault('PRESENCE_BACKEND', 'redis')
 os.environ.setdefault('PYTHONPATH', '.')
 
-print('ENV REDIS_URL=', os.environ.get('REDIS_URL'))
+print('ENV REDIS_URL=', '(set)' if os.environ.get('REDIS_URL') else '(not set)')
 print('ENV PRESENCE_BACKEND=', os.environ.get('PRESENCE_BACKEND'))
 
 # Run pytest full suite

@@ -19,7 +19,7 @@ class WebhookService:
                 webhooks = session.exec(
                     select(Webhook).where(
                         Webhook.event_type == event_type,
-                        Webhook.is_active == True
+                        Webhook.is_active
                     )
                 ).all()
 
@@ -89,7 +89,7 @@ class WebhookService:
     def list_webhooks(event_type: str = None) -> List[Webhook]:
         """List active webhooks, optionally filtered by event type."""
         with Database.session() as session:
-            query = select(Webhook).where(Webhook.is_active == True)
+            query = select(Webhook).where(Webhook.is_active)
             if event_type:
                 query = query.where(Webhook.event_type == event_type)
             return session.exec(query).all()

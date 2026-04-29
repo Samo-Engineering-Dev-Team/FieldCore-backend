@@ -8,14 +8,12 @@ Per Annexure H of the SAMO/SEACOM agreement:
 
 from uuid import UUID
 from typing import TYPE_CHECKING
-from datetime import datetime
-from sqlmodel import SQLModel, Field, DateTime, Relationship
+from sqlmodel import SQLModel, Field
 
 from .base import BaseDB
 
 if TYPE_CHECKING:
-    from .user import User
-    from .incident import Incident
+    pass
 
 
 UPDATE_TYPES = ["phone_call", "email", "app_update"]

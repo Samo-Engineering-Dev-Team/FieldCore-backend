@@ -6,13 +6,18 @@ Usage:
 """
 import os
 import sys
+from dotenv import load_dotenv
 
 # Force local Docker postgres — must happen BEFORE any app imports
-os.environ["DB_HOST"]     = "localhost"
-os.environ["DB_PORT"]     = "5433"
-os.environ["DB_USER"]     = "postgres"
-os.environ["DB_PASSWORD"] = "experimental123"
-os.environ["DB_NAME"]     = "seacom_experimental_db"
+load_dotenv()
+
+os.environ.setdefault("DB_HOST", "localhost")
+os.environ.setdefault("DB_PORT", "5433")
+os.environ.setdefault("DB_USER", "postgres")
+os.environ.setdefault("DB_NAME", "seacom_experimental_db")
+
+if not os.environ.get("DB_PASSWORD"):
+    raise RuntimeError("Set DB_PASSWORD in .env before running seed_admin.py.")
 
 from sqlmodel import Session, select, text
 from app.database import Database
@@ -23,7 +28,10 @@ from app.utils.enums import UserRole, UserStatus
 ADMIN_NAME     = "Admin"
 ADMIN_SURNAME  = "User"
 ADMIN_EMAIL    = "admin@samotelecoms.co.za"
-ADMIN_PASSWORD = "Admin@1234"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
+if not ADMIN_PASSWORD:
+    raise RuntimeError("Set ADMIN_PASSWORD in .env before running seed_admin.py.")
 
 def run_migration(session: Session, path: str) -> None:
     sql = open(path).read()
@@ -33,6 +41,7 @@ def run_migration(session: Session, path: str) -> None:
 
 def main():
     Database.connect(app_settings.database_url)
+    Database.init()
 
     with Session(Database.connection) as session:
         # Ensure login_audit table exists
@@ -53,13 +62,14 @@ def main():
             role=UserRole.ADMIN,
             status=UserStatus.ACTIVE,
             password_hash=SecurityUtils.hash_password(ADMIN_PASSWORD),
+            must_change_password=True,
         )
         session.add(admin)
         session.commit()
         session.refresh(admin)
         print(f"Admin user created!")
         print(f"  Email:    {ADMIN_EMAIL}")
-        print(f"  Password: {ADMIN_PASSWORD}")
+        print("  First login: password change required")
         print(f"  ID:       {admin.id}")
 
     Database.disconnect()

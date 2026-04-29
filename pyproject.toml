@@ -26,6 +26,7 @@ dependencies = [
     "tzdata>=2024.1",
     "aiosmtplib>=3.0.0",
     "gunicorn>=22.0.0",
+    "webauthn>=2.7.1",
 ]
 
 [dependency-groups]
@@ -40,3 +41,6 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+filterwarnings = [
+    "ignore:Accessing argon2\\.__version__ is deprecated.*:DeprecationWarning:passlib\\.handlers\\.argon2",
+]

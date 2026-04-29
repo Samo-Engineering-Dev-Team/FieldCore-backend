@@ -4,8 +4,6 @@ from sqlalchemy import Text
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from typing import Any
-from pydantic import field_validator
-import json
 
 from app.utils.funcs import utcnow
 

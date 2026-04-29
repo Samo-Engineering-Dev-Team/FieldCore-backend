@@ -1,5 +1,4 @@
 from fastapi import APIRouter, Query
-from typing import Any
 
 from app.models.system_settings import (
     SystemSettingResponse,
@@ -16,6 +15,7 @@ from app.exceptions.http import UnauthorizedException
 from app.core.settings import app_settings
 
 router = APIRouter(prefix="/settings", tags=["System Settings"])
+public_router = APIRouter(prefix="/settings", tags=["System Settings"])
 
 
 def _require_admin(current_user):
@@ -60,7 +60,7 @@ def get_debug_config(
     return service.get_debug_config(session)
 
 
-@router.get("/debug/status", response_model=dict, status_code=200)
+@public_router.get("/debug/status", response_model=dict, status_code=200)
 def get_debug_status(
     service: SystemSettingsService,
     session: Session,
@@ -123,16 +123,16 @@ async def test_email(
         return {
             "ok": False,
             "message": "SMTP is not configured. Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD in .env.",
-            "smtp_host": app_settings.SMTP_HOST or "(not set)",
-            "recipients": [],
+            "smtp_configured": False,
+            "recipient_count": 0,
         }
 
     if not app_settings.noc_email_list:
         return {
             "ok": False,
             "message": "NOC_EMAIL_ADDRESSES is empty — no recipients to send to.",
-            "smtp_host": app_settings.SMTP_HOST,
-            "recipients": [],
+            "smtp_configured": True,
+            "recipient_count": 0,
         }
 
     from app.services.email import EmailService
@@ -147,10 +147,8 @@ async def test_email(
     return {
         "ok": True,
         "message": "Test email queued. Check your Mailtrap inbox in a few seconds.",
-        "smtp_host": app_settings.SMTP_HOST,
-        "smtp_port": app_settings.SMTP_PORT,
-        "from": f"{app_settings.SMTP_FROM_NAME} <{app_settings.SMTP_USER}>",
-        "recipients": app_settings.noc_email_list,
+        "smtp_configured": True,
+        "recipient_count": len(app_settings.noc_email_list),
     }
 
 
@@ -170,14 +168,18 @@ def toggle_debug_mode(
     
     # Also toggle related debug settings
     service.update_setting("enable_request_logging", SystemSettingUpdate(value=new_value), session)
+    service.update_setting("enable_sql_logging", SystemSettingUpdate(value=new_value), session)
     service.update_setting("enable_performance_headers", SystemSettingUpdate(value=new_value), session)
+    service.update_setting("log_level", SystemSettingUpdate(value="DEBUG" if new_value else "INFO"), session)
     
     return {
         "debug_mode": new_value,
+        "log_level": "DEBUG" if new_value else "INFO",
         "message": f"Debug mode {'enabled' if new_value else 'disabled'}",
         "affected_settings": [
             "debug_mode",
             "enable_request_logging", 
+            "enable_sql_logging",
             "enable_performance_headers",
             "log_level"
         ]

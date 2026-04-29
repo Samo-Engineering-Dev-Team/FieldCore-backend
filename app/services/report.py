@@ -4,14 +4,13 @@ from fastapi import Depends
 from typing import List, Annotated, Any
 from sqlmodel import Session, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
-from sqlalchemy import and_
-from sqlalchemy.orm import object_session
 from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
 import time
 
-from app.utils.enums import ReportType, ReportStatus
+from app.utils.enums import ReportType, ReportStatus, UserRole
 from app.models import Report, ReportCreate, ReportUpdate, ReportResponse, Task, Technician
+from app.models.auth import TokenData
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -19,6 +18,11 @@ from app.exceptions.http import (
     ForbiddenException
 )
 from app.services.pdf import get_pdf_service
+from app.services.report_support import (
+    create_noc_notifications,
+    normalize_attachment_item,
+    normalize_attachments,
+)
 
 
 class _ReportService:
@@ -38,71 +42,12 @@ class _ReportService:
         )
 
     def _normalize_attachment_item(self, item: Any) -> dict[str, Any]:
-        """Normalize a single attachment object to a frontend-friendly shape."""
-        if isinstance(item, str):
-            return {
-                "url": item,
-                "public_url": item,
-                "file_path": None,
-                "original_name": None,
-                "content_type": None,
-                "size": None,
-            }
-
-        if isinstance(item, dict):
-            # Prefer stable public URL when available to avoid persisting expired signed URLs.
-            url = item.get("public_url") or item.get("url") or item.get("signed_url")
-            file_path = item.get("file_path")
-            if not url and isinstance(file_path, str):
-                from app.services.file import FileService
-                url = FileService().get_public_url(file_path)
-
-            return {
-                "url": url,
-                "signed_url": item.get("signed_url"),
-                "public_url": item.get("public_url") or url,
-                "file_path": file_path,
-                "original_name": item.get("original_name") or item.get("name") or item.get("filename"),
-                "content_type": item.get("content_type"),
-                "size": item.get("size"),
-            }
-
-        return {
-            "url": None,
-            "public_url": None,
-            "file_path": None,
-            "original_name": None,
-            "content_type": None,
-            "size": None,
-        }
+        """Normalize attachment item via shared report support helper."""
+        return normalize_attachment_item(item)
 
     def _normalize_attachments(self, attachments: Any) -> dict[str, Any] | None:
-        """Normalize attachments into canonical shape: {'files': [...]}."""
-        if attachments is None:
-            return None
-
-        files: list[dict[str, Any]] = []
-
-        if isinstance(attachments, list):
-            files = [self._normalize_attachment_item(item) for item in attachments]
-        elif isinstance(attachments, str):
-            files = [self._normalize_attachment_item(attachments)]
-        elif isinstance(attachments, dict):
-            if isinstance(attachments.get("files"), list):
-                files = [self._normalize_attachment_item(item) for item in attachments["files"]]
-            elif any(k in attachments for k in ("url", "public_url", "file_path", "filename", "name")):
-                files = [self._normalize_attachment_item(attachments)]
-            else:
-                # Legacy key/value attachment maps: {"before": "https://..."}
-                for key, value in attachments.items():
-                    normalized = self._normalize_attachment_item(value)
-                    normalized["label"] = key
-                    files.append(normalized)
-        else:
-            return None
-
-        cleaned_files = [f for f in files if f.get("url") or f.get("file_path")]
-        return {"files": cleaned_files}
+        """Normalize attachments into canonical shape via shared helper."""
+        return normalize_attachments(attachments)
 
     def report_to_response(self, report: Report) -> ReportResponse:
         technician_name = "Unknown Technician"
@@ -127,7 +72,42 @@ class _ReportService:
             seacom_ref=seacom_ref
             )
 
-    def create_report(self, data: ReportCreate, session: Session) -> ReportResponse:
+    def _get_technician_by_user(self, user_id: UUID, session: Session) -> Technician:
+        statement = select(Technician).where(
+            Technician.user_id == user_id,
+            Technician.deleted_at.is_(None),  # type: ignore
+        )
+        technician: Technician | None = session.exec(statement).first()
+        if not technician:
+            raise NotFoundException("technician profile not found for current user")
+        return technician
+
+    def _assert_can_access_report(
+        self,
+        report: Report,
+        current_user: TokenData,
+        session: Session,
+        action: str,
+    ) -> None:
+        if current_user.role != UserRole.TECHNICIAN:
+            return
+
+        technician = self._get_technician_by_user(current_user.user_id, session)
+        if report.technician_id != technician.id:
+            raise ForbiddenException(f"Technicians can only {action} their own reports")
+
+    def create_report(
+        self,
+        data: ReportCreate,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
+        if current_user.role == UserRole.TECHNICIAN:
+            technician = self._get_technician_by_user(current_user.user_id, session)
+            if data.technician_id != technician.id:
+                raise ForbiddenException("Technicians can only create reports for themselves")
+            data = data.model_copy(update={"technician_id": technician.id})
+
         report_data = data.model_dump()
         report_data["attachments"] = self._normalize_attachments(report_data.get("attachments"))
         report: Report = Report(**report_data)
@@ -142,34 +122,19 @@ class _ReportService:
             
             if task and technician:
                 # Create notification for NOC operators about new report
-                from app.services.notification import _NotificationService, NotificationTemplates
-                from app.models import User
-                from app.utils.enums import UserRole
-                
-                notification_service = _NotificationService()
-                
-                # Notify all NOC operators
-                noc_users = session.exec(
-                    select(User).where(
-                        and_(
-                            User.role == UserRole.NOC,
-                            User.deleted_at.is_(None)
-                        )
-                    )
-                ).all()
+                from app.services.notification import NotificationTemplates
                 
                 # Get site name safely
                 site_name = task.site.name if task.site else "Unknown Site"
                 technician_name = technician.user.name if technician.user else "Unknown Technician"
                 
-                notification_service.create_notifications_from_template(
-                    user_ids=(noc_user.id for noc_user in noc_users),
+                create_noc_notifications(
+                    session=session,
                     template=NotificationTemplates.report_submitted(
                         technician_name=technician_name,
                         report_type=data.report_type,
                         site_name=site_name,
                     ),
-                    session=session,
                 )
             
             return self.report_to_response(report)
@@ -180,13 +145,20 @@ class _ReportService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating report: {e}")
 
-    def read_report(self, report_id: UUID, session: Session) -> ReportResponse:
+    def read_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "view")
         return self.report_to_response(report)
 
     def read_reports(
         self,
         session: Session,
+        current_user: TokenData,
         report_type: ReportType | None = None,
         status: ReportStatus | None = None,
         technician_id: UUID | None = None,
@@ -202,19 +174,27 @@ class _ReportService:
             .where(Report.deleted_at.is_(None))
         )  # type: ignore
 
+        if current_user.role == UserRole.TECHNICIAN:
+            technician = self._get_technician_by_user(current_user.user_id, session)
+            statement = statement.where(Report.technician_id == technician.id)
+        elif technician_id is not None:
+            statement = statement.where(Report.technician_id == technician_id)
+
         if report_type is not None:
             statement = statement.where(Report.report_type == report_type)
         if status is not None:
             statement = statement.where(Report.status == status)
-        if technician_id is not None:
-            statement = statement.where(Report.technician_id == technician_id)
 
         statement = statement.offset(offset).limit(limit)
         reports = session.exec(statement).all()
         return [self.report_to_response(report) for report in reports]
 
     def update_report(
-        self, report_id: UUID, data: ReportUpdate, session: Session
+        self,
+        report_id: UUID,
+        data: ReportUpdate,
+        session: Session,
+        current_user: TokenData,
     ) -> ReportResponse:
         """
         Update a report with the provided data.
@@ -229,6 +209,7 @@ class _ReportService:
             try:
                 # Step 1: Fetch the report
                 report = self._get_report(report_id, session)
+                self._assert_can_access_report(report, current_user, session, "update")
                 update_data = data.model_dump(
                     exclude_none=True, exclude_defaults=True, exclude_unset=True
                 )
@@ -364,14 +345,26 @@ class _ReportService:
             "Report is currently being updated by another request. Please retry."
         )
 
-    def delete_report(self, report_id: UUID, session: Session) -> None:
+    def delete_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> None:
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "delete")
         report.soft_delete()
         session.commit()
     
-    def start_report(self, report_id: UUID, session: Session) -> ReportResponse:
+    def start_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
         """"""
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "start")
         report.start()
         try:
             session.commit()
@@ -384,9 +377,15 @@ class _ReportService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error starting report: {e}")
     
-    def complete_report(self, report_id: UUID, session: Session) -> ReportResponse:
+    def complete_report(
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> ReportResponse:
         """"""
         report = self._get_report(report_id, session)
+        self._assert_can_access_report(report, current_user, session, "complete")
         report.complete()
         try:
             session.commit()
@@ -435,31 +434,6 @@ class _ReportService:
             report_type = report.report_type.value.replace("-", "_")
             created_date = report.created_at.strftime("%Y%m%d") if report.created_at else "unknown"
             filename = f"report_{report_type}_{created_date}_{str(report.id)[:8]}.pdf"
-
-            # Persist generated PDF to Supabase storage (best-effort, export still succeeds on storage failure).
-            try:
-                from app.services.file import FileService
-
-                file_service = FileService()
-                stored = file_service.upload_file_sync(
-                    file_content=pdf_bytes,
-                    filename=filename,
-                    content_type="application/pdf",
-                    folder=f"reports/{report.id}/exports",
-                )
-                LOG.info(
-                    "report_pdf_stored report_id={} file_path={} public_url={}",
-                    report_id,
-                    stored.get("file_path"),
-                    stored.get("public_url"),
-                )
-            except Exception as storage_error:
-                LOG.warning(
-                    "report_pdf_storage_failed report_id={} error_type={} detail={}",
-                    report_id,
-                    type(storage_error).__name__,
-                    storage_error,
-                )
             
             # Reset buffer for reading
             pdf_buffer.seek(0)

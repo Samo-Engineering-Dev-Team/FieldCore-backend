@@ -1,14 +1,17 @@
 from fastapi import APIRouter, BackgroundTasks, Query
-from typing import List
+from typing import List, Literal
 from uuid import UUID
+from pydantic import BaseModel
 
 from app.models import IncidentCreate, IncidentUpdate, IncidentResponse
 from app.models.fault_update import FaultUpdateCreate, FaultUpdateResponse
 from app.services import IncidentService, CurrentUser
-from app.services.fault_update import _FaultUpdateService, get_fault_update_service
+from app.services.fault_update import get_fault_update_service
 from app.services.incident import _bg_notify_incident_created, _bg_notify_incident_started, _bg_notify_incident_resolved
 from app.database import Session
-from app.utils.enums import IncidentStatus
+from app.utils.enums import IncidentStatus, UserRole
+from app.services.authorization import require_management
+from app.exceptions.http import ForbiddenException
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
@@ -46,7 +49,7 @@ def read_incidents(
     limit: int = Query(default=100, le=1000)
 ) -> List[IncidentResponse]:
     """"""
-    return service.read_incidents(session, technician_id, status, client_id, offset, limit)
+    return service.read_incidents(session, current_user, technician_id, status, client_id, offset, limit)
 
 
 @router.get("/penalty-summary", status_code=200)
@@ -63,6 +66,11 @@ def get_penalty_summary(
     from sqlmodel import select
     from app.models import Incident
     from sqlalchemy import and_
+
+    require_management(
+        current_user,
+        "Only NOC, managers, or admins can view penalty summaries.",
+    )
 
     now = utcnow()
     q = (now.month - 1) // 3
@@ -88,7 +96,7 @@ def read_incident(
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """"""
-    return service.read_incident(incident_id, session)
+    return service.read_incident(incident_id, session, current_user)
 
 
 @router.patch("/{incident_id}", response_model=IncidentResponse, status_code=200)
@@ -100,7 +108,7 @@ def update_incident(
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """"""
-    return service.update_incident(incident_id, payload, session)
+    return service.update_incident(incident_id, payload, session, current_user)
 
 
 @router.delete("/{incident_id}", status_code=204)
@@ -111,7 +119,7 @@ def delete_incident(
     current_user: CurrentUser,
 ) -> None:
     """"""
-    service.delete_incident(incident_id, session)
+    service.delete_incident(incident_id, session, current_user)
 
 
 @router.patch("/{incident_id}/start", response_model=IncidentResponse, status_code=200)
@@ -123,7 +131,7 @@ def start_incident(
     background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
-    response = service.start_incident(incident_id, session)
+    response = service.start_incident(incident_id, session, current_user)
     background_tasks.add_task(
         _bg_notify_incident_started,
         site_name=response.site_name,
@@ -141,7 +149,7 @@ def resolve_incident(
     background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
-    response = service.resolve_incident(incident_id, session)
+    response = service.resolve_incident(incident_id, session, current_user)
     background_tasks.add_task(
         _bg_notify_incident_resolved,
         site_name=response.site_name,
@@ -163,7 +171,7 @@ def mark_responded(
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that the technician has acknowledged/responded to the fault."""
-    return service.mark_responded(incident_id, session)
+    return service.mark_responded(incident_id, session, current_user)
 
 
 @router.post("/{incident_id}/arrive", response_model=IncidentResponse, status_code=200)
@@ -174,7 +182,7 @@ def mark_arrived_on_site(
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that the technician has arrived on site (SLA milestone 2)."""
-    return service.mark_arrived_on_site(incident_id, session)
+    return service.mark_arrived_on_site(incident_id, session, current_user)
 
 
 @router.post("/{incident_id}/temp-restore", response_model=IncidentResponse, status_code=200)
@@ -185,7 +193,7 @@ def mark_temporarily_restored(
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that service has been temporarily restored (SLA milestone 3)."""
-    return service.mark_temporarily_restored(incident_id, session)
+    return service.mark_temporarily_restored(incident_id, session, current_user)
 
 
 @router.post("/{incident_id}/perm-restore", response_model=IncidentResponse, status_code=200)
@@ -196,7 +204,7 @@ def mark_permanently_restored(
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that service has been permanently restored."""
-    return service.mark_permanently_restored(incident_id, session)
+    return service.mark_permanently_restored(incident_id, session, current_user)
 
 
 # ── Fault Update (communication log) sub-endpoints ────────────────────────────
@@ -204,10 +212,12 @@ def mark_permanently_restored(
 @router.get("/{incident_id}/updates", response_model=List[FaultUpdateResponse], status_code=200)
 def list_fault_updates(
     incident_id: UUID,
+    service: IncidentService,
     session: Session,
     current_user: CurrentUser,
 ) -> List[FaultUpdateResponse]:
     """List all logged updates for an incident (Annexure H communication log)."""
+    service.read_incident(incident_id, session, current_user)
     svc = get_fault_update_service()
     return svc.list_updates(incident_id, session)
 
@@ -216,10 +226,12 @@ def list_fault_updates(
 def create_fault_update(
     incident_id: UUID,
     payload: FaultUpdateCreate,
+    service: IncidentService,
     session: Session,
     current_user: CurrentUser,
 ) -> FaultUpdateResponse:
     """Log a fault update (phone call, email, or app update)."""
+    service.read_incident(incident_id, session, current_user)
     from app.models import User
     user = session.get(User, current_user.user_id)
     sent_by_name = f"{user.name} {user.surname}" if user else str(current_user.user_id)
@@ -230,10 +242,12 @@ def create_fault_update(
 @router.get("/{incident_id}/updates/due-status", status_code=200)
 def get_update_due_status(
     incident_id: UUID,
+    service: IncidentService,
     session: Session,
     current_user: CurrentUser,
 ) -> dict:
     """Return whether a new fault update is currently overdue."""
+    service.read_incident(incident_id, session, current_user)
     svc = get_fault_update_service()
     return svc.get_update_due_status(incident_id, session)
 
@@ -250,6 +264,11 @@ def check_sla_breaches_endpoint(
     Intended to be called periodically (e.g., via a cron job every 15 minutes).
     """
     from app.services.sla_checker import check_sla_breaches
+
+    require_management(
+        current_user,
+        "Only NOC, managers, or admins can run the SLA checker.",
+    )
 
     warnings, breaches = check_sla_breaches(session)
 
@@ -274,6 +293,8 @@ def get_incident_sla_status(
     from sqlmodel import select
     from app.models import Incident
 
+    service.read_incident(incident_id, session, current_user)
+
     incident = session.exec(
         select(Incident).where(Incident.id == incident_id, Incident.deleted_at.is_(None))
     ).first()
@@ -286,9 +307,6 @@ def get_incident_sla_status(
 
 
 # ── Technician Help Alert ──────────────────────────────────────────────────────
-
-from pydantic import BaseModel
-from typing import Literal
 
 
 class HelpAlertRequest(BaseModel):
@@ -306,9 +324,11 @@ def send_help_alert(
     Send an urgent help alert from a technician to all NOC operators and managers.
     Creates a dedicated alert notification entry for recipients.
     """
+    if current_user.role != UserRole.TECHNICIAN:
+        raise ForbiddenException("Only technicians can send help alerts.")
+
     from sqlmodel import select
     from app.models import User
-    from app.utils.enums import UserRole
     from app.services.notification import _NotificationService, NotificationTemplates
 
     # Resolve sender name

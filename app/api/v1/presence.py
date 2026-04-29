@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from app.services.auth import CurrentUser
 from app.services.presence import PresenceService
 

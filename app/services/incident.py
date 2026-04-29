@@ -9,13 +9,15 @@ from loguru import logger as LOG
 
 from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
-from app.models import Incident, IncidentCreate, IncidentUpdate, IncidentResponse, Site, Technician, User, Client
+from app.models import Incident, IncidentCreate, IncidentUpdate, IncidentResponse, Site, Technician, User
 from app.models.auth import TokenData
 from app.exceptions.http import (
     ConflictException,
+    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
+from app.services.authorization import get_technician_id_for_user, is_management
 
 
 # ── Background notification helpers ───────────────────────────────────────────
@@ -123,6 +125,20 @@ def _bg_notify_incident_resolved(
 
 
 class _IncidentService:
+    def _assert_incident_owner_or_management(
+        self,
+        incident: Incident,
+        session: Session,
+        current_user: TokenData,
+        action: str,
+    ) -> None:
+        if is_management(current_user):
+            return
+
+        technician_id = get_technician_id_for_user(current_user.user_id, session)
+        if incident.technician_id != technician_id:
+            raise ForbiddenException(f"You do not have permission to {action} this incident.")
+
     def incident_to_response(self, incident: Incident) -> IncidentResponse:
         user = incident.technician.user
         # Calculate num_attachments - attachments can be {files: [...]} or {}
@@ -150,7 +166,10 @@ class _IncidentService:
             num_attachments=num_attachments,
         )
 
-    def create_incident(self, data: IncidentCreate, session: Session, current_user: TokenData | None = None) -> IncidentResponse:
+    def create_incident(self, data: IncidentCreate, session: Session, current_user: TokenData) -> IncidentResponse:
+        if not is_management(current_user):
+            raise ForbiddenException("Only NOC, managers, or admins can create incidents.")
+
         # Handle site
         statement = select(Site).where(Site.id == data.site_id, Site.deleted_at.is_(None)) # type: ignore
         site: Site | None = session.exec(statement).first()
@@ -178,8 +197,8 @@ class _IncidentService:
             incident_data["start_time"] = utcnow()
 
         # Capture names before commit while relationships are loaded in the current transaction
-        tech_name = f"{technician.user.name} {technician.user.surname}"
-        site_name = site.name
+        _tech_name = f"{technician.user.name} {technician.user.surname}"
+        _site_name = site.name
 
         incident: Incident = Incident(
             **incident_data,
@@ -200,13 +219,15 @@ class _IncidentService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating incident: {e}")
 
-    def read_incident(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def read_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "view")
         return self.incident_to_response(incident)
 
     def read_incidents(
         self,
         session: Session,
+        current_user: TokenData,
         technician_id: UUID | None = None,
         status: IncidentStatus | None = None,
         client_id: UUID | None = None,
@@ -223,7 +244,11 @@ class _IncidentService:
             .where(Incident.deleted_at.is_(None))  # type: ignore
         )
 
-        if technician_id is not None:
+        if is_management(current_user):
+            if technician_id is not None:
+                statement = statement.where(Incident.technician_id == technician_id)
+        else:
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
             statement = statement.where(Incident.technician_id == technician_id)
         if status is not None:
             statement = statement.where(Incident.status == status)
@@ -235,8 +260,15 @@ class _IncidentService:
         return [self.incident_to_response(incident) for incident in incidents]
 
     def update_incident(
-        self, incident_id: UUID, data: IncidentUpdate, session: Session
+        self,
+        incident_id: UUID,
+        data: IncidentUpdate,
+        session: Session,
+        current_user: TokenData,
     ) -> IncidentResponse:
+        if not is_management(current_user):
+            raise ForbiddenException("Only NOC, managers, or admins can update incidents.")
+
         incident = self._get_incident(incident_id, session)
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
@@ -261,14 +293,18 @@ class _IncidentService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error updating incident: {e}")
 
-    def delete_incident(self, incident_id: UUID, session: Session) -> None:
+    def delete_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> None:
+        if not is_management(current_user):
+            raise ForbiddenException("Only NOC, managers, or admins can delete incidents.")
+
         incident = self._get_incident(incident_id, session)
         incident.soft_delete()
         session.commit()
     
-    def start_incident(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def start_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         """Start working on an incident."""
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "start")
         incident.start()
         try:
             session.commit()
@@ -278,9 +314,10 @@ class _IncidentService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error starting incident: {e}")
     
-    def resolve_incident(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def resolve_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         """Resolve an incident."""
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "resolve")
         incident.resolve()
         try:
             session.commit()
@@ -290,29 +327,33 @@ class _IncidentService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error resolving incident: {e}")
 
-    def mark_responded(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def mark_responded(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "update")
         incident.mark_responded()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
-    def mark_arrived_on_site(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def mark_arrived_on_site(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "update")
         incident.mark_arrived_on_site()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
-    def mark_temporarily_restored(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def mark_temporarily_restored(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "update")
         incident.mark_temporarily_restored()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
-    def mark_permanently_restored(self, incident_id: UUID, session: Session) -> IncidentResponse:
+    def mark_permanently_restored(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
+        self._assert_incident_owner_or_management(incident, session, current_user, "update")
         incident.mark_permanently_restored()
         session.commit()
         session.refresh(incident)

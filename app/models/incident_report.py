@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
@@ -28,10 +28,6 @@ class BaseIncidentReport(SQLModel):
     conclusion: str | None = Field(default=None)
 
     attachments: dict[str, Any] | None = Field(default=None, sa_type=JSONB)
-
-    # Populated once a PDF export has been stored in Supabase
-    pdf_path: str | None = Field(default=None)
-    pdf_url: str | None = Field(default=None)
 
 
 class IncidentReport(BaseDB, BaseIncidentReport, table=True):
@@ -90,5 +86,3 @@ class IncidentReportResponse(BaseDB, SQLModel):
     root_cause_analysis: str | None = Field(default=None)
     conclusion: str | None = Field(default=None)
     attachments: dict[str, Any] | None = Field(default=None)
-    pdf_path: str | None = Field(default=None)
-    pdf_url: str | None = Field(default=None)

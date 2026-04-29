@@ -1,10 +1,9 @@
 from uuid import UUID
 from fastapi import Depends
 from typing import List, Annotated
-from datetime import datetime, timedelta
+from datetime import timedelta
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import text
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
 from loguru import logger as LOG
 
@@ -15,6 +14,8 @@ from app.exceptions.http import (
     NotFoundException,
 )
 from app.utils.funcs import utcnow
+from app.models.auth import TokenData
+from app.services.authorization import assert_technician_self_or_roles, is_management
 
 
 class _TechnicianService:
@@ -67,7 +68,20 @@ class _TechnicianService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating technician: {e}")
 
-    def read_technician(self, technician_id: UUID, session: Session) -> TechnicianResponse:
+    def read_technician(
+        self,
+        technician_id: UUID,
+        session: Session,
+        current_user: TokenData,
+    ) -> TechnicianResponse:
+        if not is_management(current_user):
+            assert_technician_self_or_roles(
+                technician_id,
+                current_user,
+                session,
+                allowed_roles=(),
+                message="You do not have permission to view this technician.",
+            )
         technician = self._get_technician(technician_id, session)
         return self.technician_to_response(technician)
 
@@ -83,8 +97,20 @@ class _TechnicianService:
         return [self.technician_to_response(technician) for technician in technicians]
 
     def update_technician(
-        self, technician_id: UUID, data: TechnicianUpdate, session: Session
+        self,
+        technician_id: UUID,
+        data: TechnicianUpdate,
+        session: Session,
+        current_user: TokenData,
     ) -> TechnicianResponse:
+        if not is_management(current_user):
+            assert_technician_self_or_roles(
+                technician_id,
+                current_user,
+                session,
+                allowed_roles=(),
+                message="You do not have permission to update this technician.",
+            )
         technician = self._get_technician(technician_id, session)
         update_data = data.model_dump(
             exclude_none=True, exclude_defaults=True, exclude_unset=True
@@ -149,9 +175,18 @@ class _TechnicianService:
         self, 
         technician_id: UUID, 
         data: TechnicianLocationUpdate, 
-        session: Session
+        session: Session,
+        current_user: TokenData,
     ) -> TechnicianResponse:
         """Update technician's current location (called from mobile app)."""
+        if not is_management(current_user):
+            assert_technician_self_or_roles(
+                technician_id,
+                current_user,
+                session,
+                allowed_roles=(),
+                message="You do not have permission to update this technician's location.",
+            )
         technician = self._get_technician(technician_id, session)
         technician.update_location(data.latitude, data.longitude)
         
@@ -192,7 +227,7 @@ class _TechnicianService:
         )
         
         if available_only:
-            statement = statement.where(Technician.is_available == True)
+            statement = statement.where(Technician.is_available)
         
         if max_distance_km:
             # Filter by max distance (convert km to meters)
@@ -268,7 +303,7 @@ class _TechnicianService:
         statement = (
             select(Technician)
             .where(Technician.deleted_at.is_(None))
-            .where(Technician.is_available == True)
+            .where(Technician.is_available)
             .where(
                 (Technician.last_location_update.is_(None)) |
                 (Technician.last_location_update < cutoff)

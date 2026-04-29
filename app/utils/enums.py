@@ -4,6 +4,7 @@ from enum import StrEnum
 class UserRole(StrEnum):
     """"""
     ADMIN = "admin"
+    SUPER_ADMIN = "admin"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"
@@ -13,6 +14,12 @@ class UserStatus(StrEnum):
     """"""
     ACTIVE = "active"
     DISABLED = "disabled"
+
+
+class PasskeyCeremonyType(StrEnum):
+    """"""
+    REGISTRATION = "registration"
+    AUTHENTICATION = "authentication"
 
 
 class TaskType(StrEnum):

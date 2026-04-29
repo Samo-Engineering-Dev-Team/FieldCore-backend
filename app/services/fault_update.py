@@ -11,13 +11,11 @@ from typing import Annotated
 from datetime import timedelta
 
 from fastapi import Depends
-from sqlmodel import Session, select, and_
+from sqlmodel import Session, select
 
 from app.models.fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from app.models import Incident
 from app.utils.funcs import utcnow
-from app.utils.sla_utils import calculate_sla_deadlines
-from app.database import get_session
 
 # Maximum interval between updates before flagging as overdue (minutes)
 UPDATE_INTERVALS: dict[str, int] = {

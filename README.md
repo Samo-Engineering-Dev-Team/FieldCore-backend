@@ -1,4 +1,4 @@
-# Seacom App Backend
+# FieldCore-Backend
 
 Backend API for the Seacom operations platform (FastAPI + PostgreSQL/PostGIS + optional Redis presence backend).
 

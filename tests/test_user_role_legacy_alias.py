@@ -1,0 +1,28 @@
+from app.models import UserResponse
+from app.models.user import User
+from app.utils.enums import UserRole
+
+
+def test_legacy_super_admin_db_role_maps_to_admin() -> None:
+    role_type = User.__table__.c.role.type
+
+    assert role_type._object_value_for_elem("SUPER_ADMIN") is UserRole.ADMIN
+
+
+def test_super_admin_alias_serializes_as_admin() -> None:
+    response = UserResponse.model_validate(
+        {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "created_at": "2026-04-24T00:00:00Z",
+            "updated_at": "2026-04-24T00:00:00Z",
+            "deleted_at": None,
+            "name": "Admin",
+            "surname": "User",
+            "email": "admin@example.com",
+            "role": UserRole.SUPER_ADMIN,
+            "must_change_password": False,
+            "status": "active",
+        }
+    )
+
+    assert response.model_dump(mode="json")["role"] == "admin"
