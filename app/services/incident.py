@@ -289,9 +289,9 @@ class _IncidentService:
         statement = (
             select(Incident)
             .options(
-                selectinload(Incident.technician).selectinload(Technician.user),
-                selectinload(Incident.client),
-                selectinload(Incident.site),
+                selectinload(Incident.technician).selectinload(Technician.user),  # type: ignore
+                selectinload(Incident.client),  # type: ignore
+                selectinload(Incident.site),  # type: ignore
             )
             .where(Incident.deleted_at.is_(None))  # type: ignore
         )
@@ -449,8 +449,9 @@ class _IncidentService:
 
     def _get_incident(self, incident_id: UUID, session: Session) -> Incident:
         statement = select(Incident).where(
-            Incident.id == incident_id, Incident.deleted_at.is_(None)
-        )  # type: ignore
+            Incident.id == incident_id,
+            Incident.deleted_at.is_(None),  # type: ignore
+        )
         incident: Incident | None = session.exec(statement).first()
         if not incident:
             raise NotFoundException("incident not found")
