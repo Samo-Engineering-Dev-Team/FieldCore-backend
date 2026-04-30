@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import SiteCreate, SiteUpdate, SiteResponse
 from app.services import SiteService
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import Region
 
 router = APIRouter(prefix="/sites", tags=["Sites"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/sites", tags=["Sites"])
 def create_site(
     payload: SiteCreate,
     service: SiteService,
-    session: Session
+    session: SessionDep
 ) -> SiteResponse:
     """"""
     return service.create_site(payload, session)
@@ -23,7 +23,7 @@ def create_site(
 @router.get("/", response_model=List[SiteResponse], status_code=200)
 def read_sites(
     service: SiteService,
-    session: Session,
+    session: SessionDep,
     region: Region | None = Query(None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000)
@@ -36,7 +36,7 @@ def read_sites(
 def read_site(
     site_id: UUID,
     service: SiteService,
-    session: Session
+    session: SessionDep
 ) -> SiteResponse:
     """"""
     return service.read_site(site_id, session)
@@ -47,7 +47,7 @@ def update_site(
     site_id: UUID,
     payload: SiteUpdate,
     service: SiteService,
-    session: Session,
+    session: SessionDep,
 ) -> SiteResponse:
     """"""
     return service.update_site(site_id, payload, session)
@@ -57,7 +57,7 @@ def update_site(
 def delete_site(
     site_id: UUID,
     service: SiteService,
-    session: Session
+    session: SessionDep
 ) -> None:
     """"""
     service.delete_site(site_id, session)

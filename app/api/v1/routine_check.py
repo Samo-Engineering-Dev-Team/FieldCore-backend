@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import RoutineCheckCreate, RoutineCheckUpdate, RoutineCheckResponse
 from app.services import RoutineCheckService
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import RoutineCheckStatus
 
 router = APIRouter(prefix="/routine-checks", tags=["Routine Checks"])
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/routine-checks", tags=["Routine Checks"])
 def create_routine_check(
     payload: RoutineCheckCreate,
     service: RoutineCheckService,
-    session: Session
+    session: SessionDep
 ) -> RoutineCheckResponse:
     """"""
     return service.create_routine_check(payload, session)
@@ -23,7 +23,7 @@ def create_routine_check(
 @router.get("/", response_model=List[RoutineCheckResponse], status_code=200)
 def read_routine_checks(
     service: RoutineCheckService,
-    session: Session,
+    session: SessionDep,
     status: RoutineCheckStatus | None = Query(None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000)
@@ -36,7 +36,7 @@ def read_routine_checks(
 def read_routine_check(
     routine_check_id: UUID,
     service: RoutineCheckService,
-    session: Session
+    session: SessionDep
 ) -> RoutineCheckResponse:
     """"""
     return service.read_routine_check(routine_check_id, session)
@@ -47,7 +47,7 @@ def update_routine_check(
     routine_check_id: UUID,
     payload: RoutineCheckUpdate,
     service: RoutineCheckService,
-    session: Session,
+    session: SessionDep,
 ) -> RoutineCheckResponse:
     """"""
     return service.update_routine_check(routine_check_id, payload, session)
@@ -57,7 +57,7 @@ def update_routine_check(
 def delete_routine_check(
     routine_check_id: UUID,
     service: RoutineCheckService,
-    session: Session
+    session: SessionDep
 ) -> None:
     """"""
     service.delete_routine_check(routine_check_id, session)

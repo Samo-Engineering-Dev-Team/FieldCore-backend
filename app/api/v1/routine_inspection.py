@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import RoutineInspectionCreate, RoutineInspectionUpdate, RoutineInspectionResponse
 from app.services import RoutineInspectionService, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import UserRole
 from app.exceptions.http import ForbiddenException
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/routine-inspections", tags=["Routine Inspections"])
 def create_routine_inspection(
     payload: RoutineInspectionCreate,
     service: RoutineInspectionService,
-    session: Session
+    session: SessionDep
 ) -> RoutineInspectionResponse:
     """Create a new routine generator inspection"""
     return service.create_inspection(payload, session)
@@ -24,7 +24,7 @@ def create_routine_inspection(
 @router.get("/", response_model=List[RoutineInspectionResponse], status_code=200)
 def read_routine_inspections(
     service: RoutineInspectionService,
-    session: Session,
+    session: SessionDep,
     status: str | None = Query(None),
     technician_id: UUID | None = Query(None),
     site_id: UUID | None = Query(None),
@@ -39,7 +39,7 @@ def read_routine_inspections(
 def read_routine_inspection(
     inspection_id: UUID,
     service: RoutineInspectionService,
-    session: Session
+    session: SessionDep
 ) -> RoutineInspectionResponse:
     """Read a specific routine generator inspection"""
     return service.read_inspection(inspection_id, session)
@@ -51,7 +51,7 @@ def update_routine_inspection(
     payload: RoutineInspectionUpdate,
     user: CurrentUser,
     service: RoutineInspectionService,
-    session: Session,
+    session: SessionDep,
 ) -> RoutineInspectionResponse:
     """Update a routine generator inspection (only allowed for draft inspections)"""
     if user.role == UserRole.NOC:
@@ -64,7 +64,7 @@ def delete_routine_inspection(
     inspection_id: UUID,
     user: CurrentUser,
     service: RoutineInspectionService,
-    session: Session
+    session: SessionDep
 ) -> None:
     """Delete a routine generator inspection"""
     if user.role == UserRole.NOC:
@@ -76,7 +76,7 @@ def delete_routine_inspection(
 def submit_routine_inspection(
     inspection_id: UUID,
     service: RoutineInspectionService,
-    session: Session
+    session: SessionDep
 ) -> RoutineInspectionResponse:
     """Submit a routine generator inspection (mark as completed)"""
     return service.submit_inspection(inspection_id, session)

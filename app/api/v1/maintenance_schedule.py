@@ -13,7 +13,7 @@ from app.models.maintenance_schedule import (
 )
 from app.services.maintenance_schedule import MaintenanceScheduleService
 from app.services import CurrentUser
-from app.database import Session
+from app.database import SessionDep
 
 router = APIRouter(prefix="/maintenance-schedules", tags=["Maintenance Schedules"])
 
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/maintenance-schedules", tags=["Maintenance Schedules
 def create_schedule(
     payload: MaintenanceScheduleCreate,
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> MaintenanceScheduleResponse:
     """Create a new recurring maintenance schedule."""
@@ -32,7 +32,7 @@ def create_schedule(
 @router.get("/due", response_model=List[MaintenanceScheduleResponse], status_code=200)
 def get_due_schedules(
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     technician_id: UUID | None = Query(None),
 ) -> List[MaintenanceScheduleResponse]:
@@ -43,7 +43,7 @@ def get_due_schedules(
 @router.get("/", response_model=List[MaintenanceScheduleResponse], status_code=200)
 def list_schedules(
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     site_id: UUID | None = Query(None),
     technician_id: UUID | None = Query(None),
@@ -56,7 +56,7 @@ def list_schedules(
 def get_schedule(
     schedule_id: UUID,
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> MaintenanceScheduleResponse:
     return service.get(schedule_id, session)
@@ -67,7 +67,7 @@ def update_schedule(
     schedule_id: UUID,
     payload: MaintenanceScheduleUpdate,
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> MaintenanceScheduleResponse:
     return service.update(schedule_id, payload, session)
@@ -77,7 +77,7 @@ def update_schedule(
 def delete_schedule(
     schedule_id: UUID,
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     service.delete(schedule_id, session)
@@ -85,7 +85,7 @@ def delete_schedule(
 
 @router.post("/check-weekly", status_code=200)
 def check_weekly_tasks(
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """
@@ -105,7 +105,7 @@ def check_weekly_tasks(
 def mark_schedule_done(
     schedule_id: UUID,
     service: MaintenanceScheduleService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> MaintenanceScheduleResponse:
     """

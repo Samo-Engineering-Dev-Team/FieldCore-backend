@@ -5,7 +5,7 @@ from uuid import UUID
 from app.models import ClientCreate, ClientUpdate, ClientResponse
 from app.services.client import ClientServiceDep
 from app.services.auth import require_admin, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.services.authorization import require_management
 
 router = APIRouter(prefix="/clients", tags=["Clients"])
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/clients", tags=["Clients"])
 def create_client(
     payload: ClientCreate,
     service: ClientServiceDep,
-    session: Session
+    session: SessionDep
 ) -> ClientResponse:
     """Create a new client. Admin only."""
     return service.create_client(payload, session)
@@ -24,7 +24,7 @@ def create_client(
 @router.get("/", response_model=List[ClientResponse], status_code=200)
 def read_clients(
     service: ClientServiceDep,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     active_only: bool = Query(default=True, description="Only return active clients"),
     offset: int = Query(default=0, ge=0),
@@ -39,7 +39,7 @@ def read_clients(
 def find_inactive_client(
     name: str = Query(..., description="Client name to search for"),
     service: ClientServiceDep = None,
-    session: Session = None
+    session: SessionDep = None
 ) -> ClientResponse | None:
     """Find an inactive client by name (for reactivation). Admin only."""
     return service.find_inactive_client_by_name(name, session)
@@ -49,7 +49,7 @@ def find_inactive_client(
 def read_client(
     client_id: UUID,
     service: ClientServiceDep,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> ClientResponse:
     """Get a single client by ID."""
@@ -62,7 +62,7 @@ def update_client(
     client_id: UUID,
     payload: ClientUpdate,
     service: ClientServiceDep,
-    session: Session
+    session: SessionDep
 ) -> ClientResponse:
     """Update a client. Admin only."""
     return service.update_client(client_id, payload, session)
@@ -72,7 +72,7 @@ def update_client(
 def delete_client(
     client_id: UUID,
     service: ClientServiceDep,
-    session: Session
+    session: SessionDep
 ) -> None:
     """Delete (deactivate) a client. Admin only."""
     service.delete_client(client_id, session)
@@ -82,7 +82,7 @@ def delete_client(
 def reactivate_client(
     client_id: UUID,
     service: ClientServiceDep,
-    session: Session
+    session: SessionDep
 ) -> ClientResponse:
     """Reactivate a previously deactivated client. Admin only."""
     return service.reactivate_client(client_id, session)

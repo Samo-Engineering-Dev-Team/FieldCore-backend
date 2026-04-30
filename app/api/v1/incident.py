@@ -8,7 +8,7 @@ from app.models.fault_update import FaultUpdateCreate, FaultUpdateResponse
 from app.services import IncidentService, CurrentUser
 from app.services.fault_update import get_fault_update_service
 from app.services.incident import _bg_notify_incident_created, _bg_notify_incident_started, _bg_notify_incident_resolved
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import IncidentStatus, UserRole
 from app.services.authorization import require_management
 from app.exceptions.http import ForbiddenException
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/incidents", tags=["Incidents"])
 def create_incident(
     payload: IncidentCreate,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
@@ -40,7 +40,7 @@ def create_incident(
 @router.get("/", response_model=List[IncidentResponse], status_code=200)
 def read_incidents(
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     technician_id: UUID | None = Query(None),
     status: IncidentStatus | None = Query(None),
@@ -54,7 +54,7 @@ def read_incidents(
 
 @router.get("/penalty-summary", status_code=200)
 def get_penalty_summary(
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """
@@ -92,7 +92,7 @@ def get_penalty_summary(
 def read_incident(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """"""
@@ -104,7 +104,7 @@ def update_incident(
     incident_id: UUID,
     payload: IncidentUpdate,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """"""
@@ -115,7 +115,7 @@ def update_incident(
 def delete_incident(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """"""
@@ -126,7 +126,7 @@ def delete_incident(
 def start_incident(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
@@ -144,7 +144,7 @@ def start_incident(
 def resolve_incident(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
@@ -167,7 +167,7 @@ def resolve_incident(
 def mark_responded(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that the technician has acknowledged/responded to the fault."""
@@ -178,7 +178,7 @@ def mark_responded(
 def mark_arrived_on_site(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that the technician has arrived on site (SLA milestone 2)."""
@@ -189,7 +189,7 @@ def mark_arrived_on_site(
 def mark_temporarily_restored(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that service has been temporarily restored (SLA milestone 3)."""
@@ -200,7 +200,7 @@ def mark_temporarily_restored(
 def mark_permanently_restored(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentResponse:
     """Record that service has been permanently restored."""
@@ -213,7 +213,7 @@ def mark_permanently_restored(
 def list_fault_updates(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> List[FaultUpdateResponse]:
     """List all logged updates for an incident (Annexure H communication log)."""
@@ -227,7 +227,7 @@ def create_fault_update(
     incident_id: UUID,
     payload: FaultUpdateCreate,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> FaultUpdateResponse:
     """Log a fault update (phone call, email, or app update)."""
@@ -243,7 +243,7 @@ def create_fault_update(
 def get_update_due_status(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """Return whether a new fault update is currently overdue."""
@@ -256,7 +256,7 @@ def get_update_due_status(
 
 @router.post("/check-sla", status_code=200)
 def check_sla_breaches_endpoint(
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """
@@ -285,7 +285,7 @@ def check_sla_breaches_endpoint(
 def get_incident_sla_status(
     incident_id: UUID,
     service: IncidentService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """Get the three-milestone SLA status for a specific incident."""
@@ -317,7 +317,7 @@ class HelpAlertRequest(BaseModel):
 @router.post("/help-alert", status_code=204)
 def send_help_alert(
     payload: HelpAlertRequest,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """

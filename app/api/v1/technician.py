@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.models import TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate, Site, SiteResponse, TechnicianSite
 from app.services import TechnicianService
 from app.services.auth import CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from sqlmodel import select
 from app.services.authorization import (
     MANAGEMENT_ROLES,
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/technicians", tags=["Technicians"])
 def create_technician(
     payload: TechnicianCreate,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TechnicianResponse:
     """Create a new technician."""
@@ -36,7 +36,7 @@ def create_technician(
 @router.get("/", response_model=List[TechnicianResponse], status_code=200)
 def read_technicians(
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000)
@@ -51,7 +51,7 @@ def read_technicians(
 @router.get("/dispatch/nearest", response_model=List[TechnicianResponse], status_code=200)
 def find_nearest_technicians(
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     latitude: float = Query(ge=-90, le=90, description="Target latitude"),
     longitude: float = Query(ge=-180, le=180, description="Target longitude"),
@@ -79,7 +79,7 @@ def find_nearest_technicians(
 def find_nearest_to_site(
     site_id: UUID,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     limit: int = Query(default=5, ge=1, le=20),
     available_only: bool = Query(default=True),
@@ -97,7 +97,7 @@ def find_nearest_to_site(
 @router.get("/dispatch/in-region", response_model=List[TechnicianResponse], status_code=200)
 def get_technicians_in_region(
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
@@ -118,7 +118,7 @@ def get_technicians_in_region(
 @router.get("/monitoring/stale-locations", response_model=List[TechnicianResponse], status_code=200)
 def get_stale_locations(
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     stale_minutes: int = Query(default=30, ge=5, le=1440),
 ) -> List[TechnicianResponse]:
@@ -132,7 +132,7 @@ def get_stale_locations(
 @router.get("/me", response_model=TechnicianResponse, status_code=200)
 def read_my_technician_profile(
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TechnicianResponse:
     """Get the technician profile for the currently authenticated user."""
@@ -143,7 +143,7 @@ def read_my_technician_profile(
 def read_technician(
     technician_id: UUID,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TechnicianResponse:
     """Get a specific technician by ID."""
@@ -155,7 +155,7 @@ def update_technician(
     technician_id: UUID,
     payload: TechnicianUpdate,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TechnicianResponse:
     """Update a technician's profile."""
@@ -167,7 +167,7 @@ def update_technician_location(
     technician_id: UUID,
     payload: TechnicianLocationUpdate,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TechnicianResponse:
     """
@@ -181,7 +181,7 @@ def update_technician_location(
 def escalate_technician_issue(
     technician_id: UUID,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     reason: str = Query(..., description="Reason for escalation"),
     priority: str = Query("HIGH", description="Escalation priority: HIGH, MEDIUM, LOW")
@@ -209,7 +209,7 @@ def escalate_technician_issue(
 @router.get("/{technician_id}/sites", response_model=List[SiteResponse], status_code=200)
 def get_technician_assigned_sites(
     technician_id: UUID,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> List[SiteResponse]:
     """Get all sites assigned to a technician as their primary routes."""
@@ -254,7 +254,7 @@ def get_technician_assigned_sites(
 def set_technician_assigned_sites(
     technician_id: UUID,
     payload: TechnicianSitesPayload,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """Replace the full list of sites assigned to a technician (idempotent PUT)."""
@@ -279,7 +279,7 @@ def set_technician_assigned_sites(
 def delete_technician(
     technician_id: UUID,
     service: TechnicianService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """Delete a technician."""

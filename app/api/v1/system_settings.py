@@ -9,7 +9,7 @@ from app.models.system_settings import (
 )
 from app.services.system_settings import SystemSettingsService
 from app.services import CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import UserRole
 from app.exceptions.http import UnauthorizedException
 from app.core.settings import app_settings
@@ -27,7 +27,7 @@ def _require_admin(current_user):
 @router.get("/", response_model=SystemSettingsResponse, status_code=200)
 def get_all_settings(
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> SystemSettingsResponse:
     """Get all system settings grouped by category. Admin only."""
@@ -38,7 +38,7 @@ def get_all_settings(
 @router.get("/list", response_model=list[SystemSettingResponse], status_code=200)
 def get_settings_list(
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     category: str | None = Query(default=None, description="Filter by category"),
 ) -> list[SystemSettingResponse]:
@@ -52,7 +52,7 @@ def get_settings_list(
 @router.get("/debug", response_model=DebugConfig, status_code=200)
 def get_debug_config(
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> DebugConfig:
     """Get current debug configuration. Admin only."""
@@ -63,7 +63,7 @@ def get_debug_config(
 @public_router.get("/debug/status", response_model=dict, status_code=200)
 def get_debug_status(
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
 ) -> dict:
     """Get debug mode status. Public endpoint for middleware checks."""
     return {
@@ -76,7 +76,7 @@ def get_debug_status(
 def get_setting(
     key: str,
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> SystemSettingResponse:
     """Get a specific setting by key. Admin only."""
@@ -89,7 +89,7 @@ def update_setting(
     key: str,
     payload: SystemSettingUpdate,
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> SystemSettingResponse:
     """Update a specific setting. Admin only."""
@@ -101,7 +101,7 @@ def update_setting(
 def bulk_update_settings(
     payload: SystemSettingsBulkUpdate,
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> SystemSettingsResponse:
     """Bulk update multiple settings. Admin only."""
@@ -155,7 +155,7 @@ async def test_email(
 @router.post("/debug/toggle", response_model=dict, status_code=200)
 def toggle_debug_mode(
     service: SystemSettingsService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """Toggle debug mode on/off. Admin only."""

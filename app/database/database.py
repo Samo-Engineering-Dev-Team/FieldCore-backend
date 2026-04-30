@@ -3,7 +3,6 @@ from sqlalchemy import Engine, inspect, text
 from loguru import logger as LOG
 from typing import Generator, List, Annotated
 from fastapi import Depends
-from datetime import datetime
 from contextlib import contextmanager
 
 
@@ -158,10 +157,5 @@ class Database:
         with _Session(cls.connection) as session:
             yield session
 
-    @classmethod
-    def get_current_timestamp(cls) -> str:
-        """Get current UTC timestamp in ISO format."""
-        return datetime.utcnow().isoformat() + "Z"
 
-
-Session = Annotated[_Session, Depends(Database.get_session)]
+SessionDep = Annotated[_Session, Depends(Database.get_session)]

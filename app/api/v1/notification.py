@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import NotificationCreate, NotificationResponse
 from app.services import NotificationService, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.exceptions.http import ForbiddenException
 from app.utils.enums import NotificationPriority, UserRole
 
@@ -24,7 +24,7 @@ def _assert_can_access_user_notifications(target_user_id: UUID, current_user: Cu
 def create_notification(
     payload: NotificationCreate,
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> NotificationResponse:
     """Create a notification. Management users can create for other users."""
@@ -36,7 +36,7 @@ def create_notification(
 @router.get("/", response_model=List[NotificationResponse], status_code=200)
 def read_notifications(
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     priority: NotificationPriority | None = Query(None),
     user_id: UUID | None = Query(None),
@@ -55,7 +55,7 @@ def read_notifications(
 @router.patch("/read-all", status_code=200)
 def mark_all_as_read(
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     user_id: UUID | None = Query(None),
 ) -> dict:
@@ -68,7 +68,7 @@ def mark_all_as_read(
 @router.get("/unread-count", status_code=200)
 def unread_count(
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     user_id: UUID | None = Query(None),
 ) -> dict:
@@ -81,7 +81,7 @@ def unread_count(
 def read_notification(
     notification_id: UUID,
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> NotificationResponse:
     """Get a specific notification."""
@@ -94,7 +94,7 @@ def read_notification(
 def delete_notification(
     notification_id: UUID,
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> None:
     """Delete a notification."""
@@ -107,7 +107,7 @@ def delete_notification(
 def mark_as_read(
     notification_id: UUID,
     service: NotificationService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> NotificationResponse:
     """Mark notification as read."""

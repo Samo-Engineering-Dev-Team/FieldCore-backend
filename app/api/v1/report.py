@@ -5,7 +5,7 @@ from uuid import UUID
 
 from app.models import ReportCreate, ReportUpdate, ReportResponse
 from app.services import ReportService, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import ReportStatus, ReportType, UserRole
 from app.exceptions.http import ForbiddenException
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/reports", tags=["Reports"])
 def create_report(
     payload: ReportCreate,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
@@ -26,7 +26,7 @@ def create_report(
 @router.get("/", response_model=List[ReportResponse], status_code=200)
 def read_reports(
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     response: FastAPIResponse,
     report_type: ReportType | None = Query(None),
@@ -52,7 +52,7 @@ def read_reports(
 def read_report(
     report_id: UUID,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     response: FastAPIResponse,
 ) -> ReportResponse:
@@ -66,7 +66,7 @@ def update_report(
     report_id: UUID,
     payload: ReportUpdate,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
@@ -77,7 +77,7 @@ def update_report(
 def delete_report(
     report_id: UUID,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """"""
@@ -88,7 +88,7 @@ def delete_report(
 def start_report(
     report_id: UUID,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
@@ -99,7 +99,7 @@ def start_report(
 def complete_report(
     report_id: UUID,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> ReportResponse:
     """"""
@@ -110,7 +110,7 @@ def complete_report(
 def export_report_pdf(
     report_id: UUID,
     service: ReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> Response:
     """

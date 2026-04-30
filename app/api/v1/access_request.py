@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import AccessRequestCreate, AccessRequestUpdate, AccessRequestResponse
 from app.services import AccessRequestService, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import AccessRequestStatus
 from app.services.authorization import require_management
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/access-requests", tags=["Access Requests"])
 def create_access_request(
     payload: AccessRequestCreate,
     service: AccessRequestService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> AccessRequestResponse:
     """"""
@@ -25,7 +25,7 @@ def create_access_request(
 @router.get("/", response_model=List[AccessRequestResponse], status_code=200)
 def read_access_requests(
     service: AccessRequestService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     status: AccessRequestStatus | None = Query(None),
     technician_id: UUID | None = Query(None),
@@ -47,7 +47,7 @@ def read_access_requests(
 def read_access_request(
     access_request_id: UUID,
     service: AccessRequestService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> AccessRequestResponse:
     """"""
@@ -59,7 +59,7 @@ def update_access_request(
     access_request_id: UUID,
     payload: AccessRequestUpdate,
     service: AccessRequestService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> AccessRequestResponse:
     """"""
@@ -70,7 +70,7 @@ def update_access_request(
 def delete_access_request(
     access_request_id: UUID,
     service: AccessRequestService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """"""
@@ -82,7 +82,7 @@ def approve_access_request(
     access_request_id: UUID,
     user: CurrentUser,
     service: AccessRequestService,
-    session: Session,
+    session: SessionDep,
     seacom_ref: str = Body(..., embed=True, description="SEACOM Reference Number from client"),
 ) -> AccessRequestResponse:
     """
@@ -98,7 +98,7 @@ def reject_access_request(
     access_request_id: UUID,
     user: CurrentUser,
     service: AccessRequestService,
-    session: Session
+    session: SessionDep
 ) -> AccessRequestResponse:
     """"""
     require_management(user, "Only NOC, managers, or admins can reject access requests.")

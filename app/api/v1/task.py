@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field as PydanticField
 
 from app.models import TaskCreate, TaskUpdate, TaskResponse
 from app.services import TaskService, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import TaskStatus, TaskType
 
 
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/tasks", tags=["Tasks"])
 def create_task(
     payload: TaskCreate,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
@@ -33,7 +33,7 @@ def create_task(
 @router.get("/", response_model=List[TaskResponse], status_code=200)
 def read_tasks(
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     technician_id: UUID | None = Query(None),
     task_type: TaskType | None = Query(None),
@@ -49,7 +49,7 @@ def read_tasks(
 def read_task(
     task_id: UUID,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
@@ -61,7 +61,7 @@ def update_task(
     task_id: UUID,
     payload: TaskUpdate,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
@@ -72,7 +72,7 @@ def update_task(
 def delete_task(
     task_id: UUID,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """"""
@@ -83,7 +83,7 @@ def delete_task(
 def start_task(
     task_id: UUID,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
@@ -94,7 +94,7 @@ def start_task(
 def complete_task(
     task_id: UUID,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
@@ -105,7 +105,7 @@ def complete_task(
 def fail_task(
     task_id: UUID,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """"""
@@ -117,7 +117,7 @@ def submit_task_feedback(
     task_id: UUID,
     payload: TaskFeedbackPayload,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """
@@ -133,7 +133,7 @@ def hold_task(
     task_id: UUID,
     payload: TaskHoldPayload,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """Put a started task on hold — technician will continue the next day."""
@@ -144,7 +144,7 @@ def hold_task(
 def resume_task(
     task_id: UUID,
     service: TaskService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> TaskResponse:
     """Resume an on-hold task, restoring it to started status."""

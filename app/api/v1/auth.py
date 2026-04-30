@@ -16,7 +16,7 @@ from app.models import (
 )
 from app.services import AuthService, CurrentUser
 from app.services.auth import NocOrManagerOrAdminUser
-from app.database import Session
+from app.database import SessionDep
 from app.core.rate_limiter import limiter
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 def login(
     request: Request,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     ) -> Token:
     """Authenticate user and return JWT access token. Rate limited to 5 requests per minute."""
@@ -46,7 +46,7 @@ def login(
 def start_passkey_login(
     request: Request,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> PasskeyCeremonyStart:
     """Create WebAuthn authentication options for privileged-user passkeys."""
     return service.start_passkey_authentication(session, request)
@@ -58,7 +58,7 @@ def verify_passkey_login(
     request: Request,
     payload: PasskeyAuthenticationVerification,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> Token:
     """Verify WebAuthn authentication and issue JWT token."""
     ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
@@ -76,7 +76,7 @@ def change_password(
     payload: PasswordChange,
     current_user: CurrentUser,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> dict:
     """Change the current user's password."""
     return service.change_password(current_user.user_id, payload, session)
@@ -87,7 +87,7 @@ def complete_password_reset(
     payload: PasswordResetCompletion,
     current_user: CurrentUser,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> Token:
     """Replace temporary password with a final password after admin reset."""
     return service.complete_password_reset(current_user.user_id, payload, session)
@@ -97,7 +97,7 @@ def complete_password_reset(
 def list_passkeys(
     current_user: NocOrManagerOrAdminUser,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> list[PasskeyCredentialResponse]:
     """List passkeys for current privileged user."""
     return service.list_passkeys(current_user, session)
@@ -108,7 +108,7 @@ def start_passkey_registration(
     request: Request,
     current_user: NocOrManagerOrAdminUser,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> PasskeyCeremonyStart:
     """Create WebAuthn registration options for current privileged user."""
     return service.start_passkey_registration(current_user, session, request)
@@ -119,7 +119,7 @@ def verify_passkey_registration(
     payload: PasskeyRegistrationVerification,
     current_user: NocOrManagerOrAdminUser,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> PasskeyCredentialResponse:
     """Verify WebAuthn registration and persist passkey."""
     return service.finish_passkey_registration(current_user, payload, session)
@@ -130,7 +130,7 @@ def delete_passkey(
     passkey_id: str,
     current_user: NocOrManagerOrAdminUser,
     service: AuthService,
-    session: Session,
+    session: SessionDep,
 ) -> PasskeyMutationResponse:
     """Delete one passkey for current privileged user."""
     from uuid import UUID

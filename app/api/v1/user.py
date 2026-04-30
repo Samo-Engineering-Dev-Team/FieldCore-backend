@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import UserCreate, UserUpdate, UserResponse, UserRoleUpdate, AdminPasswordReset
 from app.services import UserService, CurrentUser
-from app.database import Session
+from app.database import SessionDep
 from app.utils.enums import UserRole, UserStatus
 from app.exceptions.http import UnauthorizedException
 from app.services.authorization import ADMIN_MANAGER_ROLES, assert_self_or_roles
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/users", tags=["Users"])
 def create_user(
     payload: UserCreate,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> UserResponse:
     """Create a new user. Only accessible to admin and manager roles."""
@@ -30,7 +30,7 @@ def create_user(
 @router.get("/", response_model=List[UserResponse], status_code=200)
 def read_users(
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     status: UserStatus | None = Query(default=None),
     role: UserRole | None = Query(default=None),
@@ -47,7 +47,7 @@ def read_users(
 def read_user(
     user_id: UUID,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> UserResponse:
     """"""
@@ -65,7 +65,7 @@ def update_user(
     user_id: UUID,
     payload: UserUpdate,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> UserResponse:
     """"""
@@ -83,7 +83,7 @@ def set_user_role(
     user_id: UUID,
     payload: UserRoleUpdate,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> UserResponse:
     """"""
@@ -97,7 +97,7 @@ def reset_user_password(
     user_id: UUID,
     payload: AdminPasswordReset,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> dict:
     """Reset a user's password. Only accessible to admins."""
@@ -110,7 +110,7 @@ def reset_user_password(
 def activate_user(
     user_id: UUID,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> UserResponse:
     """"""
@@ -123,7 +123,7 @@ def activate_user(
 def deactivate_user(
     user_id: UUID,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> UserResponse:
     """"""
@@ -136,7 +136,7 @@ def deactivate_user(
 def delete_user(
     user_id: UUID,
     service: UserService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser
 ) -> None:
     """Soft delete a user. Only accessible to admin and manager roles."""
