@@ -116,7 +116,7 @@ app.include_router(router)
 
 
 @app.get("/", include_in_schema=False, status_code=307)
-def root() -> RedirectResponse | dict[str, str]:
+def root():
     """"""
     if app.debug:
         return {"message": "Are you sure you're supposed to be here?"}
