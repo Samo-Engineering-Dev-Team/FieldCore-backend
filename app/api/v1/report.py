@@ -33,7 +33,7 @@ def read_reports(
     status: ReportStatus | None = Query(None),
     technician_id: UUID | None = Query(None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[ReportResponse]:
     """"""
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
@@ -111,7 +111,7 @@ def export_report_pdf(
     report_id: UUID,
     service: ReportService,
     session: SessionDep,
-    current_user: CurrentUser
+    current_user: CurrentUser,
 ) -> Response:
     """
     Export a completed report as a PDF document.
@@ -120,17 +120,17 @@ def export_report_pdf(
     allowed_roles = [UserRole.NOC, UserRole.MANAGER, UserRole.ADMIN]
     if current_user.role not in allowed_roles:
         raise ForbiddenException("You do not have permission to export reports.")
-    
+
     pdf_buffer, filename = service.export_report_pdf(report_id, session)
-    
+
     # Get the PDF bytes from the buffer
     pdf_bytes = pdf_buffer.getvalue()
-    
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f"attachment; filename={filename}",
-            "Content-Length": str(len(pdf_bytes))
-        }
+            "Content-Length": str(len(pdf_bytes)),
+        },
     )

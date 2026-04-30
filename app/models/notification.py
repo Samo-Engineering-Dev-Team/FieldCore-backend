@@ -13,7 +13,9 @@ class BaseNotification(SQLModel):
     title: str = Field(description="", nullable=False, max_length=100)
     message: str = Field(description="", nullable=False, max_length=2000)
     user_id: UUID = Field(foreign_key="users.id")
-    priority: NotificationPriority = Field(default=NotificationPriority.NORMAL, nullable=False)
+    priority: NotificationPriority = Field(
+        default=NotificationPriority.NORMAL, nullable=False
+    )
 
 
 class Notification(BaseDB, BaseNotification, table=True):
@@ -21,7 +23,7 @@ class Notification(BaseDB, BaseNotification, table=True):
 
     read: bool = Field(default=False, nullable=False)
 
-    user: 'User' = Relationship(back_populates="notifications")
+    user: "User" = Relationship(back_populates="notifications")
 
 
 class NotificationCreate(BaseNotification): ...
@@ -29,4 +31,3 @@ class NotificationCreate(BaseNotification): ...
 
 class NotificationResponse(BaseDB, BaseNotification):
     read: bool = Field(default=False)
-    

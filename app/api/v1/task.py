@@ -16,6 +16,7 @@ class TaskFeedbackPayload(BaseModel):
 class TaskHoldPayload(BaseModel):
     reason: str | None = PydanticField(default=None, max_length=500)
 
+
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
@@ -39,10 +40,12 @@ def read_tasks(
     task_type: TaskType | None = Query(None),
     status: TaskStatus | None = Query(None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[TaskResponse]:
     """"""
-    return service.read_tasks(session, current_user, technician_id, task_type, status, offset, limit)
+    return service.read_tasks(
+        session, current_user, technician_id, task_type, status, offset, limit
+    )
 
 
 @router.get("/{task_id}", response_model=TaskResponse, status_code=200)

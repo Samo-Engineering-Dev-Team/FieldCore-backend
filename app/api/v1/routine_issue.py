@@ -12,9 +12,7 @@ router = APIRouter(prefix="/routine-issues", tags=["Routine Issues"])
 
 @router.post("/", response_model=RoutineIssueResponse, status_code=201)
 def create_routine_issue(
-    payload: RoutineIssueCreate,
-    service: RoutineIssueService,
-    session: SessionDep
+    payload: RoutineIssueCreate, service: RoutineIssueService, session: SessionDep
 ) -> RoutineIssueResponse:
     """"""
     return service.create_routine_issue(payload, session)
@@ -26,7 +24,7 @@ def read_routine_issues(
     session: SessionDep,
     region: RoutineIssueSeverity | None = Query(None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[RoutineIssueResponse]:
     """"""
     return service.read_routine_issues(session, region, offset, limit)
@@ -34,15 +32,15 @@ def read_routine_issues(
 
 @router.get("/{routine_issue_id}", response_model=RoutineIssueResponse, status_code=200)
 def read_routine_issue(
-    routine_issue_id: UUID,
-    service: RoutineIssueService,
-    session: SessionDep
+    routine_issue_id: UUID, service: RoutineIssueService, session: SessionDep
 ) -> RoutineIssueResponse:
     """"""
     return service.read_routine_issue(routine_issue_id, session)
 
 
-@router.patch("/{routine_issue_id}", response_model=RoutineIssueResponse, status_code=200)
+@router.patch(
+    "/{routine_issue_id}", response_model=RoutineIssueResponse, status_code=200
+)
 def update_routine_issue(
     routine_issue_id: UUID,
     payload: RoutineIssueUpdate,
@@ -55,9 +53,7 @@ def update_routine_issue(
 
 @router.delete("/{routine_issue_id}", status_code=204)
 def delete_routine_issue(
-    routine_issue_id: UUID,
-    service: RoutineIssueService,
-    session: SessionDep
+    routine_issue_id: UUID, service: RoutineIssueService, session: SessionDep
 ) -> None:
     """"""
     service.delete_routine_issue(routine_issue_id, session)

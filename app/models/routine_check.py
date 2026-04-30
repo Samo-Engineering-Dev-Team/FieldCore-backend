@@ -17,12 +17,13 @@ class BaseRoutineCheck(SQLModel):
 
 
 class RoutineCheck(BaseDB, BaseRoutineCheck, table=True):
-    __tablename__ = "routine_checks" # type: ignore
+    __tablename__ = "routine_checks"  # type: ignore
 
-    report: 'Report' = Relationship(back_populates="routine_check")
+    report: "Report" = Relationship(back_populates="routine_check")
 
 
 class RoutineCheckCreate(BaseRoutineCheck): ...
+
 
 class RoutineCheckUpdate(SQLModel):
     check_item: str | None = Field(default=None, max_length=200)
@@ -30,5 +31,4 @@ class RoutineCheckUpdate(SQLModel):
     comments: str | None = Field(default=None, max_length=2000)
 
 
-class RoutineCheckResponse(BaseDB, BaseRoutineCheck):
-    ...
+class RoutineCheckResponse(BaseDB, BaseRoutineCheck): ...

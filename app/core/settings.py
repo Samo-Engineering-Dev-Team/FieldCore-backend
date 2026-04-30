@@ -5,7 +5,6 @@ from pydantic_settings import BaseSettings
 class AppSettings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-
     # Database
     DB_HOST: str = ""
     DB_USER: str = ""

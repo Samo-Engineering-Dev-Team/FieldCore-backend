@@ -5,7 +5,12 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
 from app.utils.enums import RoutineIssueSeverity
-from app.models import RoutineIssue, RoutineIssueCreate, RoutineIssueUpdate, RoutineIssueResponse
+from app.models import (
+    RoutineIssue,
+    RoutineIssueCreate,
+    RoutineIssueUpdate,
+    RoutineIssueResponse,
+)
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -14,12 +19,16 @@ from app.exceptions.http import (
 
 
 class _RoutineIssueService:
-    def routine_issue_to_response(self, routine_issue: RoutineIssue) -> RoutineIssueResponse:
+    def routine_issue_to_response(
+        self, routine_issue: RoutineIssue
+    ) -> RoutineIssueResponse:
         return RoutineIssueResponse(
             **routine_issue.model_dump(),
-            )
+        )
 
-    def create_routine_issue(self, data: RoutineIssueCreate, session: Session) -> RoutineIssueResponse:
+    def create_routine_issue(
+        self, data: RoutineIssueCreate, session: Session
+    ) -> RoutineIssueResponse:
         routine_issue: RoutineIssue = RoutineIssue(**data.model_dump())
         try:
             session.add(routine_issue)
@@ -31,9 +40,13 @@ class _RoutineIssueService:
             raise ConflictException(f"Error creating routine_issue: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error creating routine_issue: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error creating routine_issue: {e}"
+            )
 
-    def read_routine_issue(self, routine_issue_id: UUID, session: Session) -> RoutineIssueResponse:
+    def read_routine_issue(
+        self, routine_issue_id: UUID, session: Session
+    ) -> RoutineIssueResponse:
         routine_issue = self._get_routine_issue(routine_issue_id, session)
         return self.routine_issue_to_response(routine_issue)
 
@@ -51,7 +64,10 @@ class _RoutineIssueService:
 
         statement = statement.offset(offset).limit(limit)
         routine_issues = session.exec(statement).all()
-        return [self.routine_issue_to_response(routine_issue) for routine_issue in routine_issues]
+        return [
+            self.routine_issue_to_response(routine_issue)
+            for routine_issue in routine_issues
+        ]
 
     def update_routine_issue(
         self, routine_issue_id: UUID, data: RoutineIssueUpdate, session: Session
@@ -78,15 +94,21 @@ class _RoutineIssueService:
             raise ConflictException(f"Error updating routine_issue: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error updating routine_issue: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error updating routine_issue: {e}"
+            )
 
     def delete_routine_issue(self, routine_issue_id: UUID, session: Session) -> None:
         routine_issue = self._get_routine_issue(routine_issue_id, session)
         routine_issue.soft_delete()
         session.commit()
 
-    def _get_routine_issue(self, routine_issue_id: UUID, session: Session) -> RoutineIssue:
-        statement = select(RoutineIssue).where(RoutineIssue.id == routine_issue_id, RoutineIssue.deleted_at.is_(None))  # type: ignore
+    def _get_routine_issue(
+        self, routine_issue_id: UUID, session: Session
+    ) -> RoutineIssue:
+        statement = select(RoutineIssue).where(
+            RoutineIssue.id == routine_issue_id, RoutineIssue.deleted_at.is_(None)
+        )  # type: ignore
         routine_issue: RoutineIssue | None = session.exec(statement).first()
         if not routine_issue:
             raise NotFoundException("routine_issue not found")
@@ -97,4 +119,6 @@ def get_routine_issue_service() -> _RoutineIssueService:
     return _RoutineIssueService()
 
 
-RoutineIssueService = Annotated[_RoutineIssueService, Depends(get_routine_issue_service)]
+RoutineIssueService = Annotated[
+    _RoutineIssueService, Depends(get_routine_issue_service)
+]

@@ -6,7 +6,6 @@ from fastapi import Depends
 from contextlib import contextmanager
 
 
-
 class Database:
     """Database connection manager."""
 

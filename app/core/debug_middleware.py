@@ -1,4 +1,5 @@
 """Debug middleware for request/response logging and performance timing."""
+
 import time
 import json
 import os
@@ -30,39 +31,62 @@ class DebugMiddleware(BaseHTTPMiddleware):
     def _get_debug_settings(self) -> dict[str, Any]:
         """Get debug settings from cache or environment (non-blocking)."""
         current_time = time.time()
-        
+
         # Return cached settings if still valid
-        if (current_time - self._last_cache_update) < self._cache_ttl and self._settings_cache:
+        if (
+            current_time - self._last_cache_update
+        ) < self._cache_ttl and self._settings_cache:
             return self._settings_cache
-        
+
         # Default settings from environment variables (immediate, no DB)
         defaults = {
             "debug_mode": os.getenv("DEBUG_MODE", "false").lower() == "true",
-            "enable_request_logging": os.getenv("ENABLE_REQUEST_LOGGING", "false").lower() == "true",
-            "enable_sql_logging": os.getenv("ENABLE_SQL_LOGGING", "false").lower() == "true",
-            "enable_performance_headers": os.getenv("ENABLE_PERFORMANCE_HEADERS", "false").lower() == "true",
+            "enable_request_logging": os.getenv(
+                "ENABLE_REQUEST_LOGGING", "false"
+            ).lower()
+            == "true",
+            "enable_sql_logging": os.getenv("ENABLE_SQL_LOGGING", "false").lower()
+            == "true",
+            "enable_performance_headers": os.getenv(
+                "ENABLE_PERFORMANCE_HEADERS", "false"
+            ).lower()
+            == "true",
         }
-        
+
         # Only try DB lookup if we've succeeded before or haven't tried yet
         # This prevents repeated slow DB connection attempts
         if not self._db_available and self._last_cache_update > 0:
             return defaults
-            
+
         try:
             # Lazy imports to avoid circular dependency
             from app.database import Database
             from sqlmodel import Session
-            
+
             if Database.connection:
                 from app.services.system_settings import get_system_settings_service
-                
+
                 with Session(Database.connection) as session:
                     service = get_system_settings_service()
                     self._settings_cache = {
-                        "debug_mode": service.get_setting("debug_mode", session, defaults["debug_mode"]),
-                        "enable_request_logging": service.get_setting("enable_request_logging", session, defaults["enable_request_logging"]),
-                        "enable_sql_logging": service.get_setting("enable_sql_logging", session, defaults["enable_sql_logging"]),
-                        "enable_performance_headers": service.get_setting("enable_performance_headers", session, defaults["enable_performance_headers"]),
+                        "debug_mode": service.get_setting(
+                            "debug_mode", session, defaults["debug_mode"]
+                        ),
+                        "enable_request_logging": service.get_setting(
+                            "enable_request_logging",
+                            session,
+                            defaults["enable_request_logging"],
+                        ),
+                        "enable_sql_logging": service.get_setting(
+                            "enable_sql_logging",
+                            session,
+                            defaults["enable_sql_logging"],
+                        ),
+                        "enable_performance_headers": service.get_setting(
+                            "enable_performance_headers",
+                            session,
+                            defaults["enable_performance_headers"],
+                        ),
                     }
                     self._last_cache_update = current_time
                     self._db_available = True
@@ -70,7 +94,7 @@ class DebugMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             LOG.debug(f"Could not load debug settings from DB: {e}")
             self._db_available = False
-        
+
         self._last_cache_update = current_time
         self._settings_cache = defaults
         return defaults
@@ -78,38 +102,47 @@ class DebugMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         """Process the request with debug logging and timing."""
         # Skip debug processing for auth and settings endpoints to prevent delays
-        skip_paths = ["/api/v1/auth/", "/api/v1/settings/debug/", "/docs", "/openapi.json", "/redoc", "/health"]
+        skip_paths = [
+            "/api/v1/auth/",
+            "/api/v1/settings/debug/",
+            "/docs",
+            "/openapi.json",
+            "/redoc",
+            "/health",
+        ]
         if any(request.url.path.startswith(path) for path in skip_paths):
             return await call_next(request)
 
         # Run the synchronous DB lookup in a thread pool to avoid blocking the event loop
-        settings = await asyncio.get_event_loop().run_in_executor(None, self._get_debug_settings)
-        
+        settings = await asyncio.get_event_loop().run_in_executor(
+            None, self._get_debug_settings
+        )
+
         # Start timing
         start_time = time.perf_counter()
-        
+
         request_logging_enabled = self._is_request_logging_enabled(settings)
         performance_headers_enabled = self._is_performance_headers_enabled(settings)
 
         # Log request if debug mode and request logging are enabled.
         if request_logging_enabled:
             await self._log_request(request)
-        
+
         # Process the request
         response = await call_next(request)
-        
+
         # Calculate processing time
         process_time = (time.perf_counter() - start_time) * 1000  # Convert to ms
-        
+
         # Add performance header if enabled
         if performance_headers_enabled:
             response.headers["X-Response-Time"] = f"{process_time:.2f}ms"
             response.headers["X-Debug-Mode"] = "enabled"
-        
+
         # Log response if debug mode and request logging are enabled.
         if request_logging_enabled:
             self._log_response(request, response, process_time)
-        
+
         return response
 
     async def _log_request(self, request: Request) -> None:
@@ -118,7 +151,7 @@ class DebugMiddleware(BaseHTTPMiddleware):
         skip_paths = ["/docs", "/openapi.json", "/redoc", "/favicon.ico", "/health"]
         if any(request.url.path.startswith(path) for path in skip_paths):
             return
-        
+
         log_data = {
             "type": "REQUEST",
             "method": request.method,
@@ -127,7 +160,7 @@ class DebugMiddleware(BaseHTTPMiddleware):
             "client_ip": request.client.host if request.client else "unknown",
             "user_agent": request.headers.get("user-agent", "unknown"),
         }
-        
+
         # Log request body for POST/PATCH/PUT (be careful with sensitive data)
         if request.method in ["POST", "PATCH", "PUT"]:
             try:
@@ -141,21 +174,23 @@ class DebugMiddleware(BaseHTTPMiddleware):
                         log_data["body"] = body_json
                     except json.JSONDecodeError:
                         log_data["body"] = f"<binary data: {len(body)} bytes>"
-                    
+
                     # Re-create the request body for downstream handlers
                     # Note: This works with Starlette's receive pattern
             except Exception as e:
                 log_data["body_error"] = str(e)
-        
+
         LOG.debug(f"[DEBUG] {json.dumps(log_data, indent=2, default=str)}")
 
-    def _log_response(self, request: Request, response: Response, process_time: float) -> None:
+    def _log_response(
+        self, request: Request, response: Response, process_time: float
+    ) -> None:
         """Log outgoing response details."""
         # Skip logging for certain paths
         skip_paths = ["/docs", "/openapi.json", "/redoc", "/favicon.ico", "/health"]
         if any(request.url.path.startswith(path) for path in skip_paths):
             return
-        
+
         log_data = {
             "type": "RESPONSE",
             "method": request.method,
@@ -163,7 +198,7 @@ class DebugMiddleware(BaseHTTPMiddleware):
             "status_code": response.status_code,
             "process_time_ms": f"{process_time:.2f}",
         }
-        
+
         # Color-code by status
         if response.status_code >= 500:
             LOG.error(f"[DEBUG] {json.dumps(log_data, default=str)}")
@@ -175,14 +210,24 @@ class DebugMiddleware(BaseHTTPMiddleware):
     def _redact_sensitive(self, data: dict) -> dict:
         """Redact sensitive fields from logged data."""
         sensitive_fields = [
-            "password", "password_hash", "token", "access_token", "refresh_token",
-            "secret", "api_key", "authorization", "cookie", "session", "jwt",
-            "credential", "signed_url"
+            "password",
+            "password_hash",
+            "token",
+            "access_token",
+            "refresh_token",
+            "secret",
+            "api_key",
+            "authorization",
+            "cookie",
+            "session",
+            "jwt",
+            "credential",
+            "signed_url",
         ]
-        
+
         if not isinstance(data, dict):
             return data
-        
+
         redacted = {}
         for key, value in data.items():
             key_lower = key.lower()
@@ -197,16 +242,20 @@ class DebugMiddleware(BaseHTTPMiddleware):
                 ]
             else:
                 redacted[key] = value
-        
+
         return redacted
 
     @staticmethod
     def _is_request_logging_enabled(settings: dict[str, Any]) -> bool:
-        return bool(settings.get("debug_mode")) and bool(settings.get("enable_request_logging"))
+        return bool(settings.get("debug_mode")) and bool(
+            settings.get("enable_request_logging")
+        )
 
     @staticmethod
     def _is_performance_headers_enabled(settings: dict[str, Any]) -> bool:
-        return bool(settings.get("debug_mode")) and bool(settings.get("enable_performance_headers"))
+        return bool(settings.get("debug_mode")) and bool(
+            settings.get("enable_performance_headers")
+        )
 
 
 def invalidate_debug_cache() -> None:

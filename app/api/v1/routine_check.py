@@ -12,9 +12,7 @@ router = APIRouter(prefix="/routine-checks", tags=["Routine Checks"])
 
 @router.post("/", response_model=RoutineCheckResponse, status_code=201)
 def create_routine_check(
-    payload: RoutineCheckCreate,
-    service: RoutineCheckService,
-    session: SessionDep
+    payload: RoutineCheckCreate, service: RoutineCheckService, session: SessionDep
 ) -> RoutineCheckResponse:
     """"""
     return service.create_routine_check(payload, session)
@@ -26,7 +24,7 @@ def read_routine_checks(
     session: SessionDep,
     status: RoutineCheckStatus | None = Query(None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[RoutineCheckResponse]:
     """"""
     return service.read_routine_checks(session, status, offset, limit)
@@ -34,15 +32,15 @@ def read_routine_checks(
 
 @router.get("/{routine_check_id}", response_model=RoutineCheckResponse, status_code=200)
 def read_routine_check(
-    routine_check_id: UUID,
-    service: RoutineCheckService,
-    session: SessionDep
+    routine_check_id: UUID, service: RoutineCheckService, session: SessionDep
 ) -> RoutineCheckResponse:
     """"""
     return service.read_routine_check(routine_check_id, session)
 
 
-@router.patch("/{routine_check_id}", response_model=RoutineCheckResponse, status_code=200)
+@router.patch(
+    "/{routine_check_id}", response_model=RoutineCheckResponse, status_code=200
+)
 def update_routine_check(
     routine_check_id: UUID,
     payload: RoutineCheckUpdate,
@@ -55,9 +53,7 @@ def update_routine_check(
 
 @router.delete("/{routine_check_id}", status_code=204)
 def delete_routine_check(
-    routine_check_id: UUID,
-    service: RoutineCheckService,
-    session: SessionDep
+    routine_check_id: UUID, service: RoutineCheckService, session: SessionDep
 ) -> None:
     """"""
     service.delete_routine_check(routine_check_id, session)

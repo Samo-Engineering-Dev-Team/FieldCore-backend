@@ -36,12 +36,20 @@ def get_sla_status_for_incident(incident: Incident) -> dict:
     """
     now = utcnow()
     severity = str(incident.severity) if incident.severity else "minor"
-    start    = incident.start_time or incident.created_at
+    start = incident.start_time or incident.created_at
     deadlines = calculate_sla_deadlines(severity, start)
 
-    respond_status      = get_milestone_status(deadlines["respond_deadline"],      getattr(incident, "responded_at", None),            now)
-    onsite_status       = get_milestone_status(deadlines["onsite_deadline"],        getattr(incident, "arrived_on_site_at", None),      now)
-    temp_restore_status = get_milestone_status(deadlines["temp_restore_deadline"],  getattr(incident, "temporarily_restored_at", None), now)
+    respond_status = get_milestone_status(
+        deadlines["respond_deadline"], getattr(incident, "responded_at", None), now
+    )
+    onsite_status = get_milestone_status(
+        deadlines["onsite_deadline"], getattr(incident, "arrived_on_site_at", None), now
+    )
+    temp_restore_status = get_milestone_status(
+        deadlines["temp_restore_deadline"],
+        getattr(incident, "temporarily_restored_at", None),
+        now,
+    )
 
     statuses = [
         respond_status["status"],
@@ -59,10 +67,10 @@ def get_sla_status_for_incident(incident: Incident) -> dict:
         overall = "ok"
 
     return {
-        "severity":    severity,
-        "overall":     overall,
-        "respond":     respond_status,
-        "onsite":      onsite_status,
+        "severity": severity,
+        "overall": overall,
+        "respond": respond_status,
+        "onsite": onsite_status,
         "temp_restore": temp_restore_status,
     }
 
@@ -81,13 +89,14 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
     import threading
 
     notification_service = _NotificationService()
-    now      = utcnow()
+    now = utcnow()
     warnings: list[dict] = []
     breaches: list[dict] = []
 
     # Pre-fetch NOC and manager user IDs to notify on breaches
     noc_user_ids = [
-        u.id for u in session.exec(
+        u.id
+        for u in session.exec(
             select(User).where(
                 User.role.in_(["noc", "manager"]),  # type: ignore
                 User.deleted_at.is_(None),
@@ -105,19 +114,29 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
 
     for incident in active_incidents:
         severity = str(incident.severity) if incident.severity else "minor"
-        start    = incident.start_time or incident.created_at
+        start = incident.start_time or incident.created_at
         deadlines = calculate_sla_deadlines(severity, start)
 
         site_name = incident.site.name if incident.site else "Unknown Site"
-        ref_no    = incident.ref_no or incident.seacom_ref or None
-        tech_user_id = (
-            incident.technician.user_id if incident.technician else None
-        )
+        ref_no = incident.ref_no or incident.seacom_ref or None
+        tech_user_id = incident.technician.user_id if incident.technician else None
 
         milestone_checks = [
-            ("respond",      deadlines["respond_deadline"],      getattr(incident, "responded_at", None)),
-            ("onsite",       deadlines["onsite_deadline"],        getattr(incident, "arrived_on_site_at", None)),
-            ("temp_restore", deadlines["temp_restore_deadline"],  getattr(incident, "temporarily_restored_at", None)),
+            (
+                "respond",
+                deadlines["respond_deadline"],
+                getattr(incident, "responded_at", None),
+            ),
+            (
+                "onsite",
+                deadlines["onsite_deadline"],
+                getattr(incident, "arrived_on_site_at", None),
+            ),
+            (
+                "temp_restore",
+                deadlines["temp_restore_deadline"],
+                getattr(incident, "temporarily_restored_at", None),
+            ),
         ]
 
         for milestone_name, deadline, actual_time in milestone_checks:
@@ -138,15 +157,15 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                         else f"{minutes_remaining // 60}h {minutes_remaining % 60}m"
                     )
                     event = {
-                        "incident_id":            str(incident.id),
-                        "ref_no":                 ref_no,
-                        "site_name":              site_name,
-                        "severity":               severity,
-                        "milestone":              milestone_name,
-                        "deadline":               deadline.isoformat(),
+                        "incident_id": str(incident.id),
+                        "ref_no": ref_no,
+                        "site_name": site_name,
+                        "severity": severity,
+                        "milestone": milestone_name,
+                        "deadline": deadline.isoformat(),
                         "time_remaining_minutes": minutes_remaining,
-                        "event_type":             "sla_warning",
-                        "timestamp":              now.isoformat(),
+                        "event_type": "sla_warning",
+                        "timestamp": now.isoformat(),
                     }
                     warnings.append(event)
 
@@ -155,8 +174,11 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                         notification_service.create_notification_from_template(
                             user_id=tech_user_id,
                             template=NotificationTemplates.sla_warning(
-                                site_name, severity, time_str,
-                                milestone=milestone_name, ref_no=ref_no,
+                                site_name,
+                                severity,
+                                time_str,
+                                milestone=milestone_name,
+                                ref_no=ref_no,
                             ),
                             session=session,
                         )
@@ -166,8 +188,11 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                             notification_service.create_notification_from_template(
                                 user_id=noc_id,
                                 template=NotificationTemplates.sla_warning(
-                                    site_name, severity, time_str,
-                                    milestone=milestone_name, ref_no=ref_no,
+                                    site_name,
+                                    severity,
+                                    time_str,
+                                    milestone=milestone_name,
+                                    ref_no=ref_no,
                                 ),
                                 session=session,
                             )
@@ -183,6 +208,7 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
 
                     def _send_warning(data: dict = event) -> None:
                         import asyncio
+
                         asyncio.run(WebhookService.send_webhook("sla_warning", data))
 
                     t = threading.Thread(target=_send_warning)
@@ -199,21 +225,24 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                     else f"{total_minutes_overdue // 60}h {total_minutes_overdue % 60}m"
                 )
                 event = {
-                    "incident_id":  str(incident.id),
-                    "ref_no":       ref_no,
-                    "site_name":    site_name,
-                    "severity":     severity,
-                    "milestone":    milestone_name,
-                    "deadline":     deadline.isoformat(),
+                    "incident_id": str(incident.id),
+                    "ref_no": ref_no,
+                    "site_name": site_name,
+                    "severity": severity,
+                    "milestone": milestone_name,
+                    "deadline": deadline.isoformat(),
                     "time_overdue": str(time_overdue_delta),
-                    "event_type":   "sla_breach",
-                    "timestamp":    now.isoformat(),
+                    "event_type": "sla_breach",
+                    "timestamp": now.isoformat(),
                 }
                 breaches.append(event)
 
                 breach_template = NotificationTemplates.sla_breached(
-                    site_name, severity,
-                    milestone=milestone_name, ref_no=ref_no, time_overdue=overdue_str,
+                    site_name,
+                    severity,
+                    milestone=milestone_name,
+                    ref_no=ref_no,
+                    time_overdue=overdue_str,
                 )
 
                 # Notify the technician
@@ -243,6 +272,7 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
 
                 def _send_breach(data: dict = event) -> None:
                     import asyncio
+
                     asyncio.run(WebhookService.send_webhook("sla_breach", data))
 
                 t = threading.Thread(target=_send_breach)

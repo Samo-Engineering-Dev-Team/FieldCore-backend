@@ -8,7 +8,16 @@ from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
 
 from app.utils.enums import TaskType, TaskStatus, ReportType, ReportStatus, UserRole
-from app.models import Task, TaskCreate, TaskUpdate, TaskResponse, Site, Technician, User, Report
+from app.models import (
+    Task,
+    TaskCreate,
+    TaskUpdate,
+    TaskResponse,
+    Site,
+    Technician,
+    User,
+    Report,
+)
 from app.models.auth import TokenData
 from app.exceptions.http import (
     BadRequestException,
@@ -55,7 +64,11 @@ class _TaskService:
         coords = task.site.get_coordinates() if task.site else None
         # Count attachments correctly: attachments is {"files": [...]} not a flat list
         attachments_dict: dict = task.attachments or {}
-        num_attachments = len(attachments_dict.get("files", [])) if isinstance(attachments_dict, dict) else 0
+        num_attachments = (
+            len(attachments_dict.get("files", []))
+            if isinstance(attachments_dict, dict)
+            else 0
+        )
         return TaskResponse(
             **task_data,
             site_name=task.site.name,
@@ -84,7 +97,9 @@ class _TaskService:
             return ReportType.ROUTINE_DRIVE
         return ReportType.DIESEL
 
-    def _get_active_report_for_task(self, task_id: UUID, session: Session) -> Report | None:
+    def _get_active_report_for_task(
+        self, task_id: UUID, session: Session
+    ) -> Report | None:
         statement = (
             select(Report)
             .where(
@@ -111,7 +126,9 @@ class _TaskService:
 
         technician_id = get_technician_id_for_user(current_user.user_id, session)
         if task.technician_id != technician_id:
-            raise ForbiddenException(f"You do not have permission to {action} this task.")
+            raise ForbiddenException(
+                f"You do not have permission to {action} this task."
+            )
 
     def _ensure_auto_report_for_task(
         self,
@@ -141,7 +158,9 @@ class _TaskService:
                 "task_type": str(task.task_type),
                 "report_type_resolved": str(resolved_report_type),
                 "task_status_at_generation": str(task.status),
-                "task_completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                "task_completed_at": task.completed_at.isoformat()
+                if task.completed_at
+                else None,
             },
         )
 
@@ -158,18 +177,24 @@ class _TaskService:
                 return existing_after_race, False
             raise
 
-    def create_task(self, data: TaskCreate, session: Session, current_user: TokenData) -> TaskResponse:
+    def create_task(
+        self, data: TaskCreate, session: Session, current_user: TokenData
+    ) -> TaskResponse:
         if not is_management(current_user):
             raise ForbiddenException("Only NOC, managers, or admins can create tasks.")
 
         # Handle site
-        statement = select(Site).where(Site.id == data.site_id, Site.deleted_at.is_(None)) # type: ignore
+        statement = select(Site).where(
+            Site.id == data.site_id, Site.deleted_at.is_(None)
+        )  # type: ignore
         site: Site | None = session.exec(statement).first()
         if not site:
             raise NotFoundException("site not found")
 
         # Handle technician
-        statement = select(Technician).where(Technician.id == data.technician_id, Technician.deleted_at.is_(None)) # type: ignore
+        statement = select(Technician).where(
+            Technician.id == data.technician_id, Technician.deleted_at.is_(None)
+        )  # type: ignore
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician not found")
@@ -194,19 +219,27 @@ class _TaskService:
             session.add(task)
             session.commit()
             session.refresh(task)
-            
+
             # Notify the technician only when someone else assigned the task.
             # Skip when the technician created the task themselves (e.g. via an access request).
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import (
+                _NotificationService,
+                NotificationTemplates,
+            )
+
             notification_service = _NotificationService()
-            is_self_assigned = current_user and current_user.user_id == technician.user_id
+            is_self_assigned = (
+                current_user and current_user.user_id == technician.user_id
+            )
             if not is_self_assigned:
                 notification_service.create_notification_from_template(
                     user_id=technician.user_id,
-                    template=NotificationTemplates.task_assigned(site.name, data.description),
+                    template=NotificationTemplates.task_assigned(
+                        site.name, data.description
+                    ),
                     session=session,
                 )
-            
+
             return self.task_to_response(task, session)
         except IntegrityError as e:
             session.rollback()
@@ -215,7 +248,9 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating task: {e}")
 
-    def read_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
+    def read_task(
+        self, task_id: UUID, session: Session, current_user: TokenData
+    ) -> TaskResponse:
         task = self._get_task(task_id, session)
         self._assert_task_owner_or_management(task, session, current_user, "view")
         return self.task_to_response(task, session)
@@ -284,7 +319,9 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error updating task: {e}")
 
-    def delete_task(self, task_id: UUID, session: Session, current_user: TokenData) -> None:
+    def delete_task(
+        self, task_id: UUID, session: Session, current_user: TokenData
+    ) -> None:
         if not is_management(current_user):
             raise ForbiddenException("Only NOC, managers, or admins can delete tasks.")
 
@@ -292,20 +329,30 @@ class _TaskService:
 
         # Notify the assigned technician before deleting so they don't travel to the site.
         try:
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import (
+                _NotificationService,
+                NotificationTemplates,
+            )
+
             site_name = task.site.name if task.site else "Unknown Site"
             _NotificationService().create_notification_from_template(
                 user_id=task.technician.user_id,
-                template=NotificationTemplates.task_cancelled(site_name, task.seacom_ref),
+                template=NotificationTemplates.task_cancelled(
+                    site_name, task.seacom_ref
+                ),
                 session=session,
             )
         except Exception as exc:
-            LOG.warning("Could not send cancellation notification for task {}: {}", task_id, exc)
+            LOG.warning(
+                "Could not send cancellation notification for task {}: {}", task_id, exc
+            )
 
         task.soft_delete()
         session.commit()
-    
-    def start_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
+
+    def start_task(
+        self, task_id: UUID, session: Session, current_user: TokenData
+    ) -> TaskResponse:
         """Start a task, ensure auto-report exists (skipped for RHS), and notify NOC operators."""
         task = self._get_task(task_id, session)
         self._assert_task_owner_or_management(task, session, current_user, "start")
@@ -323,23 +370,28 @@ class _TaskService:
                     source="task_start",
                 )
             report = self._get_active_report_for_task(task.id, session)
-            
+
             # Notify NOC operators that task has started
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import (
+                _NotificationService,
+                NotificationTemplates,
+            )
+
             notification_service = _NotificationService()
-            
+
             noc_users = session.exec(
                 select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
+                    and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
                 )
             ).all()
-            
+
             site_name = task.site.name if task.site else "Unknown Site"
-            tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
-            
+            tech_name = (
+                f"{task.technician.user.name} {task.technician.user.surname}"
+                if task.technician
+                else "Unknown"
+            )
+
             notification_service.create_notifications_from_template(
                 user_ids=(noc_user.id for noc_user in noc_users),
                 template=NotificationTemplates.task_started(tech_name, site_name),
@@ -349,7 +401,9 @@ class _TaskService:
             if report_created and task.technician and task.technician.user_id:
                 notification_service.create_notification_from_template(
                     user_id=task.technician.user_id,
-                    template=NotificationTemplates.report_auto_created(report.report_type, site_name),
+                    template=NotificationTemplates.report_auto_created(
+                        report.report_type, site_name
+                    ),
                     session=session,
                 )
 
@@ -360,9 +414,11 @@ class _TaskService:
             raise ConflictException(f"Error starting task: {e.orig}")
         except Exception as e:
             session.rollback()
-            LOG.exception("Unexpected error starting task. task_id={} error={}", task_id, e)
+            LOG.exception(
+                "Unexpected error starting task. task_id={} error={}", task_id, e
+            )
             raise InternalServerErrorException(f"Unexpected error starting task: {e}")
-    
+
     def submit_feedback(
         self,
         task_id: UUID,
@@ -379,34 +435,52 @@ class _TaskService:
             session.commit()
             session.refresh(task)
 
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import (
+                _NotificationService,
+                NotificationTemplates,
+            )
+
             notification_service = _NotificationService()
             noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+                select(User).where(
+                    and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
+                )
             ).all()
             site_name = task.site.name if task.site else "Unknown Site"
-            tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
+            tech_name = (
+                f"{task.technician.user.name} {task.technician.user.surname}"
+                if task.technician
+                else "Unknown"
+            )
             ref_no = task.seacom_ref or None
             notification_service.create_notifications_from_template(
                 user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.task_completed(tech_name, site_name, ref_no=ref_no),
+                template=NotificationTemplates.task_completed(
+                    tech_name, site_name, ref_no=ref_no
+                ),
                 session=session,
             )
             from app.services.email import EmailService
             from app.utils.funcs import utcnow
+
             EmailService.send_task_completed(
                 ref_no=ref_no or "N/A",
                 site_name=site_name,
                 technician_name=tech_name,
-                task_type="RHS — " + (feedback[:80] + "…" if len(feedback) > 80 else feedback),
+                task_type="RHS — "
+                + (feedback[:80] + "…" if len(feedback) > 80 else feedback),
                 completed_at=utcnow().strftime("%d %b %Y %H:%M UTC"),
             )
             return self.task_to_response(task, session)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error submitting feedback: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error submitting feedback: {e}"
+            )
 
-    def complete_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
+    def complete_task(
+        self, task_id: UUID, session: Session, current_user: TokenData
+    ) -> TaskResponse:
         """Complete a task, self-heal missing report if needed, and notify NOC operators."""
         task = self._get_task(task_id, session)
         self._assert_task_owner_or_management(task, session, current_user, "complete")
@@ -424,33 +498,41 @@ class _TaskService:
                     session=session,
                     source="task_complete_self_heal",
                 )
-            
+
             # Notify NOC operators that task is completed
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import (
+                _NotificationService,
+                NotificationTemplates,
+            )
+
             notification_service = _NotificationService()
-            
+
             noc_users = session.exec(
                 select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
+                    and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
                 )
             ).all()
-            
+
             site_name = task.site.name if task.site else "Unknown Site"
-            tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
-            
+            tech_name = (
+                f"{task.technician.user.name} {task.technician.user.surname}"
+                if task.technician
+                else "Unknown"
+            )
+
             ref_no = task.seacom_ref or None
             notification_service.create_notifications_from_template(
                 user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.task_completed(tech_name, site_name, ref_no=ref_no),
+                template=NotificationTemplates.task_completed(
+                    tech_name, site_name, ref_no=ref_no
+                ),
                 session=session,
             )
 
             # Email NOC distribution list
             from app.services.email import EmailService
             from app.utils.funcs import utcnow
+
             EmailService.send_task_completed(
                 ref_no=ref_no or "N/A",
                 site_name=site_name,
@@ -460,10 +542,17 @@ class _TaskService:
             )
 
             # Self-heal path notification: report was missing and auto-created at completion.
-            if report_created and report and task.technician and task.technician.user_id:
+            if (
+                report_created
+                and report
+                and task.technician
+                and task.technician.user_id
+            ):
                 notification_service.create_notification_from_template(
                     user_id=task.technician.user_id,
-                    template=NotificationTemplates.report_auto_created(report.report_type, site_name),
+                    template=NotificationTemplates.report_auto_created(
+                        report.report_type, site_name
+                    ),
                     session=session,
                 )
 
@@ -474,10 +563,14 @@ class _TaskService:
             raise ConflictException(f"Error completing task: {e.orig}")
         except Exception as e:
             session.rollback()
-            LOG.exception("Unexpected error completing task. task_id={} error={}", task_id, e)
+            LOG.exception(
+                "Unexpected error completing task. task_id={} error={}", task_id, e
+            )
             raise InternalServerErrorException(f"Unexpected error completing task: {e}")
-    
-    def fail_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
+
+    def fail_task(
+        self, task_id: UUID, session: Session, current_user: TokenData
+    ) -> TaskResponse:
         """Mark a task as failed and notify NOC operators."""
         task = self._get_task(task_id, session)
         self._assert_task_owner_or_management(task, session, current_user, "fail")
@@ -485,29 +578,34 @@ class _TaskService:
         try:
             session.commit()
             session.refresh(task)
-            
+
             # Notify NOC operators that task has failed
-            from app.services.notification import _NotificationService, NotificationTemplates
+            from app.services.notification import (
+                _NotificationService,
+                NotificationTemplates,
+            )
+
             notification_service = _NotificationService()
-            
+
             noc_users = session.exec(
                 select(User).where(
-                    and_(
-                        User.role == UserRole.NOC,
-                        User.deleted_at.is_(None)
-                    )
+                    and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
                 )
             ).all()
-            
+
             site_name = task.site.name if task.site else "Unknown Site"
-            tech_name = f"{task.technician.user.name} {task.technician.user.surname}" if task.technician else "Unknown"
-            
+            tech_name = (
+                f"{task.technician.user.name} {task.technician.user.surname}"
+                if task.technician
+                else "Unknown"
+            )
+
             notification_service.create_notifications_from_template(
                 user_ids=(noc_user.id for noc_user in noc_users),
                 template=NotificationTemplates.task_failed(tech_name, site_name),
                 session=session,
             )
-            
+
             return self.task_to_response(task, session)
         except Exception as e:
             session.rollback()
@@ -536,7 +634,9 @@ class _TaskService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error holding task: {e}")
 
-    def resume_task(self, task_id: UUID, session: Session, current_user: TokenData) -> TaskResponse:
+    def resume_task(
+        self, task_id: UUID, session: Session, current_user: TokenData
+    ) -> TaskResponse:
         """Resume an on-hold task, restoring it to started status."""
         task = self._get_task(task_id, session)
         self._assert_task_owner_or_management(task, session, current_user, "resume")

@@ -52,7 +52,9 @@ def list_schedules(
     return service.list_all(session, site_id, technician_id)
 
 
-@router.get("/{schedule_id}", response_model=MaintenanceScheduleResponse, status_code=200)
+@router.get(
+    "/{schedule_id}", response_model=MaintenanceScheduleResponse, status_code=200
+)
 def get_schedule(
     schedule_id: UUID,
     service: MaintenanceScheduleService,
@@ -62,7 +64,9 @@ def get_schedule(
     return service.get(schedule_id, session)
 
 
-@router.patch("/{schedule_id}", response_model=MaintenanceScheduleResponse, status_code=200)
+@router.patch(
+    "/{schedule_id}", response_model=MaintenanceScheduleResponse, status_code=200
+)
 def update_schedule(
     schedule_id: UUID,
     payload: MaintenanceScheduleUpdate,
@@ -98,10 +102,15 @@ def check_weekly_tasks(
     Call this from a cron job once per day (e.g., 08:00 SAST).
     """
     from app.services.weekly_checker import check_weekly_scheduled_tasks
+
     return check_weekly_scheduled_tasks(session)
 
 
-@router.patch("/{schedule_id}/mark-done", response_model=MaintenanceScheduleResponse, status_code=200)
+@router.patch(
+    "/{schedule_id}/mark-done",
+    response_model=MaintenanceScheduleResponse,
+    status_code=200,
+)
 def mark_schedule_done(
     schedule_id: UUID,
     service: MaintenanceScheduleService,
@@ -114,11 +123,15 @@ def mark_schedule_done(
     """
     from app.utils.funcs import utcnow
     from datetime import timedelta
-    from app.models.maintenance_schedule import MaintenanceSchedule, MaintenanceScheduleUpdate
+    from app.models.maintenance_schedule import (
+        MaintenanceSchedule,
+        MaintenanceScheduleUpdate,
+    )
 
     sched = session.get(MaintenanceSchedule, schedule_id)
     if not sched or sched.deleted_at:
         from app.exceptions.http import NotFoundException
+
         raise NotFoundException("maintenance schedule not found")
 
     now = utcnow()

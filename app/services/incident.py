@@ -1,28 +1,38 @@
+from typing import Annotated, List
 from uuid import UUID
+
 from fastapi import Depends
-from typing import List, Annotated
-from sqlmodel import Session, select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_
-from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
 
-from app.utils.enums import IncidentStatus, UserRole
-from app.utils.funcs import utcnow
-from app.models import Incident, IncidentCreate, IncidentUpdate, IncidentResponse, Site, Technician, User
-from app.models.auth import TokenData
+# from sqlalchemy import and_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
+from sqlmodel import Session, select
+
 from app.exceptions.http import (
     ConflictException,
     ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
+from app.models import (
+    Incident,
+    IncidentCreate,
+    IncidentResponse,
+    IncidentUpdate,
+    Site,
+    Technician,
+    User,
+)
+from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
-
+from app.utils.enums import IncidentStatus, UserRole
+from app.utils.funcs import utcnow
 
 # ── Background notification helpers ───────────────────────────────────────────
 # These run AFTER the HTTP response is sent (via FastAPI BackgroundTasks) so
 # slow DB round-trips never block or time-out the client.
+
 
 def _bg_notify_incident_created(
     technician_id: UUID,
@@ -34,13 +44,19 @@ def _bg_notify_incident_created(
     """Background task: notify technician + NOC when a new incident is assigned."""
     try:
         from app.database import Database
-        from app.services.notification import _NotificationService, NotificationTemplates
+        from app.services.notification import (
+            NotificationTemplates,
+            _NotificationService,
+        )
+
         with Database.session() as session:
             technician = session.get(Technician, technician_id)
             if not technician:
                 return
             notification_service = _NotificationService()
-            is_self_assigned = assigning_user_id == technician.user_id if assigning_user_id else False
+            is_self_assigned = (
+                assigning_user_id == technician.user_id if assigning_user_id else False
+            )
             if not is_self_assigned:
                 notification_service.create_notification_from_template(
                     user_id=technician.user_id,
@@ -51,7 +67,7 @@ def _bg_notify_incident_created(
                     session=session,
                 )
             noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+                select(User).where(User.role == UserRole.NOC, User.deleted_at.is_(None))  # type: ignore
             ).all()
             notification_service.create_notifications_from_template(
                 user_ids=[u.id for u in noc_users],
@@ -70,15 +86,21 @@ def _bg_notify_incident_started(site_name: str, tech_name: str) -> None:
     """Background task: notify NOC when a technician starts working on an incident."""
     try:
         from app.database import Database
-        from app.services.notification import _NotificationService, NotificationTemplates
+        from app.services.notification import (
+            NotificationTemplates,
+            _NotificationService,
+        )
+
         with Database.session() as session:
             notification_service = _NotificationService()
             noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+                select(User).where(User.role == UserRole.NOC, User.deleted_at.is_(None))  # type: ignore
             ).all()
             notification_service.create_notifications_from_template(
                 user_ids=[u.id for u in noc_users],
-                template=NotificationTemplates.incident_in_progress(tech_name, site_name),
+                template=NotificationTemplates.incident_in_progress(
+                    tech_name, site_name
+                ),
                 session=session,
             )
     except Exception as e:
@@ -95,15 +117,24 @@ def _bg_notify_incident_resolved(
     """Background task: notify NOC + send email when an incident is resolved."""
     try:
         from app.database import Database
-        from app.services.notification import _NotificationService, NotificationTemplates
+        from app.services.notification import (
+            NotificationTemplates,
+            _NotificationService,
+        )
+
         with Database.session() as session:
             notification_service = _NotificationService()
             noc_users = session.exec(
-                select(User).where(and_(User.role == UserRole.NOC, User.deleted_at.is_(None)))
+                select(User).where(
+                    User.role == UserRole.NOC,
+                    User.deleted_at.is_(None),  # type: ignore
+                )
             ).all()
             notification_service.create_notifications_from_template(
                 user_ids=[u.id for u in noc_users],
-                template=NotificationTemplates.incident_resolved(tech_name, site_name, ref_no=ref_no),
+                template=NotificationTemplates.incident_resolved(
+                    tech_name, site_name, ref_no=ref_no
+                ),
                 session=session,
             )
     except Exception as e:
@@ -112,6 +143,7 @@ def _bg_notify_incident_resolved(
     try:
         from app.services.email import EmailService
         from app.utils.funcs import utcnow as _utcnow
+
         EmailService.send_incident_resolved(
             ref_no=ref_no or "N/A",
             site_name=site_name,
@@ -137,13 +169,17 @@ class _IncidentService:
 
         technician_id = get_technician_id_for_user(current_user.user_id, session)
         if incident.technician_id != technician_id:
-            raise ForbiddenException(f"You do not have permission to {action} this incident.")
+            raise ForbiddenException(
+                f"You do not have permission to {action} this incident."
+            )
 
     def incident_to_response(self, incident: Incident) -> IncidentResponse:
         user = incident.technician.user
         # Calculate num_attachments - attachments can be {files: [...]} or {}
         attachments = incident.attachments or {}
-        num_attachments = len(attachments.get("files", [])) if isinstance(attachments, dict) else 0
+        num_attachments = (
+            len(attachments.get("files", [])) if isinstance(attachments, dict) else 0
+        )
 
         # Get client info
         client_name = ""
@@ -166,18 +202,28 @@ class _IncidentService:
             num_attachments=num_attachments,
         )
 
-    def create_incident(self, data: IncidentCreate, session: Session, current_user: TokenData) -> IncidentResponse:
+    def create_incident(
+        self, data: IncidentCreate, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         if not is_management(current_user):
-            raise ForbiddenException("Only NOC, managers, or admins can create incidents.")
+            raise ForbiddenException(
+                "Only NOC, managers, or admins can create incidents."
+            )
 
         # Handle site
-        statement = select(Site).where(Site.id == data.site_id, Site.deleted_at.is_(None)) # type: ignore
+        statement = select(Site).where(
+            Site.id == data.site_id,
+            Site.deleted_at.is_(None),  # type: ignore
+        )
         site: Site | None = session.exec(statement).first()
         if not site:
             raise NotFoundException("site not found")
 
         # Handle technician
-        statement = select(Technician).where(Technician.id == data.technician_id, Technician.deleted_at.is_(None)) # type: ignore
+        statement = select(Technician).where(
+            Technician.id == data.technician_id,
+            Technician.deleted_at.is_(None),  # type: ignore
+        )
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician not found")
@@ -217,11 +263,17 @@ class _IncidentService:
             raise ConflictException(f"Error creating incident: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error creating incident: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error creating incident: {e}"
+            )
 
-    def read_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+    def read_incident(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "view")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "view"
+        )
         return self.incident_to_response(incident)
 
     def read_incidents(
@@ -267,7 +319,9 @@ class _IncidentService:
         current_user: TokenData,
     ) -> IncidentResponse:
         if not is_management(current_user):
-            raise ForbiddenException("Only NOC, managers, or admins can update incidents.")
+            raise ForbiddenException(
+                "Only NOC, managers, or admins can update incidents."
+            )
 
         incident = self._get_incident(incident_id, session)
         update_data = data.model_dump(
@@ -291,20 +345,30 @@ class _IncidentService:
             raise ConflictException(f"Error updating incident: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error updating incident: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error updating incident: {e}"
+            )
 
-    def delete_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> None:
+    def delete_incident(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> None:
         if not is_management(current_user):
-            raise ForbiddenException("Only NOC, managers, or admins can delete incidents.")
+            raise ForbiddenException(
+                "Only NOC, managers, or admins can delete incidents."
+            )
 
         incident = self._get_incident(incident_id, session)
         incident.soft_delete()
         session.commit()
-    
-    def start_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+
+    def start_incident(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         """Start working on an incident."""
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "start")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "start"
+        )
         incident.start()
         try:
             session.commit()
@@ -312,12 +376,18 @@ class _IncidentService:
             return self.incident_to_response(incident)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error starting incident: {e}")
-    
-    def resolve_incident(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+            raise InternalServerErrorException(
+                f"Unexpected error starting incident: {e}"
+            )
+
+    def resolve_incident(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         """Resolve an incident."""
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "resolve")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "resolve"
+        )
         incident.resolve()
         try:
             session.commit()
@@ -325,42 +395,62 @@ class _IncidentService:
             return self.incident_to_response(incident)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error resolving incident: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error resolving incident: {e}"
+            )
 
-    def mark_responded(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+    def mark_responded(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "update")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "update"
+        )
         incident.mark_responded()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
-    def mark_arrived_on_site(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+    def mark_arrived_on_site(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "update")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "update"
+        )
         incident.mark_arrived_on_site()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
-    def mark_temporarily_restored(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+    def mark_temporarily_restored(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "update")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "update"
+        )
         incident.mark_temporarily_restored()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
-    def mark_permanently_restored(self, incident_id: UUID, session: Session, current_user: TokenData) -> IncidentResponse:
+    def mark_permanently_restored(
+        self, incident_id: UUID, session: Session, current_user: TokenData
+    ) -> IncidentResponse:
         incident = self._get_incident(incident_id, session)
-        self._assert_incident_owner_or_management(incident, session, current_user, "update")
+        self._assert_incident_owner_or_management(
+            incident, session, current_user, "update"
+        )
         incident.mark_permanently_restored()
         session.commit()
         session.refresh(incident)
         return self.incident_to_response(incident)
 
     def _get_incident(self, incident_id: UUID, session: Session) -> Incident:
-        statement = select(Incident).where(Incident.id == incident_id, Incident.deleted_at.is_(None))  # type: ignore
+        statement = select(Incident).where(
+            Incident.id == incident_id, Incident.deleted_at.is_(None)
+        )  # type: ignore
         incident: Incident | None = session.exec(statement).first()
         if not incident:
             raise NotFoundException("incident not found")

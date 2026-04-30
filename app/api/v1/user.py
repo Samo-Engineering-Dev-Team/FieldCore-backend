@@ -2,7 +2,13 @@ from fastapi import APIRouter, Query
 from typing import List
 from uuid import UUID
 
-from app.models import UserCreate, UserUpdate, UserResponse, UserRoleUpdate, AdminPasswordReset
+from app.models import (
+    UserCreate,
+    UserUpdate,
+    UserResponse,
+    UserRoleUpdate,
+    AdminPasswordReset,
+)
 from app.services import UserService, CurrentUser
 from app.database import SessionDep
 from app.utils.enums import UserRole, UserStatus
@@ -18,7 +24,7 @@ def create_user(
     payload: UserCreate,
     service: UserService,
     session: SessionDep,
-    current_user: CurrentUser
+    current_user: CurrentUser,
 ) -> UserResponse:
     """Create a new user. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -26,7 +32,9 @@ def create_user(
     return service.create_user(payload, session)
 
 
-@router.get("", response_model=List[UserResponse], status_code=200, include_in_schema=False)
+@router.get(
+    "", response_model=List[UserResponse], status_code=200, include_in_schema=False
+)
 @router.get("/", response_model=List[UserResponse], status_code=200)
 def read_users(
     service: UserService,
@@ -35,7 +43,7 @@ def read_users(
     status: UserStatus | None = Query(default=None),
     role: UserRole | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[UserResponse]:
     """Get all users. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
@@ -84,11 +92,13 @@ def set_user_role(
     payload: UserRoleUpdate,
     service: UserService,
     session: SessionDep,
-    current_user: CurrentUser
+    current_user: CurrentUser,
 ) -> UserResponse:
     """"""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to perform this action.")
+        raise UnauthorizedException(
+            "You do not have permission to perform this action."
+        )
     return service.set_user_role(user_id, payload.new_role, session)
 
 
@@ -106,38 +116,37 @@ def reset_user_password(
     return service.reset_password(user_id, payload, session)
 
 
-@router.patch("/{user_id}/status/activate", response_model=UserResponse, status_code=200)
+@router.patch(
+    "/{user_id}/status/activate", response_model=UserResponse, status_code=200
+)
 def activate_user(
-    user_id: UUID,
-    service: UserService,
-    session: SessionDep,
-    current_user: CurrentUser
+    user_id: UUID, service: UserService, session: SessionDep, current_user: CurrentUser
 ) -> UserResponse:
     """"""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to perform this action.")
+        raise UnauthorizedException(
+            "You do not have permission to perform this action."
+        )
     return service.activate_user(user_id, session)
 
 
-@router.patch("/{user_id}/status/deactivate", response_model=UserResponse, status_code=200)
+@router.patch(
+    "/{user_id}/status/deactivate", response_model=UserResponse, status_code=200
+)
 def deactivate_user(
-    user_id: UUID,
-    service: UserService,
-    session: SessionDep,
-    current_user: CurrentUser
+    user_id: UUID, service: UserService, session: SessionDep, current_user: CurrentUser
 ) -> UserResponse:
     """"""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise UnauthorizedException("You do not have permission to perform this action.")
+        raise UnauthorizedException(
+            "You do not have permission to perform this action."
+        )
     return service.deactivate_user(user_id, session)
 
 
 @router.delete("/{user_id}", status_code=204)
 def delete_user(
-    user_id: UUID,
-    service: UserService,
-    session: SessionDep,
-    current_user: CurrentUser
+    user_id: UUID, service: UserService, session: SessionDep, current_user: CurrentUser
 ) -> None:
     """Soft delete a user. Only accessible to admin and manager roles."""
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:

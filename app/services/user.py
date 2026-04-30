@@ -128,7 +128,9 @@ class _UserService:
             raise BadRequestException("New password and confirmation do not match")
 
         if SecurityUtils.check_password(payload.new_password, user.password_hash):
-            raise BadRequestException("New password must be different from current password")
+            raise BadRequestException(
+                "New password must be different from current password"
+            )
 
         user.password_hash = SecurityUtils.hash_password(payload.new_password)
         user.credentials_updated_at = utcnow()
@@ -144,7 +146,9 @@ class _UserService:
             raise ConflictException(f"Error resetting password: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error resetting password: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error resetting password: {e}"
+            )
 
     def _get_user(self, user_id: UUID, session: Session) -> User:
         statement = select(User).where(User.id == user_id, User.deleted_at.is_(None))  # type: ignore

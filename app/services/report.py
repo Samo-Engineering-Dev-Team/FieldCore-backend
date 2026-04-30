@@ -9,13 +9,20 @@ from loguru import logger as LOG
 import time
 
 from app.utils.enums import ReportType, ReportStatus, UserRole
-from app.models import Report, ReportCreate, ReportUpdate, ReportResponse, Task, Technician
+from app.models import (
+    Report,
+    ReportCreate,
+    ReportUpdate,
+    ReportResponse,
+    Task,
+    Technician,
+)
 from app.models.auth import TokenData
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
     NotFoundException,
-    ForbiddenException
+    ForbiddenException,
 )
 from app.services.pdf import get_pdf_service
 from app.services.report_support import (
@@ -52,7 +59,9 @@ class _ReportService:
     def report_to_response(self, report: Report) -> ReportResponse:
         technician_name = "Unknown Technician"
         if report.technician and report.technician.user:
-            technician_name = f"{report.technician.user.name} {report.technician.user.surname}"
+            technician_name = (
+                f"{report.technician.user.name} {report.technician.user.surname}"
+            )
 
         attachments = self._normalize_attachments(report.attachments) or {"files": []}
         num_attachments = len(attachments.get("files", []))
@@ -61,7 +70,7 @@ class _ReportService:
         seacom_ref = report.seacom_ref
         if not seacom_ref and report.task:
             seacom_ref = report.task.seacom_ref
-        
+
         # Build response, excluding seacom_ref from dump to avoid duplicate
         report_data = report.model_dump(exclude={"seacom_ref", "attachments"})
         return ReportResponse(
@@ -69,8 +78,8 @@ class _ReportService:
             attachments=attachments,
             num_attachments=num_attachments,
             technician_fullname=technician_name,
-            seacom_ref=seacom_ref
-            )
+            seacom_ref=seacom_ref,
+        )
 
     def _get_technician_by_user(self, user_id: UUID, session: Session) -> Technician:
         statement = select(Technician).where(
@@ -105,29 +114,37 @@ class _ReportService:
         if current_user.role == UserRole.TECHNICIAN:
             technician = self._get_technician_by_user(current_user.user_id, session)
             if data.technician_id != technician.id:
-                raise ForbiddenException("Technicians can only create reports for themselves")
+                raise ForbiddenException(
+                    "Technicians can only create reports for themselves"
+                )
             data = data.model_copy(update={"technician_id": technician.id})
 
         report_data = data.model_dump()
-        report_data["attachments"] = self._normalize_attachments(report_data.get("attachments"))
+        report_data["attachments"] = self._normalize_attachments(
+            report_data.get("attachments")
+        )
         report: Report = Report(**report_data)
         try:
             session.add(report)
             session.commit()
             session.refresh(report)
-            
+
             # Get task and technician info for notification
             task = session.exec(select(Task).where(Task.id == data.task_id)).first()
-            technician = session.exec(select(Technician).where(Technician.id == data.technician_id)).first()
-            
+            technician = session.exec(
+                select(Technician).where(Technician.id == data.technician_id)
+            ).first()
+
             if task and technician:
                 # Create notification for NOC operators about new report
                 from app.services.notification import NotificationTemplates
-                
+
                 # Get site name safely
                 site_name = task.site.name if task.site else "Unknown Site"
-                technician_name = technician.user.name if technician.user else "Unknown Technician"
-                
+                technician_name = (
+                    technician.user.name if technician.user else "Unknown Technician"
+                )
+
                 create_noc_notifications(
                     session=session,
                     template=NotificationTemplates.report_submitted(
@@ -136,7 +153,7 @@ class _ReportService:
                         site_name=site_name,
                     ),
                 )
-            
+
             return self.report_to_response(report)
         except IntegrityError as e:
             session.rollback()
@@ -199,7 +216,7 @@ class _ReportService:
         """
         Update a report with the provided data.
         Only allows updating: data, attachments, status
-        
+
         Note: The broken audit_report_changes trigger must be dropped in Supabase
         before this will work. Run the fix_trigger.sql script.
         """
@@ -236,7 +253,9 @@ class _ReportService:
                 }
 
                 if not filtered_data:
-                    LOG.debug("No allowed report update fields provided for {}", report_id)
+                    LOG.debug(
+                        "No allowed report update fields provided for {}", report_id
+                    )
                     return self.report_to_response(report)
 
                 # Step 5: Apply updates and touch timestamp
@@ -355,7 +374,7 @@ class _ReportService:
         self._assert_can_access_report(report, current_user, session, "delete")
         report.soft_delete()
         session.commit()
-    
+
     def start_report(
         self,
         report_id: UUID,
@@ -376,7 +395,7 @@ class _ReportService:
         except Exception as e:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error starting report: {e}")
-    
+
     def complete_report(
         self,
         report_id: UUID,
@@ -396,45 +415,53 @@ class _ReportService:
             raise ConflictException(f"Error completing report: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error completing report: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error completing report: {e}"
+            )
 
-    def export_report_pdf(self, report_id: UUID, session: Session) -> tuple[BytesIO, str]:
+    def export_report_pdf(
+        self, report_id: UUID, session: Session
+    ) -> tuple[BytesIO, str]:
         """
         Export a completed report as a PDF document.
-        
+
         Args:
             report_id: The UUID of the report to export
             session: Database session
-            
+
         Returns:
             Tuple of (PDF buffer, filename)
-            
+
         Raises:
             NotFoundException: If report not found
             ForbiddenException: If report is not completed
         """
         report = self._get_report(report_id, session)
-        
+
         if report.status != ReportStatus.COMPLETED:
             raise ForbiddenException("Only completed reports can be exported as PDF")
-        
+
         try:
             # Ensure relationships are loaded
             session.refresh(report)
-            
+
             pdf_service = get_pdf_service()
             pdf_buffer = pdf_service.generate_report_pdf(report)
-            
+
             # Verify buffer has content
             pdf_bytes = pdf_buffer.getvalue()
             if not pdf_bytes:
-                raise InternalServerErrorException("Failed to generate PDF: empty buffer")
-            
+                raise InternalServerErrorException(
+                    "Failed to generate PDF: empty buffer"
+                )
+
             # Generate filename
             report_type = report.report_type.value.replace("-", "_")
-            created_date = report.created_at.strftime("%Y%m%d") if report.created_at else "unknown"
+            created_date = (
+                report.created_at.strftime("%Y%m%d") if report.created_at else "unknown"
+            )
             filename = f"report_{report_type}_{created_date}_{str(report.id)[:8]}.pdf"
-            
+
             # Reset buffer for reading
             pdf_buffer.seek(0)
             return pdf_buffer, filename
@@ -444,8 +471,6 @@ class _ReportService:
             raise
         except Exception as e:
             raise InternalServerErrorException(f"Failed to generate PDF: {str(e)}")
-
-
 
     def _get_report(self, report_id: UUID, session: Session) -> Report:
         statement = (

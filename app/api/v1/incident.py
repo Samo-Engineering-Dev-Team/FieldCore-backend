@@ -7,7 +7,11 @@ from app.models import IncidentCreate, IncidentUpdate, IncidentResponse
 from app.models.fault_update import FaultUpdateCreate, FaultUpdateResponse
 from app.services import IncidentService, CurrentUser
 from app.services.fault_update import get_fault_update_service
-from app.services.incident import _bg_notify_incident_created, _bg_notify_incident_started, _bg_notify_incident_resolved
+from app.services.incident import (
+    _bg_notify_incident_created,
+    _bg_notify_incident_started,
+    _bg_notify_incident_resolved,
+)
 from app.database import SessionDep
 from app.utils.enums import IncidentStatus, UserRole
 from app.services.authorization import require_management
@@ -46,10 +50,12 @@ def read_incidents(
     status: IncidentStatus | None = Query(None),
     client_id: UUID | None = Query(None, description="Filter by client ID"),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[IncidentResponse]:
     """"""
-    return service.read_incidents(session, current_user, technician_id, status, client_id, offset, limit)
+    return service.read_incidents(
+        session, current_user, technician_id, status, client_id, offset, limit
+    )
 
 
 @router.get("/penalty-summary", status_code=200)
@@ -74,7 +80,9 @@ def get_penalty_summary(
 
     now = utcnow()
     q = (now.month - 1) // 3
-    quarter_start = now.replace(month=q * 3 + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    quarter_start = now.replace(
+        month=q * 3 + 1, day=1, hour=0, minute=0, second=0, microsecond=0
+    )
 
     incidents = session.exec(
         select(Incident).where(
@@ -140,7 +148,9 @@ def start_incident(
     return response
 
 
-@router.patch("/{incident_id}/resolve", response_model=IncidentResponse, status_code=200)
+@router.patch(
+    "/{incident_id}/resolve", response_model=IncidentResponse, status_code=200
+)
 def resolve_incident(
     incident_id: UUID,
     service: IncidentService,
@@ -162,6 +172,7 @@ def resolve_incident(
 
 
 # ── SLA Milestone endpoints ────────────────────────────────────────────────────
+
 
 @router.post("/{incident_id}/respond", response_model=IncidentResponse, status_code=200)
 def mark_responded(
@@ -185,7 +196,9 @@ def mark_arrived_on_site(
     return service.mark_arrived_on_site(incident_id, session, current_user)
 
 
-@router.post("/{incident_id}/temp-restore", response_model=IncidentResponse, status_code=200)
+@router.post(
+    "/{incident_id}/temp-restore", response_model=IncidentResponse, status_code=200
+)
 def mark_temporarily_restored(
     incident_id: UUID,
     service: IncidentService,
@@ -196,7 +209,9 @@ def mark_temporarily_restored(
     return service.mark_temporarily_restored(incident_id, session, current_user)
 
 
-@router.post("/{incident_id}/perm-restore", response_model=IncidentResponse, status_code=200)
+@router.post(
+    "/{incident_id}/perm-restore", response_model=IncidentResponse, status_code=200
+)
 def mark_permanently_restored(
     incident_id: UUID,
     service: IncidentService,
@@ -209,7 +224,10 @@ def mark_permanently_restored(
 
 # ── Fault Update (communication log) sub-endpoints ────────────────────────────
 
-@router.get("/{incident_id}/updates", response_model=List[FaultUpdateResponse], status_code=200)
+
+@router.get(
+    "/{incident_id}/updates", response_model=List[FaultUpdateResponse], status_code=200
+)
 def list_fault_updates(
     incident_id: UUID,
     service: IncidentService,
@@ -222,7 +240,9 @@ def list_fault_updates(
     return svc.list_updates(incident_id, session)
 
 
-@router.post("/{incident_id}/updates", response_model=FaultUpdateResponse, status_code=201)
+@router.post(
+    "/{incident_id}/updates", response_model=FaultUpdateResponse, status_code=201
+)
 def create_fault_update(
     incident_id: UUID,
     payload: FaultUpdateCreate,
@@ -233,10 +253,13 @@ def create_fault_update(
     """Log a fault update (phone call, email, or app update)."""
     service.read_incident(incident_id, session, current_user)
     from app.models import User
+
     user = session.get(User, current_user.user_id)
     sent_by_name = f"{user.name} {user.surname}" if user else str(current_user.user_id)
     svc = get_fault_update_service()
-    return svc.create_update(incident_id, payload, current_user.user_id, sent_by_name, session)
+    return svc.create_update(
+        incident_id, payload, current_user.user_id, sent_by_name, session
+    )
 
 
 @router.get("/{incident_id}/updates/due-status", status_code=200)
@@ -253,6 +276,7 @@ def get_update_due_status(
 
 
 # ── SLA / checker endpoints ────────────────────────────────────────────────────
+
 
 @router.post("/check-sla", status_code=200)
 def check_sla_breaches_endpoint(
@@ -277,7 +301,7 @@ def check_sla_breaches_endpoint(
         "warnings_sent": len(warnings),
         "breaches_found": len(breaches),
         "warnings": warnings,
-        "breaches": breaches
+        "breaches": breaches,
     }
 
 
@@ -296,11 +320,14 @@ def get_incident_sla_status(
     service.read_incident(incident_id, session, current_user)
 
     incident = session.exec(
-        select(Incident).where(Incident.id == incident_id, Incident.deleted_at.is_(None))
+        select(Incident).where(
+            Incident.id == incident_id, Incident.deleted_at.is_(None)
+        )
     ).first()
 
     if not incident:
         from app.exceptions.http import NotFoundException
+
         raise NotFoundException("incident not found")
 
     return get_sla_status_for_incident(incident)

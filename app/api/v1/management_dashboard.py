@@ -17,6 +17,7 @@ from loguru import logger as LOG
 
 try:
     import psutil
+
     _HAS_PSUTIL = True
 except Exception:
     psutil = None
@@ -29,9 +30,7 @@ router = APIRouter(prefix="/dashboard", tags=["management-dashboard"])
 # Executive SLA Overview
 # ============================================================
 @router.get("/executive-sla-overview")
-def get_executive_sla_overview(
-    current_user: ManagerOrAdminUser
-) -> dict:
+def get_executive_sla_overview(current_user: ManagerOrAdminUser) -> dict:
     """Get executive SLA overview metrics - high-level KPIs for C-suite"""
     try:
         with Database.session() as session:
@@ -48,7 +47,7 @@ def get_executive_sla_overview(
                     "breached_count": 0,
                     "compliance_percentage": 0,
                     "at_risk_percentage": 0,
-                    "last_updated": None
+                    "last_updated": None,
                 }
             return row._mapping
     except Exception as e:
@@ -66,7 +65,7 @@ def get_incident_sla_monitoring(
     region: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500)
+    limit: int = Query(50, ge=1, le=500),
 ) -> dict:
     """Get incident SLA monitoring records with filtering support"""
     try:
@@ -106,16 +105,13 @@ def get_incident_sla_monitoring(
 
 
 @router.get("/incident-sla-monitoring/{incident_id}")
-def get_incident_sla_detail(
-    incident_id: str,
-    current_user: ManagerOrAdminUser
-) -> dict:
+def get_incident_sla_detail(incident_id: str, current_user: ManagerOrAdminUser) -> dict:
     """Get detailed incident SLA record"""
     try:
         with Database.session() as session:
             result = session.execute(
                 text("SELECT * FROM v_incident_sla_monitoring WHERE id = :id"),
-                {"id": incident_id}
+                {"id": incident_id},
             )
             row = result.fetchone()
             if not row:
@@ -133,11 +129,11 @@ def get_incident_sla_detail(
 # ============================================================
 @router.get("/noc-online")
 def get_noc_online(
-    current_user: ManagerOrAdminUser,
-    cutoff_minutes: int = Query(10, ge=1, le=60)
+    current_user: ManagerOrAdminUser, cutoff_minutes: int = Query(10, ge=1, le=60)
 ) -> dict:
     """Return list of active NOC operator sessions (restricted to Manager/Admin)."""
     from app.services.presence import PresenceService
+
     try:
         data = PresenceService.list_active_noc_operators(cutoff_minutes=cutoff_minutes)
         return {"data": data, "total": len(data)}
@@ -156,7 +152,7 @@ def get_task_performance(
     region: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500)
+    limit: int = Query(50, ge=1, le=500),
 ) -> dict:
     """Get task performance and compliance records"""
     try:
@@ -196,16 +192,13 @@ def get_task_performance(
 
 
 @router.get("/task-performance/{task_id}")
-def get_task_performance_detail(
-    task_id: str,
-    current_user: ManagerOrAdminUser
-) -> dict:
+def get_task_performance_detail(task_id: str, current_user: ManagerOrAdminUser) -> dict:
     """Get detailed task performance record"""
     try:
         with Database.session() as session:
             result = session.execute(
                 text("SELECT * FROM v_task_performance_compliance WHERE id = :id"),
-                {"id": task_id}
+                {"id": task_id},
             )
             row = result.fetchone()
             if not row:
@@ -227,7 +220,7 @@ def get_site_risk_reliability(
     region: Optional[str] = Query(None),
     risk_level: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500)
+    limit: int = Query(50, ge=1, le=500),
 ) -> dict:
     """Get site risk and reliability metrics"""
     try:
@@ -263,16 +256,13 @@ def get_site_risk_reliability(
 
 
 @router.get("/site-risk-reliability/{site_id}")
-def get_site_risk_detail(
-    site_id: str,
-    current_user: ManagerOrAdminUser
-) -> dict:
+def get_site_risk_detail(site_id: str, current_user: ManagerOrAdminUser) -> dict:
     """Get detailed site risk and reliability record"""
     try:
         with Database.session() as session:
             result = session.execute(
                 text("SELECT * FROM v_site_risk_reliability WHERE site_id = :id"),
-                {"id": site_id}
+                {"id": site_id},
             )
             row = result.fetchone()
             if not row:
@@ -294,7 +284,7 @@ def get_technician_performance(
     workload_level: Optional[str] = Query(None),
     performance_level: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500)
+    limit: int = Query(50, ge=1, le=500),
 ) -> dict:
     """Get technician performance metrics (aggregate, non-punitive)"""
     try:
@@ -331,15 +321,16 @@ def get_technician_performance(
 
 @router.get("/technician-performance/{technician_id}")
 def get_technician_performance_detail(
-    technician_id: str,
-    current_user: NocOrManagerOrAdminUser
+    technician_id: str, current_user: NocOrManagerOrAdminUser
 ) -> dict:
     """Get detailed technician performance record"""
     try:
         with Database.session() as session:
             result = session.execute(
-                text("SELECT * FROM v_technician_performance WHERE technician_id = :id"),
-                {"id": technician_id}
+                text(
+                    "SELECT * FROM v_technician_performance WHERE technician_id = :id"
+                ),
+                {"id": technician_id},
             )
             row = result.fetchone()
             if not row:
@@ -361,7 +352,7 @@ def get_access_request_sla(
     region: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500)
+    limit: int = Query(50, ge=1, le=500),
 ) -> dict:
     """Get access request SLA impact records"""
     try:
@@ -400,14 +391,14 @@ def get_access_request_sla(
 # Regional SLA Analytics
 # ============================================================
 @router.get("/regional-sla-analytics")
-def get_regional_sla_analytics(
-    current_user: ManagerOrAdminUser
-) -> dict:
+def get_regional_sla_analytics(current_user: ManagerOrAdminUser) -> dict:
     """Get regional SLA analytics and performance comparison"""
     try:
         with Database.session() as session:
             result = session.execute(
-                text("SELECT * FROM v_regional_sla_analytics ORDER BY overall_sla_compliance DESC NULLS LAST")
+                text(
+                    "SELECT * FROM v_regional_sla_analytics ORDER BY overall_sla_compliance DESC NULLS LAST"
+                )
             )
             records = [dict(row._mapping) for row in result]
             return {"data": records, "total": len(records)}
@@ -424,7 +415,7 @@ def get_sla_trend_analysis(
     current_user: ManagerOrAdminUser,
     metric_type: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(90, ge=1, le=500)
+    limit: int = Query(90, ge=1, le=500),
 ) -> dict:
     """Get historical SLA trend data (90-day window)"""
     try:
@@ -464,7 +455,7 @@ def get_sla_alerts(
     alert_level: Optional[str] = Query(None),
     item_type: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500)
+    limit: int = Query(100, ge=1, le=500),
 ) -> dict:
     """Get real-time SLA alerts and escalation items"""
     try:
@@ -519,65 +510,77 @@ def get_system_alerts(
     alerts = []
     try:
         with Database.session() as session:
-
             # 1. SLA breach rate
             try:
                 sla_row = session.execute(
-                    text("SELECT breached_count, total_items, compliance_percentage FROM v_executive_sla_overview LIMIT 1")
+                    text(
+                        "SELECT breached_count, total_items, compliance_percentage FROM v_executive_sla_overview LIMIT 1"
+                    )
                 ).fetchone()
                 if sla_row:
                     breached = int(sla_row._mapping.get("breached_count") or 0)
                     total = int(sla_row._mapping.get("total_items") or 0)
-                    compliance = float(sla_row._mapping.get("compliance_percentage") or 100)
+                    compliance = float(
+                        sla_row._mapping.get("compliance_percentage") or 100
+                    )
                     if compliance < 80 and total > 0:
-                        alerts.append({
-                            "id": "sla_breach_high",
-                            "severity": "critical",
-                            "category": "SLA",
-                            "title": "High SLA Breach Rate",
-                            "message": f"Overall compliance is at {compliance:.1f}% — {breached} items breached. Immediate attention required.",
-                            "action": "Review breached incidents and tasks",
-                        })
+                        alerts.append(
+                            {
+                                "id": "sla_breach_high",
+                                "severity": "critical",
+                                "category": "SLA",
+                                "title": "High SLA Breach Rate",
+                                "message": f"Overall compliance is at {compliance:.1f}% — {breached} items breached. Immediate attention required.",
+                                "action": "Review breached incidents and tasks",
+                            }
+                        )
                     elif compliance < 90 and total > 0:
-                        alerts.append({
-                            "id": "sla_below_target",
-                            "severity": "warning",
-                            "category": "SLA",
-                            "title": "SLA Below 90% Target",
-                            "message": f"Compliance at {compliance:.1f}% is below the contractual 90% target.",
-                            "action": "Review at-risk items before they breach",
-                        })
+                        alerts.append(
+                            {
+                                "id": "sla_below_target",
+                                "severity": "warning",
+                                "category": "SLA",
+                                "title": "SLA Below 90% Target",
+                                "message": f"Compliance at {compliance:.1f}% is below the contractual 90% target.",
+                                "action": "Review at-risk items before they breach",
+                            }
+                        )
             except Exception:
                 pass
 
             # 2. Incident spike — today vs 30-day daily average
             try:
-                spike_row = session.execute(text("""
+                spike_row = session.execute(
+                    text("""
                     SELECT
                         COUNT(*) FILTER (WHERE created_at >= CURRENT_DATE) AS today_count,
                         ROUND(COUNT(*) / NULLIF(EXTRACT(DAY FROM (NOW() - MIN(created_at))), 0), 1) AS daily_avg
                     FROM incidents
                     WHERE deleted_at IS NULL
                       AND created_at >= NOW() - INTERVAL '30 days'
-                """)).fetchone()
+                """)
+                ).fetchone()
                 if spike_row:
                     today = int(spike_row._mapping.get("today_count") or 0)
                     avg = float(spike_row._mapping.get("daily_avg") or 0)
                     if avg > 0 and today > avg * 2.5 and today >= 3:
-                        alerts.append({
-                            "id": "incident_spike",
-                            "severity": "warning",
-                            "category": "Operations",
-                            "title": "Unusual Incident Spike",
-                            "message": f"{today} incidents created today vs daily average of {avg:.1f}. Possible network event or DDoS.",
-                            "action": "Investigate root cause — check NOC queue",
-                        })
+                        alerts.append(
+                            {
+                                "id": "incident_spike",
+                                "severity": "warning",
+                                "category": "Operations",
+                                "title": "Unusual Incident Spike",
+                                "message": f"{today} incidents created today vs daily average of {avg:.1f}. Possible network event or DDoS.",
+                                "action": "Investigate root cause — check NOC queue",
+                            }
+                        )
             except Exception:
                 pass
 
             # 3. Bulk stale locations (>40% of technicians)
             try:
-                loc_row = session.execute(text("""
+                loc_row = session.execute(
+                    text("""
                     SELECT
                         COUNT(*) AS total,
                         COUNT(*) FILTER (
@@ -586,41 +589,51 @@ def get_system_alerts(
                         ) AS stale
                     FROM technicians
                     WHERE deleted_at IS NULL
-                """)).fetchone()
+                """)
+                ).fetchone()
                 if loc_row:
                     total_tech = int(loc_row._mapping.get("total") or 0)
                     stale_tech = int(loc_row._mapping.get("stale") or 0)
                     if total_tech > 0 and stale_tech / total_tech >= 0.4:
-                        alerts.append({
-                            "id": "bulk_stale_locations",
-                            "severity": "warning",
-                            "category": "Tracking",
-                            "title": "Bulk Stale GPS Data",
-                            "message": f"{stale_tech} of {total_tech} technicians ({round(stale_tech/total_tech*100)}%) have not updated their location in 24h.",
-                            "action": "Contact technicians to re-enable location sharing",
-                        })
+                        alerts.append(
+                            {
+                                "id": "bulk_stale_locations",
+                                "severity": "warning",
+                                "category": "Tracking",
+                                "title": "Bulk Stale GPS Data",
+                                "message": f"{stale_tech} of {total_tech} technicians ({round(stale_tech / total_tech * 100)}%) have not updated their location in 24h.",
+                                "action": "Contact technicians to re-enable location sharing",
+                            }
+                        )
             except Exception:
                 pass
 
             # 4. No NOC operators online in the last 30 minutes
             try:
                 from app.services.presence import PresenceService
-                noc_online = PresenceService.list_active_noc_operators(cutoff_minutes=30)
+
+                noc_online = PresenceService.list_active_noc_operators(
+                    cutoff_minutes=30
+                )
                 if len(noc_online) == 0:
-                    alerts.append({
-                        "id": "no_noc_online",
-                        "severity": "critical",
-                        "category": "Staffing",
-                        "title": "No NOC Operators Online",
-                        "message": "No NOC operators have been active in the last 30 minutes. Incidents may go unassigned.",
-                        "action": "Contact on-call NOC operator immediately",
-                    })
+                    alerts.append(
+                        {
+                            "id": "no_noc_online",
+                            "severity": "critical",
+                            "category": "Staffing",
+                            "title": "No NOC Operators Online",
+                            "message": "No NOC operators have been active in the last 30 minutes. Incidents may go unassigned.",
+                            "action": "Contact on-call NOC operator immediately",
+                        }
+                    )
             except Exception:
                 pass
 
             # 5. Technician overload (any technician with > 8 active items)
             try:
-                overload_row = session.execute(text("""
+                overload_row = (
+                    session.execute(
+                        text("""
                     SELECT COUNT(*) AS overloaded
                     FROM (
                         SELECT t.id,
@@ -632,22 +645,28 @@ def get_system_alerts(
                         WHERE t.deleted_at IS NULL
                         GROUP BY t.id
                     ) sub WHERE active > 8
-                """)).scalar() or 0
+                """)
+                    ).scalar()
+                    or 0
+                )
                 if int(overload_row) > 0:
-                    alerts.append({
-                        "id": "technician_overload",
-                        "severity": "warning",
-                        "category": "Operations",
-                        "title": "Technician Overload Detected",
-                        "message": f"{int(overload_row)} technician(s) have more than 8 active items. SLA risk is elevated.",
-                        "action": "Redistribute workload via Live Tracking → Dispatch",
-                    })
+                    alerts.append(
+                        {
+                            "id": "technician_overload",
+                            "severity": "warning",
+                            "category": "Operations",
+                            "title": "Technician Overload Detected",
+                            "message": f"{int(overload_row)} technician(s) have more than 8 active items. SLA risk is elevated.",
+                            "action": "Redistribute workload via Live Tracking → Dispatch",
+                        }
+                    )
             except Exception:
                 pass
 
             # 6. Repeated failed logins in last hour (brute-force indicator)
             try:
-                failed_row = session.execute(text("""
+                failed_row = session.execute(
+                    text("""
                     SELECT
                         email,
                         COUNT(*) AS attempts
@@ -658,35 +677,46 @@ def get_system_alerts(
                     HAVING COUNT(*) >= 5
                     ORDER BY attempts DESC
                     LIMIT 5
-                """)).fetchall()
+                """)
+                ).fetchall()
                 if failed_row:
                     targets = ", ".join(r._mapping["email"] for r in failed_row[:3])
                     total_suspicious = len(failed_row)
-                    alerts.append({
-                        "id": "brute_force_attempts",
-                        "severity": "critical",
-                        "category": "Security",
-                        "title": "Repeated Failed Login Attempts",
-                        "message": f"{total_suspicious} account(s) have 5+ failed logins in the last hour: {targets}.",
-                        "action": "Review Login Activity — consider disabling affected accounts",
-                    })
+                    alerts.append(
+                        {
+                            "id": "brute_force_attempts",
+                            "severity": "critical",
+                            "category": "Security",
+                            "title": "Repeated Failed Login Attempts",
+                            "message": f"{total_suspicious} account(s) have 5+ failed logins in the last hour: {targets}.",
+                            "action": "Review Login Activity — consider disabling affected accounts",
+                        }
+                    )
             except Exception:
                 pass
 
             # 7. Maintenance mode active
             try:
-                maint_row = session.execute(text(
-                    "SELECT value FROM system_settings WHERE key = 'maintenance_mode' LIMIT 1"
-                )).fetchone()
-                if maint_row and str(maint_row._mapping.get("value", "")).lower() in ("true", "1", "yes"):
-                    alerts.append({
-                        "id": "maintenance_mode",
-                        "severity": "info",
-                        "category": "System",
-                        "title": "Maintenance Mode Active",
-                        "message": "The system is currently in maintenance mode. Some features may be unavailable to users.",
-                        "action": "Disable maintenance mode in Settings when ready",
-                    })
+                maint_row = session.execute(
+                    text(
+                        "SELECT value FROM system_settings WHERE key = 'maintenance_mode' LIMIT 1"
+                    )
+                ).fetchone()
+                if maint_row and str(maint_row._mapping.get("value", "")).lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                ):
+                    alerts.append(
+                        {
+                            "id": "maintenance_mode",
+                            "severity": "info",
+                            "category": "System",
+                            "title": "Maintenance Mode Active",
+                            "message": "The system is currently in maintenance mode. Some features may be unavailable to users.",
+                            "action": "Disable maintenance mode in Settings when ready",
+                        }
+                    )
             except Exception:
                 pass
 
@@ -769,16 +799,12 @@ def get_login_audit(
 # Health Check
 # ============================================================
 @router.get("/health")
-def dashboard_health(
-    current_user: ManagerOrAdminUser
-) -> dict:
+def dashboard_health(current_user: ManagerOrAdminUser) -> dict:
     """Check if dashboard views are healthy and responsive"""
     try:
         with Database.session() as session:
             # Try to query a simple view
-            result = session.execute(
-                text("SELECT 1 as status")
-            )
+            result = session.execute(text("SELECT 1 as status"))
             result.scalar()
         # Collect system metrics
         root = os.path.abspath(os.sep)
@@ -845,10 +871,7 @@ def dashboard_health(
             "presence": presence_info,
         }
     except Exception:
-        raise HTTPException(
-            status_code=503,
-            detail="Dashboard health check failed"
-        )
+        raise HTTPException(status_code=503, detail="Dashboard health check failed")
 
 
 # ============================================================
@@ -1040,9 +1063,15 @@ def get_executive_summary_pdf(
         with Database.session() as session:
             # Overall SLA compliance
             sla_row = session.execute(
-                text("SELECT compliance_percentage, total_items FROM v_executive_sla_overview LIMIT 1")
+                text(
+                    "SELECT compliance_percentage, total_items FROM v_executive_sla_overview LIMIT 1"
+                )
             ).fetchone()
-            sla_compliance = float(sla_row._mapping.get("compliance_percentage", 0)) if sla_row else 0.0
+            sla_compliance = (
+                float(sla_row._mapping.get("compliance_percentage", 0))
+                if sla_row
+                else 0.0
+            )
             _total_items = int(sla_row._mapping.get("total_items", 0)) if sla_row else 0
 
             # Total incidents and tasks (last 30 days)
@@ -1096,7 +1125,9 @@ def get_executive_summary_pdf(
 
             # Regional SLA compliance
             regional_result = session.execute(
-                text("SELECT region, overall_sla_compliance AS compliance FROM v_regional_sla_analytics ORDER BY overall_sla_compliance DESC NULLS LAST")
+                text(
+                    "SELECT region, overall_sla_compliance AS compliance FROM v_regional_sla_analytics ORDER BY overall_sla_compliance DESC NULLS LAST"
+                )
             )
             regional_performance = [dict(r._mapping) for r in regional_result]
 

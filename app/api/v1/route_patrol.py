@@ -47,7 +47,9 @@ def list_patrols(
     Technicians are automatically scoped to their own patrols.
     NOC / Manager / Admin can filter freely or omit filters to see all.
     """
-    return service.list_patrols(session, current_user, technician_id, site_id, limit, offset)
+    return service.list_patrols(
+        session, current_user, technician_id, site_id, limit, offset
+    )
 
 
 @router.get("/{patrol_id}", response_model=RoutePatrolResponse, status_code=200)

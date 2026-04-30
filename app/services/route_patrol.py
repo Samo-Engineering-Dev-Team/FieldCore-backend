@@ -21,6 +21,7 @@ from app.services.authorization import get_technician_id_for_user, is_management
 
 def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
     from app.models import Technician, Site
+
     tech_name = ""
     site_name = ""
 
@@ -35,7 +36,7 @@ def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
 
     resp = RoutePatrolResponse.model_validate(patrol)
     resp.technician_fullname = tech_name
-    resp.site_name           = site_name
+    resp.site_name = site_name
     return resp
 
 
@@ -49,7 +50,9 @@ class _RoutePatrolService:
         if not is_management(current_user):
             technician_id = get_technician_id_for_user(current_user.user_id, session)
             if data.technician_id != technician_id:
-                raise ForbiddenException("Technicians can only create patrols for themselves.")
+                raise ForbiddenException(
+                    "Technicians can only create patrols for themselves."
+                )
             data = data.model_copy(update={"technician_id": technician_id})
 
         patrol = RoutePatrol.model_validate(data)
@@ -89,9 +92,9 @@ class _RoutePatrolService:
         session: Session,
         current_user: TokenData,
         technician_id: UUID | None = None,
-        site_id:       UUID | None = None,
-        limit:         int = 100,
-        offset:        int = 0,
+        site_id: UUID | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[RoutePatrolResponse]:
         if not is_management(current_user):
             technician_id = get_technician_id_for_user(current_user.user_id, session)
@@ -104,21 +107,29 @@ class _RoutePatrolService:
         stmt = stmt.order_by(RoutePatrol.patrol_date.desc()).offset(offset).limit(limit)  # type: ignore
         return [_enrich(p, session) for p in session.exec(stmt).all()]
 
-    def get(self, patrol_id: UUID, session: Session, current_user: TokenData) -> RoutePatrolResponse:
+    def get(
+        self, patrol_id: UUID, session: Session, current_user: TokenData
+    ) -> RoutePatrolResponse:
         p = session.get(RoutePatrol, patrol_id)
         if not p or p.deleted_at:
             from app.exceptions.http import NotFoundException
+
             raise NotFoundException("route patrol not found")
         if not is_management(current_user):
             technician_id = get_technician_id_for_user(current_user.user_id, session)
             if p.technician_id != technician_id:
-                raise ForbiddenException("Technicians can only view their own route patrols.")
+                raise ForbiddenException(
+                    "Technicians can only view their own route patrols."
+                )
         return _enrich(p, session)
 
-    def update(self, patrol_id: UUID, data: RoutePatrolUpdate, session: Session) -> RoutePatrolResponse:
+    def update(
+        self, patrol_id: UUID, data: RoutePatrolUpdate, session: Session
+    ) -> RoutePatrolResponse:
         p = session.get(RoutePatrol, patrol_id)
         if not p or p.deleted_at:
             from app.exceptions.http import NotFoundException
+
             raise NotFoundException("route patrol not found")
         for k, v in data.model_dump(exclude_none=True).items():
             setattr(p, k, v)
@@ -131,6 +142,7 @@ class _RoutePatrolService:
         p = session.get(RoutePatrol, patrol_id)
         if not p or p.deleted_at:
             from app.exceptions.http import NotFoundException
+
             raise NotFoundException("route patrol not found")
         p.soft_delete()
         session.commit()

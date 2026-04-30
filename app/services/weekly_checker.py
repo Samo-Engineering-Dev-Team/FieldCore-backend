@@ -49,14 +49,18 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
 
     # Only act on Wednesday (2) and Friday (4)
     if weekday not in (2, 4):
-        return {"skipped": True, "reason": f"Checker only fires on Wednesday and Friday (today is weekday {weekday})"}
+        return {
+            "skipped": True,
+            "reason": f"Checker only fires on Wednesday and Friday (today is weekday {weekday})",
+        }
 
     is_friday = weekday == 4
     week_start, week_end = _week_bounds()
 
     # Fetch NOC + Manager user IDs for notifications
     noc_user_ids: list = [
-        u.id for u in session.exec(
+        u.id
+        for u in session.exec(
             select(User).where(
                 User.role.in_([UserRole.NOC, UserRole.MANAGER]),  # type: ignore
                 User.deleted_at.is_(None),
@@ -64,7 +68,8 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
         ).all()
     ]
     _manager_user_ids: list = [
-        u.id for u in session.exec(
+        u.id
+        for u in session.exec(
             select(User).where(User.role == UserRole.MANAGER, User.deleted_at.is_(None))
         ).all()
     ]
@@ -89,6 +94,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
 
     for tech_id_str, schedules in by_tech.items():
         from uuid import UUID
+
         tech_id = UUID(tech_id_str)
         tech = session.get(Technician, tech_id)
         if not tech or not tech.user:
@@ -111,9 +117,9 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             continue  # Tech is on track — nothing to do
 
         _SCHEDULE_LABELS = {
-            "routine_drive":            "Routine Drive",
-            "repeater_site_visit":      "Repeater Site Visit",
-            "generator_diesel_refill":  "Generator Diesel Refill",
+            "routine_drive": "Routine Drive",
+            "repeater_site_visit": "Repeater Site Visit",
+            "generator_diesel_refill": "Generator Diesel Refill",
         }
         overdue_labels = ", ".join(_SCHEDULE_LABELS.get(t, t) for t in overdue_types)
 
@@ -126,7 +132,10 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             )
             from app.services.notification import NotificationTemplate
             from app.utils.enums import NotificationPriority
-            template = NotificationTemplate(title=title, message=message, priority=NotificationPriority.CRITICAL)
+
+            template = NotificationTemplate(
+                title=title, message=message, priority=NotificationPriority.CRITICAL
+            )
 
             # Notify the technician directly
             notification_service.create_notification_from_template(
@@ -147,7 +156,10 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             )
             from app.services.notification import NotificationTemplate
             from app.utils.enums import NotificationPriority
-            template = NotificationTemplate(title=title, message=message, priority=NotificationPriority.HIGH)
+
+            template = NotificationTemplate(
+                title=title, message=message, priority=NotificationPriority.HIGH
+            )
 
             notification_service.create_notification_from_template(
                 user_id=tech_user_id, template=template, session=session
@@ -158,11 +170,13 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
                         user_id=uid, template=template, session=session
                     )
 
-        alerts_sent.append({
-            "technician": tech_name,
-            "overdue_types": overdue_types,
-            "level": "escalation" if is_friday else "warning",
-        })
+        alerts_sent.append(
+            {
+                "technician": tech_name,
+                "overdue_types": overdue_types,
+                "level": "escalation" if is_friday else "warning",
+            }
+        )
 
     return {
         "checked_at": now.isoformat(),

@@ -54,7 +54,11 @@ def read_incident_report(
     return service.read_incident_report(report_id, session, current_user)
 
 
-@router.get("/{incident_id}/by-incident", response_model=IncidentReportResponse | None, status_code=200)
+@router.get(
+    "/{incident_id}/by-incident",
+    response_model=IncidentReportResponse | None,
+    status_code=200,
+)
 def get_report_by_incident(
     incident_id: UUID,
     service: IncidentReportService,
@@ -88,7 +92,9 @@ def delete_incident_report(
     service.delete_incident_report(report_id, session, current_user)
 
 
-@router.post("/{report_id}/photos", response_model=IncidentReportResponse, status_code=200)
+@router.post(
+    "/{report_id}/photos", response_model=IncidentReportResponse, status_code=200
+)
 def upload_report_photo(
     report_id: UUID,
     service: IncidentReportService,

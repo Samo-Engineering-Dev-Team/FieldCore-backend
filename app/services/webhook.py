@@ -18,8 +18,7 @@ class WebhookService:
             with Database.session() as session:
                 webhooks = session.exec(
                     select(Webhook).where(
-                        Webhook.event_type == event_type,
-                        Webhook.is_active
+                        Webhook.event_type == event_type, Webhook.is_active
                     )
                 ).all()
 
@@ -42,7 +41,9 @@ class WebhookService:
             LOG.error(f"Error sending webhooks for {event_type}: {e}")
 
     @staticmethod
-    async def _send_to_webhook(webhook: Webhook, payload: Dict[str, Any], client: httpx.AsyncClient) -> None:
+    async def _send_to_webhook(
+        webhook: Webhook, payload: Dict[str, Any], client: httpx.AsyncClient
+    ) -> None:
         """Send payload to a specific webhook URL."""
         try:
             headers = {"Content-Type": "application/json"}
@@ -51,20 +52,16 @@ class WebhookService:
             if webhook.secret:
                 payload_str = json.dumps(payload, sort_keys=True)
                 signature = hmac.new(
-                    webhook.secret.encode(),
-                    payload_str.encode(),
-                    hashlib.sha256
+                    webhook.secret.encode(), payload_str.encode(), hashlib.sha256
                 ).hexdigest()
                 headers["X-Webhook-Signature"] = f"sha256={signature}"
 
-            response = await client.post(
-                webhook.url,
-                json=payload,
-                headers=headers
-            )
+            response = await client.post(webhook.url, json=payload, headers=headers)
 
             if response.status_code >= 400:
-                LOG.warning(f"Webhook failed: {webhook.url} - {response.status_code}: {response.text}")
+                LOG.warning(
+                    f"Webhook failed: {webhook.url} - {response.status_code}: {response.text}"
+                )
             else:
                 LOG.info(f"Webhook sent successfully: {webhook.url}")
 
@@ -75,11 +72,7 @@ class WebhookService:
     def register_webhook(url: str, event_type: str, secret: str = None) -> Webhook:
         """Register a new webhook."""
         with Database.session() as session:
-            webhook = Webhook(
-                url=url,
-                event_type=event_type,
-                secret=secret
-            )
+            webhook = Webhook(url=url, event_type=event_type, secret=secret)
             session.add(webhook)
             session.commit()
             session.refresh(webhook)

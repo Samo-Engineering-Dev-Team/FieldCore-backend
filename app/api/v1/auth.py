@@ -29,9 +29,11 @@ def login(
     service: AuthService,
     session: SessionDep,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
-    ) -> Token:
+) -> Token:
     """Authenticate user and return JWT access token. Rate limited to 5 requests per minute."""
-    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    ip = request.headers.get(
+        "X-Forwarded-For", request.client.host if request.client else None
+    )
     ua = request.headers.get("User-Agent")
     return service.authenticate(
         LoginForm(email=form.username, password=form.password),
@@ -41,7 +43,9 @@ def login(
     )
 
 
-@router.post("/login/passkey/options", response_model=PasskeyCeremonyStart, status_code=200)
+@router.post(
+    "/login/passkey/options", response_model=PasskeyCeremonyStart, status_code=200
+)
 @limiter.limit("10/minute")
 def start_passkey_login(
     request: Request,
@@ -61,7 +65,9 @@ def verify_passkey_login(
     session: SessionDep,
 ) -> Token:
     """Verify WebAuthn authentication and issue JWT token."""
-    ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    ip = request.headers.get(
+        "X-Forwarded-For", request.client.host if request.client else None
+    )
     ua = request.headers.get("User-Agent")
     return service.finish_passkey_authentication(
         payload,
@@ -93,7 +99,9 @@ def complete_password_reset(
     return service.complete_password_reset(current_user.user_id, payload, session)
 
 
-@router.get("/passkeys", response_model=list[PasskeyCredentialResponse], status_code=200)
+@router.get(
+    "/passkeys", response_model=list[PasskeyCredentialResponse], status_code=200
+)
 def list_passkeys(
     current_user: NocOrManagerOrAdminUser,
     service: AuthService,
@@ -103,7 +111,9 @@ def list_passkeys(
     return service.list_passkeys(current_user, session)
 
 
-@router.post("/passkeys/register/options", response_model=PasskeyCeremonyStart, status_code=200)
+@router.post(
+    "/passkeys/register/options", response_model=PasskeyCeremonyStart, status_code=200
+)
 def start_passkey_registration(
     request: Request,
     current_user: NocOrManagerOrAdminUser,
@@ -114,7 +124,11 @@ def start_passkey_registration(
     return service.start_passkey_registration(current_user, session, request)
 
 
-@router.post("/passkeys/register/verify", response_model=PasskeyCredentialResponse, status_code=201)
+@router.post(
+    "/passkeys/register/verify",
+    response_model=PasskeyCredentialResponse,
+    status_code=201,
+)
 def verify_passkey_registration(
     payload: PasskeyRegistrationVerification,
     current_user: NocOrManagerOrAdminUser,
@@ -125,7 +139,9 @@ def verify_passkey_registration(
     return service.finish_passkey_registration(current_user, payload, session)
 
 
-@router.delete("/passkeys/{passkey_id}", response_model=PasskeyMutationResponse, status_code=200)
+@router.delete(
+    "/passkeys/{passkey_id}", response_model=PasskeyMutationResponse, status_code=200
+)
 def delete_passkey(
     passkey_id: str,
     current_user: NocOrManagerOrAdminUser,

@@ -12,9 +12,7 @@ router = APIRouter(prefix="/sites", tags=["Sites"])
 
 @router.post("/", response_model=SiteResponse, status_code=201)
 def create_site(
-    payload: SiteCreate,
-    service: SiteService,
-    session: SessionDep
+    payload: SiteCreate, service: SiteService, session: SessionDep
 ) -> SiteResponse:
     """"""
     return service.create_site(payload, session)
@@ -26,18 +24,14 @@ def read_sites(
     session: SessionDep,
     region: Region | None = Query(None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[SiteResponse]:
     """"""
     return service.read_sites(session, region, offset, limit)
 
 
 @router.get("/{site_id}", response_model=SiteResponse, status_code=200)
-def read_site(
-    site_id: UUID,
-    service: SiteService,
-    session: SessionDep
-) -> SiteResponse:
+def read_site(site_id: UUID, service: SiteService, session: SessionDep) -> SiteResponse:
     """"""
     return service.read_site(site_id, session)
 
@@ -54,10 +48,6 @@ def update_site(
 
 
 @router.delete("/{site_id}", status_code=204)
-def delete_site(
-    site_id: UUID,
-    service: SiteService,
-    session: SessionDep
-) -> None:
+def delete_site(site_id: UUID, service: SiteService, session: SessionDep) -> None:
     """"""
     service.delete_site(site_id, session)

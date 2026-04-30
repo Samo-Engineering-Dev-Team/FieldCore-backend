@@ -91,11 +91,11 @@ class _SiteService:
         # Extract lat/lon before creating site
         site_data = data.model_dump(exclude={"latitude", "longitude"})
         site: Site = Site(**site_data)
-        
+
         # Set location if coordinates provided
         if data.latitude is not None and data.longitude is not None:
             site.set_location(data.latitude, data.longitude)
-        
+
         try:
             session.add(site)
             session.commit()
@@ -144,7 +144,7 @@ class _SiteService:
         # Handle location update separately
         lat = update_data.pop("latitude", None)
         lon = update_data.pop("longitude", None)
-        
+
         if lat is not None and lon is not None:
             site.set_location(lat, lon)
 
@@ -178,16 +178,16 @@ class _SiteService:
         return site
 
     def find_nearby_sites(
-        self, 
-        latitude: float, 
-        longitude: float, 
+        self,
+        latitude: float,
+        longitude: float,
         radius_meters: float,
         session: Session,
-        limit: int = 10
+        limit: int = 10,
     ) -> List[SiteResponse]:
         """Find sites within a given radius of a point."""
         point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-        
+
         statement = (
             select(Site)
             .where(Site.deleted_at.is_(None))
@@ -196,29 +196,29 @@ class _SiteService:
             .order_by(ST_Distance(Site.location, point))
             .limit(limit)
         )
-        
+
         sites = session.exec(statement).all()
         return self._build_site_responses(sites, session)
 
     def is_within_geofence(
-        self,
-        site_id: UUID,
-        latitude: float,
-        longitude: float,
-        session: Session
+        self, site_id: UUID, latitude: float, longitude: float, session: Session
     ) -> bool:
         """Check if a point is within the site's geofence."""
         site = self._get_site(site_id, session)
-        
+
         if site.location is None:
             return False
-        
+
         point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-        
+
         result = session.execute(
-            select(ST_DWithin(site.location, point, site.geofence_radius, use_spheroid=True))
+            select(
+                ST_DWithin(
+                    site.location, point, site.geofence_radius, use_spheroid=True
+                )
+            )
         ).scalar()
-        
+
         return bool(result)
 
 

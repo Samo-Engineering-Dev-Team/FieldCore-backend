@@ -79,7 +79,9 @@ def normalize_attachment_item(item: Any) -> dict[str, Any]:
             "signed_url": item.get("signed_url"),
             "file_path": file_path,
             "path": file_path,
-            "original_name": item.get("original_name") or item.get("name") or item.get("filename"),
+            "original_name": item.get("original_name")
+            or item.get("name")
+            or item.get("filename"),
             "content_type": item.get("content_type") or item.get("mime_type"),
             "size": item.get("size"),
         }
@@ -115,7 +117,10 @@ def normalize_attachments(attachments: Any) -> dict[str, Any] | None:
     elif isinstance(attachments, dict):
         if isinstance(attachments.get("files"), list):
             files = [normalize_attachment_item(item) for item in attachments["files"]]
-        elif any(key in attachments for key in ("url", "public_url", "file_path", "path", "filename", "name")):
+        elif any(
+            key in attachments
+            for key in ("url", "public_url", "file_path", "path", "filename", "name")
+        ):
             files = [normalize_attachment_item(attachments)]
         else:
             for key, value in attachments.items():
@@ -125,7 +130,9 @@ def normalize_attachments(attachments: Any) -> dict[str, Any] | None:
     else:
         return None
 
-    cleaned_files = [entry for entry in files if entry.get("url") or entry.get("file_path")]
+    cleaned_files = [
+        entry for entry in files if entry.get("url") or entry.get("file_path")
+    ]
     return {"files": cleaned_files}
 
 

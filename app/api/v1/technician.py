@@ -3,7 +3,15 @@ from typing import List
 from uuid import UUID
 from pydantic import BaseModel
 
-from app.models import TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate, Site, SiteResponse, TechnicianSite
+from app.models import (
+    TechnicianCreate,
+    TechnicianUpdate,
+    TechnicianResponse,
+    TechnicianLocationUpdate,
+    Site,
+    SiteResponse,
+    TechnicianSite,
+)
 from app.services import TechnicianService
 from app.services.auth import CurrentUser
 from app.database import SessionDep
@@ -18,6 +26,7 @@ from app.services.authorization import (
 class TechnicianSitesPayload(BaseModel):
     site_ids: List[UUID]
 
+
 router = APIRouter(prefix="/technicians", tags=["Technicians"])
 
 
@@ -29,7 +38,9 @@ def create_technician(
     current_user: CurrentUser,
 ) -> TechnicianResponse:
     """Create a new technician."""
-    require_management(current_user, "Only NOC, managers, or admins can create technicians.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can create technicians."
+    )
     return service.create_technician(payload, session)
 
 
@@ -39,16 +50,21 @@ def read_technicians(
     session: SessionDep,
     current_user: CurrentUser,
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000)
+    limit: int = Query(default=100, le=1000),
 ) -> List[TechnicianResponse]:
     """Get all technicians."""
-    require_management(current_user, "Only NOC, managers, or admins can view all technicians.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can view all technicians."
+    )
     return service.read_technicians(session, offset, limit)
 
 
 # ==================== DISPATCH ENDPOINTS ====================
 
-@router.get("/dispatch/nearest", response_model=List[TechnicianResponse], status_code=200)
+
+@router.get(
+    "/dispatch/nearest", response_model=List[TechnicianResponse], status_code=200
+)
 def find_nearest_technicians(
     service: TechnicianService,
     session: SessionDep,
@@ -56,15 +72,21 @@ def find_nearest_technicians(
     latitude: float = Query(ge=-90, le=90, description="Target latitude"),
     longitude: float = Query(ge=-180, le=180, description="Target longitude"),
     limit: int = Query(default=5, ge=1, le=20, description="Max technicians to return"),
-    available_only: bool = Query(default=True, description="Only return available technicians"),
-    max_distance_km: float | None = Query(default=None, ge=0, description="Max distance in km"),
+    available_only: bool = Query(
+        default=True, description="Only return available technicians"
+    ),
+    max_distance_km: float | None = Query(
+        default=None, ge=0, description="Max distance in km"
+    ),
 ) -> List[TechnicianResponse]:
     """
     Find nearest technicians to a location.
     Used for smart dispatch of incidents and tasks.
     Returns technicians sorted by distance with distance_km field populated.
     """
-    require_management(current_user, "Only NOC, managers, or admins can use dispatch queries.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can use dispatch queries."
+    )
     return service.find_nearest_technicians(
         latitude=latitude,
         longitude=longitude,
@@ -75,7 +97,11 @@ def find_nearest_technicians(
     )
 
 
-@router.get("/dispatch/nearest-to-site/{site_id}", response_model=List[TechnicianResponse], status_code=200)
+@router.get(
+    "/dispatch/nearest-to-site/{site_id}",
+    response_model=List[TechnicianResponse],
+    status_code=200,
+)
 def find_nearest_to_site(
     site_id: UUID,
     service: TechnicianService,
@@ -85,7 +111,9 @@ def find_nearest_to_site(
     available_only: bool = Query(default=True),
 ) -> List[TechnicianResponse]:
     """Find nearest technicians to a specific site."""
-    require_management(current_user, "Only NOC, managers, or admins can use dispatch queries.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can use dispatch queries."
+    )
     return service.find_nearest_to_site(
         site_id=site_id,
         session=session,
@@ -94,7 +122,9 @@ def find_nearest_to_site(
     )
 
 
-@router.get("/dispatch/in-region", response_model=List[TechnicianResponse], status_code=200)
+@router.get(
+    "/dispatch/in-region", response_model=List[TechnicianResponse], status_code=200
+)
 def get_technicians_in_region(
     service: TechnicianService,
     session: SessionDep,
@@ -105,7 +135,9 @@ def get_technicians_in_region(
     available_only: bool = Query(default=False),
 ) -> List[TechnicianResponse]:
     """Get all technicians within a radius of a point."""
-    require_management(current_user, "Only NOC, managers, or admins can use dispatch queries.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can use dispatch queries."
+    )
     return service.get_technicians_in_region(
         latitude=latitude,
         longitude=longitude,
@@ -115,7 +147,11 @@ def get_technicians_in_region(
     )
 
 
-@router.get("/monitoring/stale-locations", response_model=List[TechnicianResponse], status_code=200)
+@router.get(
+    "/monitoring/stale-locations",
+    response_model=List[TechnicianResponse],
+    status_code=200,
+)
 def get_stale_locations(
     service: TechnicianService,
     session: SessionDep,
@@ -123,11 +159,14 @@ def get_stale_locations(
     stale_minutes: int = Query(default=30, ge=5, le=1440),
 ) -> List[TechnicianResponse]:
     """Get technicians with outdated location data (for NOC monitoring)."""
-    require_management(current_user, "Only NOC, managers, or admins can view stale locations.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can view stale locations."
+    )
     return service.get_stale_locations(session, stale_minutes)
 
 
 # ==================== STANDARD CRUD ====================
+
 
 @router.get("/me", response_model=TechnicianResponse, status_code=200)
 def read_my_technician_profile(
@@ -162,7 +201,9 @@ def update_technician(
     return service.update_technician(technician_id, payload, session, current_user)
 
 
-@router.patch("/{technician_id}/location", response_model=TechnicianResponse, status_code=200)
+@router.patch(
+    "/{technician_id}/location", response_model=TechnicianResponse, status_code=200
+)
 def update_technician_location(
     technician_id: UUID,
     payload: TechnicianLocationUpdate,
@@ -184,7 +225,7 @@ def escalate_technician_issue(
     session: SessionDep,
     current_user: CurrentUser,
     reason: str = Query(..., description="Reason for escalation"),
-    priority: str = Query("HIGH", description="Escalation priority: HIGH, MEDIUM, LOW")
+    priority: str = Query("HIGH", description="Escalation priority: HIGH, MEDIUM, LOW"),
 ) -> dict:
     """
     Escalate a technician performance or availability issue to management.
@@ -202,11 +243,13 @@ def escalate_technician_issue(
         reason=reason,
         priority=priority,
         escalated_by=current_user.user_id,
-        session=session
+        session=session,
     )
 
 
-@router.get("/{technician_id}/sites", response_model=List[SiteResponse], status_code=200)
+@router.get(
+    "/{technician_id}/sites", response_model=List[SiteResponse], status_code=200
+)
 def get_technician_assigned_sites(
     technician_id: UUID,
     session: SessionDep,
@@ -232,21 +275,23 @@ def get_technician_assigned_sites(
     responses = []
     for site in sites:
         coords = site.get_coordinates()
-        responses.append(SiteResponse(
-            id=site.id,
-            created_at=site.created_at,
-            updated_at=site.updated_at,
-            deleted_at=site.deleted_at,
-            name=site.name,
-            region=site.region,
-            address=site.address,
-            latitude=coords[0] if coords else None,
-            longitude=coords[1] if coords else None,
-            geofence_radius=site.geofence_radius,
-            num_tasks=0,
-            num_incidents=0,
-            num_reports=0,
-        ))
+        responses.append(
+            SiteResponse(
+                id=site.id,
+                created_at=site.created_at,
+                updated_at=site.updated_at,
+                deleted_at=site.deleted_at,
+                name=site.name,
+                region=site.region,
+                address=site.address,
+                latitude=coords[0] if coords else None,
+                longitude=coords[1] if coords else None,
+                geofence_radius=site.geofence_radius,
+                num_tasks=0,
+                num_incidents=0,
+                num_reports=0,
+            )
+        )
     return responses
 
 
@@ -283,5 +328,7 @@ def delete_technician(
     current_user: CurrentUser,
 ) -> None:
     """Delete a technician."""
-    require_management(current_user, "Only NOC, managers, or admins can delete technicians.")
+    require_management(
+        current_user, "Only NOC, managers, or admins can delete technicians."
+    )
     service.delete_technician(technician_id, session)

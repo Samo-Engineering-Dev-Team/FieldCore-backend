@@ -5,7 +5,12 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
 from app.utils.enums import RoutineCheckStatus
-from app.models import RoutineCheck, RoutineCheckCreate, RoutineCheckUpdate, RoutineCheckResponse
+from app.models import (
+    RoutineCheck,
+    RoutineCheckCreate,
+    RoutineCheckUpdate,
+    RoutineCheckResponse,
+)
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -14,12 +19,16 @@ from app.exceptions.http import (
 
 
 class _RoutineCheckService:
-    def routine_check_to_response(self, routine_check: RoutineCheck) -> RoutineCheckResponse:
+    def routine_check_to_response(
+        self, routine_check: RoutineCheck
+    ) -> RoutineCheckResponse:
         return RoutineCheckResponse(
             **routine_check.model_dump(),
-            )
+        )
 
-    def create_routine_check(self, data: RoutineCheckCreate, session: Session) -> RoutineCheckResponse:
+    def create_routine_check(
+        self, data: RoutineCheckCreate, session: Session
+    ) -> RoutineCheckResponse:
         routine_check: RoutineCheck = RoutineCheck(**data.model_dump())
         try:
             session.add(routine_check)
@@ -31,9 +40,13 @@ class _RoutineCheckService:
             raise ConflictException(f"Error creating routine_check: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error creating routine_check: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error creating routine_check: {e}"
+            )
 
-    def read_routine_check(self, routine_check_id: UUID, session: Session) -> RoutineCheckResponse:
+    def read_routine_check(
+        self, routine_check_id: UUID, session: Session
+    ) -> RoutineCheckResponse:
         routine_check = self._get_routine_check(routine_check_id, session)
         return self.routine_check_to_response(routine_check)
 
@@ -51,7 +64,10 @@ class _RoutineCheckService:
 
         statement = statement.offset(offset).limit(limit)
         routine_checks = session.exec(statement).all()
-        return [self.routine_check_to_response(routine_check) for routine_check in routine_checks]
+        return [
+            self.routine_check_to_response(routine_check)
+            for routine_check in routine_checks
+        ]
 
     def update_routine_check(
         self, routine_check_id: UUID, data: RoutineCheckUpdate, session: Session
@@ -78,15 +94,21 @@ class _RoutineCheckService:
             raise ConflictException(f"Error updating routine_check: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error updating routine_check: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error updating routine_check: {e}"
+            )
 
     def delete_routine_check(self, routine_check_id: UUID, session: Session) -> None:
         routine_check = self._get_routine_check(routine_check_id, session)
         routine_check.soft_delete()
         session.commit()
 
-    def _get_routine_check(self, routine_check_id: UUID, session: Session) -> RoutineCheck:
-        statement = select(RoutineCheck).where(RoutineCheck.id == routine_check_id, RoutineCheck.deleted_at.is_(None))  # type: ignore
+    def _get_routine_check(
+        self, routine_check_id: UUID, session: Session
+    ) -> RoutineCheck:
+        statement = select(RoutineCheck).where(
+            RoutineCheck.id == routine_check_id, RoutineCheck.deleted_at.is_(None)
+        )  # type: ignore
         routine_check: RoutineCheck | None = session.exec(statement).first()
         if not routine_check:
             raise NotFoundException("routine_check not found")
@@ -97,4 +119,6 @@ def get_routine_check_service() -> _RoutineCheckService:
     return _RoutineCheckService()
 
 
-RoutineCheckService = Annotated[_RoutineCheckService, Depends(get_routine_check_service)]
+RoutineCheckService = Annotated[
+    _RoutineCheckService, Depends(get_routine_check_service)
+]

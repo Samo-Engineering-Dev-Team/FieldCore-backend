@@ -7,7 +7,15 @@ from sqlalchemy.exc import IntegrityError
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
 from loguru import logger as LOG
 
-from app.models import Technician, TechnicianCreate, TechnicianUpdate, TechnicianResponse, TechnicianLocationUpdate, User, Site
+from app.models import (
+    Technician,
+    TechnicianCreate,
+    TechnicianUpdate,
+    TechnicianResponse,
+    TechnicianLocationUpdate,
+    User,
+    Site,
+)
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -19,7 +27,9 @@ from app.services.authorization import assert_technician_self_or_roles, is_manag
 
 
 class _TechnicianService:
-    def technician_to_response(self, technician: Technician, distance_km: float | None = None) -> TechnicianResponse:
+    def technician_to_response(
+        self, technician: Technician, distance_km: float | None = None
+    ) -> TechnicianResponse:
         current_coords = technician.get_current_coordinates()
         home_coords = technician.get_home_base_coordinates()
         return TechnicianResponse(
@@ -40,22 +50,26 @@ class _TechnicianService:
             distance_km=distance_km,
         )
 
-    def create_technician(self, data: TechnicianCreate, session: Session) -> TechnicianResponse:
+    def create_technician(
+        self, data: TechnicianCreate, session: Session
+    ) -> TechnicianResponse:
         # Handle user
-        statement = select(User).where(User.id == data.user_id, User.deleted_at.is_(None)) # type: ignore
+        statement = select(User).where(
+            User.id == data.user_id, User.deleted_at.is_(None)
+        )  # type: ignore
         user: User | None = session.exec(statement).first()
 
         if not user:
             raise NotFoundException("user not found, cannot create technician.")
-        
+
         # Extract home location before creating
         tech_data = data.model_dump(exclude={"home_latitude", "home_longitude"})
         technician: Technician = Technician(**tech_data, user=user)
-        
+
         # Set home base if provided
         if data.home_latitude is not None and data.home_longitude is not None:
             technician.set_home_base(data.home_latitude, data.home_longitude)
-        
+
         try:
             session.add(technician)
             session.commit()
@@ -66,7 +80,9 @@ class _TechnicianService:
             raise ConflictException(f"Error creating technician: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error creating technician: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error creating technician: {e}"
+            )
 
     def read_technician(
         self,
@@ -122,7 +138,7 @@ class _TechnicianService:
         # Handle home location update separately
         home_lat = update_data.pop("home_latitude", None)
         home_lon = update_data.pop("home_longitude", None)
-        
+
         if home_lat is not None and home_lon is not None:
             technician.set_home_base(home_lat, home_lon)
 
@@ -140,7 +156,9 @@ class _TechnicianService:
             raise ConflictException(f"Error updating technician: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error updating technician: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error updating technician: {e}"
+            )
 
     def delete_technician(self, technician_id: UUID, session: Session) -> None:
         technician = self._get_technician(technician_id, session)
@@ -162,19 +180,19 @@ class _TechnicianService:
         statement = (
             select(Technician)
             .where(Technician.id == technician_id)
-            .where(Technician.deleted_at.is_(None)) # type: ignore
-          )
+            .where(Technician.deleted_at.is_(None))  # type: ignore
+        )
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician not found")
         return technician
 
     # ==================== LOCATION TRACKING ====================
-    
+
     def update_location(
-        self, 
-        technician_id: UUID, 
-        data: TechnicianLocationUpdate, 
+        self,
+        technician_id: UUID,
+        data: TechnicianLocationUpdate,
         session: Session,
         current_user: TokenData,
     ) -> TechnicianResponse:
@@ -189,7 +207,7 @@ class _TechnicianService:
             )
         technician = self._get_technician(technician_id, session)
         technician.update_location(data.latitude, data.longitude)
-        
+
         try:
             session.commit()
             session.refresh(technician)
@@ -199,7 +217,7 @@ class _TechnicianService:
             raise InternalServerErrorException(f"Error updating location: {e}")
 
     # ==================== SMART DISPATCH ====================
-    
+
     def find_nearest_technicians(
         self,
         latitude: float,
@@ -214,35 +232,45 @@ class _TechnicianService:
         Used for smart incident/task dispatch.
         """
         point = ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)
-        
+
         # Build query
         statement = (
             select(
                 Technician,
                 # Calculate distance in kilometers using geography cast
-                (ST_Distance(Technician.current_location, point, use_spheroid=True) / 1000).label("distance_km")
+                (
+                    ST_Distance(Technician.current_location, point, use_spheroid=True)
+                    / 1000
+                ).label("distance_km"),
             )
             .where(Technician.deleted_at.is_(None))
             .where(Technician.current_location.isnot(None))
         )
-        
+
         if available_only:
             statement = statement.where(Technician.is_available)
-        
+
         if max_distance_km:
             # Filter by max distance (convert km to meters)
             statement = statement.where(
-                ST_DWithin(Technician.current_location, point, max_distance_km * 1000, use_spheroid=True)
+                ST_DWithin(
+                    Technician.current_location,
+                    point,
+                    max_distance_km * 1000,
+                    use_spheroid=True,
+                )
             )
-        
+
         statement = statement.order_by("distance_km").limit(limit)
-        
+
         results = session.execute(statement).all()
         return [
-            self.technician_to_response(row.Technician, distance_km=round(row.distance_km, 2))
+            self.technician_to_response(
+                row.Technician, distance_km=round(row.distance_km, 2)
+            )
             for row in results
         ]
-    
+
     def find_nearest_to_site(
         self,
         site_id: UUID,
@@ -255,17 +283,17 @@ class _TechnicianService:
         site = session.exec(
             select(Site).where(Site.id == site_id, Site.deleted_at.is_(None))
         ).first()
-        
+
         if not site:
             raise NotFoundException("Site not found")
-        
+
         if site.location is None:
             raise ConflictException("Site does not have a location set")
-        
+
         coords = site.get_coordinates()
         if not coords:
             raise ConflictException("Could not get site coordinates")
-        
+
         return self.find_nearest_technicians(
             latitude=coords[0],
             longitude=coords[1],
@@ -273,7 +301,7 @@ class _TechnicianService:
             limit=limit,
             available_only=available_only,
         )
-    
+
     def get_technicians_in_region(
         self,
         latitude: float,
@@ -291,7 +319,7 @@ class _TechnicianService:
             available_only=available_only,
             max_distance_km=radius_km,
         )
-    
+
     def get_stale_locations(
         self,
         session: Session,
@@ -299,17 +327,17 @@ class _TechnicianService:
     ) -> List[TechnicianResponse]:
         """Get technicians with stale location data (for monitoring)."""
         cutoff = utcnow() - timedelta(minutes=stale_minutes)
-        
+
         statement = (
             select(Technician)
             .where(Technician.deleted_at.is_(None))
             .where(Technician.is_available)
             .where(
-                (Technician.last_location_update.is_(None)) |
-                (Technician.last_location_update < cutoff)
+                (Technician.last_location_update.is_(None))
+                | (Technician.last_location_update < cutoff)
             )
         )
-        
+
         technicians = session.exec(statement).all()
         return [self.technician_to_response(t) for t in technicians]
 
@@ -319,27 +347,32 @@ class _TechnicianService:
         reason: str,
         priority: str,
         escalated_by: UUID,
-        session: Session
+        session: Session,
     ) -> dict:
         """Escalate a technician issue to management."""
-        from app.services.notification import _NotificationService, NotificationTemplates
-        
+        from app.services.notification import (
+            _NotificationService,
+            NotificationTemplates,
+        )
+
         # Get technician details
-        statement = select(Technician).where(Technician.id == technician_id, Technician.deleted_at.is_(None))
+        statement = select(Technician).where(
+            Technician.id == technician_id, Technician.deleted_at.is_(None)
+        )
         technician = session.exec(statement).first()
-        
+
         if not technician:
             raise NotFoundException("Technician not found")
-        
+
         # Get management users to notify
         management_statement = select(User).where(
             User.role.in_(["ADMIN", "MANAGER"]),  # Assuming these are management roles
-            User.deleted_at.is_(None)
+            User.deleted_at.is_(None),
         )
         management_users = session.exec(management_statement).all()
-        
+
         notifications_created = []
-        
+
         # Create notifications for all management users
         notification_service = _NotificationService()
         template = NotificationTemplates.technician_escalation(
@@ -358,11 +391,13 @@ class _TechnicianService:
                     notifications_created.append(created.id)
             except Exception as e:
                 # Log error but continue with other notifications
-                LOG.warning("Failed to create notification for {}: {}", manager.email, e)
-        
+                LOG.warning(
+                    "Failed to create notification for {}: {}", manager.email, e
+                )
+
         # Log the escalation in the database (you might want to create an escalation_log table)
         # For now, we'll just return success info
-        
+
         return {
             "success": True,
             "technician_id": str(technician_id),
@@ -370,7 +405,7 @@ class _TechnicianService:
             "reason": reason,
             "priority": priority,
             "notifications_sent": len(notifications_created),
-            "timestamp": utcnow().isoformat()
+            "timestamp": utcnow().isoformat(),
         }
 
 

@@ -12,8 +12,12 @@ class UserSession(BaseDB, table=True):
     role: str = Field(nullable=False, max_length=32)
     session_id: str = Field(nullable=False, index=True)
     is_active: bool = Field(default=True, nullable=False)
-    last_seen: Optional[datetime] = Field(default=None, sa_column=DateTime(timezone=True))
-    expires_at: Optional[datetime] = Field(default=None, sa_column=DateTime(timezone=True))
+    last_seen: Optional[datetime] = Field(
+        default=None, sa_column=DateTime(timezone=True)
+    )
+    expires_at: Optional[datetime] = Field(
+        default=None, sa_column=DateTime(timezone=True)
+    )
 
     def to_public(self) -> dict:
         # Ensure last_seen is a datetime before formatting (handle legacy string values)

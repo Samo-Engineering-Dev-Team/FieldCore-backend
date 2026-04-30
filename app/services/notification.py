@@ -38,7 +38,7 @@ class NotificationTemplates:
             return "No details provided."
         if len(cleaned) <= limit:
             return cleaned
-        return f"{cleaned[:limit - 3].rstrip()}..."
+        return f"{cleaned[: limit - 3].rstrip()}..."
 
     @staticmethod
     def _label(value: str | object) -> str:
@@ -55,7 +55,9 @@ class NotificationTemplates:
         return NotificationPriority.NORMAL
 
     @staticmethod
-    def task_assigned(site_name: str, description: str | None, ref_no: str | None = None) -> NotificationTemplate:
+    def task_assigned(
+        site_name: str, description: str | None, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"Task assigned{ref}",
@@ -67,7 +69,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def task_started(technician_name: str, site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+    def task_started(
+        technician_name: str, site_name: str, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"Task in progress{ref}",
@@ -76,7 +80,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def task_completed(technician_name: str, site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+    def task_completed(
+        technician_name: str, site_name: str, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"Task completed{ref}",
@@ -88,7 +94,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def task_failed(technician_name: str, site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+    def task_failed(
+        technician_name: str, site_name: str, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"Task failed{ref}",
@@ -100,7 +108,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def report_auto_created(report_type: str | object, site_name: str) -> NotificationTemplate:
+    def report_auto_created(
+        report_type: str | object, site_name: str
+    ) -> NotificationTemplate:
         report_label = NotificationTemplates._label(report_type)
         return NotificationTemplate(
             title="Report ready for update",
@@ -163,7 +173,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def incident_in_progress(technician_name: str, site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+    def incident_in_progress(
+        technician_name: str, site_name: str, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"Incident in progress{ref}",
@@ -172,7 +184,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def incident_resolved(technician_name: str, site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+    def incident_resolved(
+        technician_name: str, site_name: str, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"Incident resolved{ref}",
@@ -199,7 +213,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def access_request_approved(site_name: str, seacom_ref: str) -> NotificationTemplate:
+    def access_request_approved(
+        site_name: str, seacom_ref: str
+    ) -> NotificationTemplate:
         return NotificationTemplate(
             title="Access request approved",
             message=f"Access to {site_name} was approved. Reference: {seacom_ref}.",
@@ -215,7 +231,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def inspection_started(site_name: str, technician_name: str) -> NotificationTemplate:
+    def inspection_started(
+        site_name: str, technician_name: str
+    ) -> NotificationTemplate:
         return NotificationTemplate(
             title="Routine inspection started",
             message=f"{technician_name} started a generator inspection at {site_name}.",
@@ -231,7 +249,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def incident_report_submitted(technician_name: str, site_name: str) -> NotificationTemplate:
+    def incident_report_submitted(
+        technician_name: str, site_name: str
+    ) -> NotificationTemplate:
         return NotificationTemplate(
             title="Incident report submitted",
             message=(
@@ -242,8 +262,8 @@ class NotificationTemplates:
         )
 
     _MILESTONE_LABELS: dict[str, str] = {
-        "respond":      "Response time",
-        "onsite":       "On-site arrival",
+        "respond": "Response time",
+        "onsite": "On-site arrival",
         "temp_restore": "Temporary restoration",
     }
 
@@ -256,7 +276,9 @@ class NotificationTemplates:
         ref_no: str | None = None,
     ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
-        milestone_label = NotificationTemplates._MILESTONE_LABELS.get(milestone or "", milestone or "SLA milestone")
+        milestone_label = NotificationTemplates._MILESTONE_LABELS.get(
+            milestone or "", milestone or "SLA milestone"
+        )
         return NotificationTemplate(
             title=f"SLA at risk{ref} — {milestone_label}",
             message=(
@@ -276,7 +298,9 @@ class NotificationTemplates:
         time_overdue: str | None = None,
     ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
-        milestone_label = NotificationTemplates._MILESTONE_LABELS.get(milestone or "", milestone or "SLA milestone")
+        milestone_label = NotificationTemplates._MILESTONE_LABELS.get(
+            milestone or "", milestone or "SLA milestone"
+        )
         overdue_str = f" ({time_overdue} overdue)" if time_overdue else ""
         return NotificationTemplate(
             title=f"SLA BREACHED{ref} — {milestone_label}",
@@ -289,7 +313,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def maintenance_overdue(site_name: str, schedule_type: str, days_overdue: int) -> NotificationTemplate:
+    def maintenance_overdue(
+        site_name: str, schedule_type: str, days_overdue: int
+    ) -> NotificationTemplate:
         type_label = schedule_type.replace("_", " ").title()
         return NotificationTemplate(
             title=f"Maintenance overdue — {type_label} at {site_name}",
@@ -297,11 +323,15 @@ class NotificationTemplates:
                 f"The {type_label} maintenance at {site_name} is {days_overdue} day(s) overdue. "
                 "Assign a technician or reschedule to remain compliant."
             ),
-            priority=NotificationPriority.HIGH if days_overdue >= 7 else NotificationPriority.NORMAL,
+            priority=NotificationPriority.HIGH
+            if days_overdue >= 7
+            else NotificationPriority.NORMAL,
         )
 
     @staticmethod
-    def task_cancelled(site_name: str, ref_no: str | None = None) -> NotificationTemplate:
+    def task_cancelled(
+        site_name: str, ref_no: str | None = None
+    ) -> NotificationTemplate:
         ref = f" [{ref_no}]" if ref_no else ""
         return NotificationTemplate(
             title=f"RHS task cancelled{ref}",
@@ -313,7 +343,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def technician_escalation(technician_name: str, priority: str, reason: str) -> NotificationTemplate:
+    def technician_escalation(
+        technician_name: str, priority: str, reason: str
+    ) -> NotificationTemplate:
         return NotificationTemplate(
             title="Technician escalation",
             message=(
@@ -324,7 +356,9 @@ class NotificationTemplates:
         )
 
     @staticmethod
-    def technician_help_alert(technician_name: str, priority: str, reason: str) -> NotificationTemplate:
+    def technician_help_alert(
+        technician_name: str, priority: str, reason: str
+    ) -> NotificationTemplate:
         return NotificationTemplate(
             title="Technician help alert",
             message=(
@@ -336,12 +370,18 @@ class NotificationTemplates:
 
 
 class _NotificationService:
-    def notification_to_response(self, notification: Notification) -> NotificationResponse:
+    def notification_to_response(
+        self, notification: Notification
+    ) -> NotificationResponse:
         return NotificationResponse(**notification.model_dump())
 
-    def create_notification(self, data: NotificationCreate, session: Session) -> NotificationResponse:
+    def create_notification(
+        self, data: NotificationCreate, session: Session
+    ) -> NotificationResponse:
         try:
-            statement = select(User).where(User.id == data.user_id, User.deleted_at.is_(None))  # type: ignore
+            statement = select(User).where(
+                User.id == data.user_id, User.deleted_at.is_(None)
+            )  # type: ignore
             user: User | None = session.exec(statement).first()
 
             if not user:
@@ -357,7 +397,9 @@ class _NotificationService:
             raise ConflictException(f"Error creating notification: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error creating notification: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error creating notification: {e}"
+            )
 
     def create_notification_for_user(
         self,
@@ -368,7 +410,9 @@ class _NotificationService:
         session: Session | None = None,
     ) -> NotificationResponse | None:
         if session is None:
-            LOG.warning("Notification skipped for user {} because session was None.", user_id)
+            LOG.warning(
+                "Notification skipped for user {} because session was None.", user_id
+            )
             return None
 
         try:
@@ -409,7 +453,9 @@ class _NotificationService:
                 sent += 1
         return sent
 
-    def read_notification(self, notification_id: UUID, session: Session) -> NotificationResponse:
+    def read_notification(
+        self, notification_id: UUID, session: Session
+    ) -> NotificationResponse:
         notification = self._get_notification(notification_id, session)
         return self.notification_to_response(notification)
 
@@ -431,9 +477,16 @@ class _NotificationService:
         if read is not None:
             statement = statement.where(Notification.read == read)
 
-        statement = statement.order_by(Notification.created_at.desc()).offset(offset).limit(limit)
+        statement = (
+            statement.order_by(Notification.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
         notifications = session.exec(statement).all()
-        return [self.notification_to_response(notification) for notification in notifications]
+        return [
+            self.notification_to_response(notification)
+            for notification in notifications
+        ]
 
     def get_unread_count(self, user_id: UUID, session: Session) -> int:
         statement = select(func.count(Notification.id)).where(
@@ -458,7 +511,9 @@ class _NotificationService:
             return self.notification_to_response(notification)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error marking notification as read: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error marking notification as read: {e}"
+            )
 
     def mark_all_as_read(self, user_id: UUID, session: Session) -> int:
         statement = select(Notification).where(
@@ -479,9 +534,13 @@ class _NotificationService:
             return len(unread_items)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error marking all notifications as read: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error marking all notifications as read: {e}"
+            )
 
-    def _get_notification(self, notification_id: UUID, session: Session) -> Notification:
+    def _get_notification(
+        self, notification_id: UUID, session: Session
+    ) -> Notification:
         statement = select(Notification).where(
             Notification.id == notification_id,
             Notification.deleted_at.is_(None),  # type: ignore

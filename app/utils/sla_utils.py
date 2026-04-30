@@ -18,31 +18,31 @@ try:
 except ZoneInfoNotFoundError:
     SA_TZ = timezone(timedelta(hours=2))
 
-BIZ_START = time(8, 0)    # 08:00
-BIZ_END   = time(16, 30)  # 16:30
+BIZ_START = time(8, 0)  # 08:00
+BIZ_END = time(16, 30)  # 16:30
 
 # Contractual SLA milestones in minutes (None = business-hours-based logic applies)
 # Source: Annexure H of the SAMO/SEACOM Maintenance and Support Agreement
 SLA_MILESTONES: dict[str, dict] = {
     "critical": {
-        "respond_mins":       1,    # "Immediate" — treat as 1 minute
-        "onsite_mins":        120,  # 2 hours
-        "temp_restore_mins":  240,  # 4 hours total from fault raised
+        "respond_mins": 1,  # "Immediate" — treat as 1 minute
+        "onsite_mins": 120,  # 2 hours
+        "temp_restore_mins": 240,  # 4 hours total from fault raised
     },
     "major": {
-        "respond_mins":       30,   # 30 minutes
-        "onsite_mins":        240,  # 4 hours
-        "temp_restore_mins":  480,  # 8 hours total from fault raised
+        "respond_mins": 30,  # 30 minutes
+        "onsite_mins": 240,  # 4 hours
+        "temp_restore_mins": 480,  # 8 hours total from fault raised
     },
     # Minor and Query use business-hours logic
     "minor": {
-        "respond_mins":       None,  # business hours — same day response
-        "onsite_bd_days":     1,     # next business day
-        "temp_restore_bd_days": 2,   # 2 business days
+        "respond_mins": None,  # business hours — same day response
+        "onsite_bd_days": 1,  # next business day
+        "temp_restore_bd_days": 2,  # 2 business days
     },
     "query": {
-        "respond_mins":       None,
-        "resolution_bd_days": 20,   # 20 business days
+        "respond_mins": None,
+        "resolution_bd_days": 20,  # 20 business days
     },
 }
 
@@ -87,7 +87,9 @@ def add_business_days(dt: datetime, days: int) -> datetime:
     return current.replace(hour=16, minute=30, second=0, microsecond=0)
 
 
-def calculate_sla_deadlines(severity: str, raised_at: datetime) -> dict[str, datetime | None]:
+def calculate_sla_deadlines(
+    severity: str, raised_at: datetime
+) -> dict[str, datetime | None]:
     """
     Calculate the three SLA milestone deadlines for a given severity and raise time.
 
@@ -97,8 +99,8 @@ def calculate_sla_deadlines(severity: str, raised_at: datetime) -> dict[str, dat
     milestones = SLA_MILESTONES.get(severity, SLA_MILESTONES["minor"])
     ra = _to_sa(raised_at) if raised_at else _to_sa(datetime.now(SA_TZ))
 
-    respond_deadline      = None
-    onsite_deadline       = None
+    respond_deadline = None
+    onsite_deadline = None
     temp_restore_deadline = None
 
     respond_mins = milestones.get("respond_mins")
@@ -126,13 +128,15 @@ def calculate_sla_deadlines(severity: str, raised_at: datetime) -> dict[str, dat
         temp_restore_deadline = add_business_days(ra, resolution_bd)
 
     return {
-        "respond_deadline":       respond_deadline,
-        "onsite_deadline":        onsite_deadline,
-        "temp_restore_deadline":  temp_restore_deadline,
+        "respond_deadline": respond_deadline,
+        "onsite_deadline": onsite_deadline,
+        "temp_restore_deadline": temp_restore_deadline,
     }
 
 
-def get_milestone_status(deadline: datetime | None, actual: datetime | None, now: datetime) -> dict:
+def get_milestone_status(
+    deadline: datetime | None, actual: datetime | None, now: datetime
+) -> dict:
     """
     Return the status of a single SLA milestone.
     Status values: 'not_applicable', 'pending', 'met', 'at_risk', 'breached'
@@ -149,8 +153,14 @@ def get_milestone_status(deadline: datetime | None, actual: datetime | None, now
         }
 
     time_remaining = (deadline - now).total_seconds()
-    _total = (deadline - (deadline - timedelta(hours=1))).total_seconds()  # context window
-    _pct_used = max(0.0, 1.0 - (time_remaining / max((deadline - deadline).total_seconds() + 3600, 3600)))
+    _total = (
+        deadline - (deadline - timedelta(hours=1))
+    ).total_seconds()  # context window
+    _pct_used = max(
+        0.0,
+        1.0
+        - (time_remaining / max((deadline - deadline).total_seconds() + 3600, 3600)),
+    )
 
     if time_remaining <= 0:
         status = "breached"

@@ -12,9 +12,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.api import router
-from app.core.debug_middleware import DebugMiddleware
-
 from app.core import app_settings
+from app.core.debug_middleware import DebugMiddleware
 from app.core.rate_limiter import limiter
 from app.database import Database
 
@@ -99,8 +98,6 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-# Middleware order: last added = outermost (processes request first)
-# CORS must be outermost so preflight OPTIONS requests are handled before anything else
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app_settings.allowed_origins,
@@ -119,8 +116,10 @@ app.include_router(router)
 
 
 @app.get("/", include_in_schema=False, status_code=307)
-def root() -> RedirectResponse:
+def root() -> RedirectResponse | dict[str, str]:
     """"""
+    if app.debug:
+        return {"message": "Are you sure you're supposed to be here?"}
     return RedirectResponse(app.docs_url or "/docs")
 
 

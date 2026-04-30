@@ -29,7 +29,11 @@ class BaseUser(SQLModel, ABC):
         description="The last name of the user",
         schema_extra={"examples": {"Kubeka", "Smith"}},
     )
-    email: EmailStr = Field(nullable=False, index=True, schema_extra={"examples": {"moses@samotelecoms.co.za"}})
+    email: EmailStr = Field(
+        nullable=False,
+        index=True,
+        schema_extra={"examples": {"moses@samotelecoms.co.za"}},
+    )
     role: UserRole = Field(
         sa_column=Column(
             SAEnum(UserRole, name="userrole", omit_aliases=False),
@@ -64,7 +68,7 @@ class User(BaseDB, BaseUser, table=True):
     must_change_password: bool = Field(default=False, nullable=False)
     status: UserStatus = Field(default=UserStatus.ACTIVE, nullable=False, index=True)
 
-    notifications: List['Notification'] = Relationship(back_populates="user")
+    notifications: List["Notification"] = Relationship(back_populates="user")
 
     def activate(self) -> None:
         """"""
@@ -75,7 +79,7 @@ class User(BaseDB, BaseUser, table=True):
         """"""
         self.status = UserStatus.DISABLED
         self.touch()
-    
+
     def is_active(self) -> bool:
         """"""
         return self.status == UserStatus.ACTIVE

@@ -68,7 +68,9 @@ def get_debug_status(
     """Get debug mode status. Public endpoint for middleware checks."""
     return {
         "debug_mode": service.get_setting("debug_mode", session, False),
-        "enable_performance_headers": service.get_setting("enable_performance_headers", session, False),
+        "enable_performance_headers": service.get_setting(
+            "enable_performance_headers", session, False
+        ),
     }
 
 
@@ -136,6 +138,7 @@ async def test_email(
         }
 
     from app.services.email import EmailService
+
     EmailService.send_task_completed(
         ref_no="TEST-001",
         site_name="Test Site (email verification)",
@@ -160,27 +163,37 @@ def toggle_debug_mode(
 ) -> dict:
     """Toggle debug mode on/off. Admin only."""
     _require_admin(current_user)
-    
+
     current_value = service.get_setting("debug_mode", session, False)
     new_value = not current_value
-    
+
     service.update_setting("debug_mode", SystemSettingUpdate(value=new_value), session)
-    
+
     # Also toggle related debug settings
-    service.update_setting("enable_request_logging", SystemSettingUpdate(value=new_value), session)
-    service.update_setting("enable_sql_logging", SystemSettingUpdate(value=new_value), session)
-    service.update_setting("enable_performance_headers", SystemSettingUpdate(value=new_value), session)
-    service.update_setting("log_level", SystemSettingUpdate(value="DEBUG" if new_value else "INFO"), session)
-    
+    service.update_setting(
+        "enable_request_logging", SystemSettingUpdate(value=new_value), session
+    )
+    service.update_setting(
+        "enable_sql_logging", SystemSettingUpdate(value=new_value), session
+    )
+    service.update_setting(
+        "enable_performance_headers", SystemSettingUpdate(value=new_value), session
+    )
+    service.update_setting(
+        "log_level",
+        SystemSettingUpdate(value="DEBUG" if new_value else "INFO"),
+        session,
+    )
+
     return {
         "debug_mode": new_value,
         "log_level": "DEBUG" if new_value else "INFO",
         "message": f"Debug mode {'enabled' if new_value else 'disabled'}",
         "affected_settings": [
             "debug_mode",
-            "enable_request_logging", 
+            "enable_request_logging",
             "enable_sql_logging",
             "enable_performance_headers",
-            "log_level"
-        ]
+            "log_level",
+        ],
     }

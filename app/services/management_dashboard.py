@@ -13,7 +13,9 @@ class ManagementDashboardService:
     def get_executive_sla_overview() -> Dict[str, Any]:
         """Get executive SLA overview metrics"""
         with Database.session() as session:
-            result = session.execute(text("SELECT * FROM v_executive_sla_overview LIMIT 1"))
+            result = session.execute(
+                text("SELECT * FROM v_executive_sla_overview LIMIT 1")
+            )
             row = result.fetchone()
             if not row:
                 return {
@@ -24,12 +26,14 @@ class ManagementDashboardService:
                     "breached_count": 0,
                     "compliance_percentage": 0.0,
                     "at_risk_percentage": 0.0,
-                    "last_updated": ""
+                    "last_updated": "",
                 }
             return dict(row)
 
     @staticmethod
-    def get_incident_sla_monitoring(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_incident_sla_monitoring(
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Get incident SLA monitoring data"""
         filters = filters or {}
         query = "SELECT * FROM v_incident_sla_monitoring"
@@ -71,13 +75,12 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
 
     @staticmethod
-    def get_task_performance(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_task_performance(
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Get task performance data"""
         filters = filters or {}
         query = "SELECT * FROM v_task_performance"
@@ -119,13 +122,12 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
 
     @staticmethod
-    def get_site_risk_reliability(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_site_risk_reliability(
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Get site risk and reliability data"""
         filters = filters or {}
         query = "SELECT * FROM v_site_risk_reliability"
@@ -158,13 +160,12 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
 
     @staticmethod
-    def get_technician_performance(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_technician_performance(
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Get technician performance data"""
         filters = filters or {}
         query = "SELECT * FROM v_technician_performance"
@@ -194,13 +195,12 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
 
     @staticmethod
-    def get_access_request_sla(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_access_request_sla(
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Get access request SLA data"""
         filters = filters or {}
         query = "SELECT * FROM v_access_request_sla"
@@ -233,21 +233,22 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
 
     @staticmethod
     def get_regional_sla_analytics() -> List[Dict[str, Any]]:
         """Get regional SLA analytics"""
         with Database.session() as session:
-            result = session.execute(text("SELECT * FROM v_regional_sla_analytics ORDER BY region"))
+            result = session.execute(
+                text("SELECT * FROM v_regional_sla_analytics ORDER BY region")
+            )
             rows = result.fetchall()
             return [dict(row) for row in rows]
 
     @staticmethod
-    def get_sla_trend_analysis(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def get_sla_trend_analysis(
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Get SLA trend analysis data"""
         filters = filters or {}
         query = "SELECT * FROM v_sla_trend_analysis"
@@ -279,10 +280,7 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
 
     @staticmethod
     def get_sla_alerts(filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -307,7 +305,9 @@ class ManagementDashboardService:
 
         limit = filters.get("limit", 100)
         offset = filters.get("offset", 0)
-        query += f" ORDER BY alert_level DESC, created_at DESC LIMIT {limit} OFFSET {offset}"
+        query += (
+            f" ORDER BY alert_level DESC, created_at DESC LIMIT {limit} OFFSET {offset}"
+        )
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -318,7 +318,4 @@ class ManagementDashboardService:
             total_result = session.execute(text(total_query), params)
             total = total_result.scalar()
 
-            return {
-                "data": [dict(row) for row in rows],
-                "total": total
-            }
+            return {"data": [dict(row) for row in rows], "total": total}
