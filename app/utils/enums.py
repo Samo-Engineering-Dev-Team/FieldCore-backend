@@ -89,6 +89,23 @@ class RoutineIssueSeverity(StrEnum):
     CRITICAL = "critical"
 
 
+class FieldType(StrEnum):
+    """
+    Field types for dynamic form templates.
+
+    Each value has a matching coerce/validate function registered in
+    app/services/form_validation.py (FIELD_TYPE_VALIDATORS). Adding a new
+    type = add an enum value here + register a validator there; no table
+    or column changes are required.
+    """
+    STRING = "string"
+    NUMBER = "number"
+    BOOLEAN = "boolean"
+    DATE = "date"
+    ATTACHMENT = "attachment"
+    ENUM = "enum"
+
+
 class IncidentSeverity(StrEnum):
     """
     Contractual fault severity levels — Annexure H, SAMO/SEACOM Maintenance Agreement.

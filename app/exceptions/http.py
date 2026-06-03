@@ -117,6 +117,33 @@ class TooManyRequestsException(HTTPException):
         super().__init__(status.HTTP_429_TOO_MANY_REQUESTS, message, headers)
 
 
+class FormValidationException(HTTPException):
+    """
+    Exception raised for HTTP 422 Unprocessable Entity errors when a form
+    submission fails server-side validation against its template.
+
+    The detail carries a structured per-field error map so clients can map
+    messages back to the fields that produced them. Rendered consistently
+    with FastAPI's RequestValidationError handler (also 422).
+    Attributes:
+        status_code: HTTP status code 422 (Unprocessable Entity)
+        errors: Mapping of field key -> list of error messages
+    """
+
+    def __init__(
+        self,
+        errors: dict[str, list[str]],
+        message: str = "form submission validation failed",
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.errors = errors
+        super().__init__(
+            422,  # Unprocessable Content (literal avoids deprecated starlette constant)
+            {"message": message, "errors": errors},
+            headers,
+        )
+
+
 class InternalServerErrorException(HTTPException):
     """
     Exception raised for HTTP 500 Internal Server Error errors.

@@ -7,7 +7,7 @@ from app.services import UserService, CurrentUser
 from app.database import Session
 from app.utils.enums import UserRole, UserStatus
 from app.exceptions.http import UnauthorizedException
-from app.services.authorization import ADMIN_MANAGER_ROLES, assert_self_or_roles
+from app.services.authorization import ADMIN_MANAGER_ROLES, MANAGEMENT_ROLES, assert_self_or_roles
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -37,8 +37,8 @@ def read_users(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, le=1000)
 ) -> List[UserResponse]:
-    """Get all users. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    """Get all users. Only accessible to admin, manager, and NOC roles."""
+    if current_user.role not in MANAGEMENT_ROLES:
         raise UnauthorizedException("You do not have permission to view all users.")
     return service.read_users(session, status, role, offset, limit)
 
@@ -54,7 +54,7 @@ def read_user(
     assert_self_or_roles(
         user_id,
         current_user,
-        ADMIN_MANAGER_ROLES,
+        MANAGEMENT_ROLES,
         "You do not have permission to view this user.",
     )
     return service.read_user(user_id, session)
