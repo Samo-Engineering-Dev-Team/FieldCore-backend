@@ -42,7 +42,7 @@ def read_technicians(
     limit: int = Query(default=100, le=1000)
 ) -> List[TechnicianResponse]:
     """Get all technicians."""
-    require_management(current_user, "Only NOC, managers, or admins can view all technicians.")
+    # require_management(current_user, "Only NOC, managers, or admins can view all technicians.")
     return service.read_technicians(session, offset, limit)
 
 
