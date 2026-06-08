@@ -17,6 +17,7 @@ from app.models import (
     FormTemplateCreate,
     FormTemplateUpdate,
     FormTemplateResponse,
+    TemplateCategory,
 )
 from app.models.auth import TokenData
 from app.services.authorization import require_management
@@ -44,7 +45,20 @@ class _FormTemplateService:
     ) -> FormTemplateResponse:
         require_management(current_user, "Only management can create form templates")
 
+        # Category must exist and be active before a template can reference it.
+        category = session.exec(
+            select(TemplateCategory).where(
+                TemplateCategory.id == data.category_id,
+                TemplateCategory.deleted_at.is_(None),  # type: ignore
+            )
+        ).first()
+        if not category:
+            raise NotFoundException("template category not found")
+        if not category.is_active:
+            raise ConflictException("template category is not active")
+
         template = FormTemplate(
+            category_id=data.category_id,
             key=data.key,
             name=data.name,
             description=data.description,

@@ -21,6 +21,7 @@ from .pdf import PDFService, get_pdf_service
 from .system_settings import SystemSettingsService, get_system_settings_service
 from .form_template import FormTemplateService, get_form_template_service
 from .form_submission import FormSubmissionService, get_form_submission_service
+from .template_category import TemplateCategoryService, get_template_category_service
 
 __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
            "SiteService", "TaskService", "IncidentService", "ReportService",
@@ -34,4 +35,5 @@ __all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
            "RoutePatrolService", "get_route_patrol_service",
            "FormTemplateService", "get_form_template_service",
            "FormSubmissionService", "get_form_submission_service",
+           "TemplateCategoryService", "get_template_category_service",
            ]

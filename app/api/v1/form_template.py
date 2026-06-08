@@ -10,7 +10,9 @@ from app.models import (
 from app.services import FormTemplateService, CurrentUser
 from app.database import Session
 
-router = APIRouter(prefix="/form-templates", tags=["Form Templates"])
+# DEPRECATED: canonical routes now live under /api/v2/form-templates.
+# Kept as a shim (same service) for backwards compatibility; remove later.
+router = APIRouter(prefix="/form-templates", tags=["Form Templates"], deprecated=True)
 
 
 @router.post("/", response_model=FormTemplateResponse, status_code=201)

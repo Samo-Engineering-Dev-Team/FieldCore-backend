@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
 from app.exceptions.http import (
+    BadRequestException,
     ConflictException,
     InternalServerErrorException,
     NotFoundException,
@@ -18,11 +19,14 @@ from app.models import (
     FormSubmission,
     FormSubmissionCreate,
     FormSubmissionResponse,
+    TemplateCategory,
 )
+from app.models.incident import Incident
+from app.models.task import Task
 from app.models.auth import TokenData
 from app.services.authorization import is_management
 from app.services.form_validation import validate_submission
-from app.utils.enums import UserRole
+from app.utils.enums import LinkTarget, UserRole
 
 
 class _FormSubmissionService:
@@ -51,6 +55,44 @@ class _FormSubmissionService:
             raise NotFoundException("form submission not found")
         return submission
 
+    def _resolve_link(
+        self,
+        template: FormTemplate,
+        data: FormSubmissionCreate,
+        session: Session,
+    ) -> tuple[UUID | None, UUID | None]:
+        """
+        Enforce the template category's required domain link. Returns the
+        (task_id, incident_id) pair to persist. Raises 400 on mismatch and
+        404 if the referenced object does not exist.
+        """
+        category: TemplateCategory | None = session.get(TemplateCategory, template.category_id)
+        if not category:
+            raise NotFoundException("template category not found")
+
+        requires = category.requires_link
+
+        if requires == LinkTarget.TASK:
+            if not data.task_id:
+                raise BadRequestException("task_id is required for this template category")
+            task = session.get(Task, data.task_id)
+            if not task or task.deleted_at is not None:
+                raise NotFoundException("task not found")
+            return data.task_id, None
+
+        if requires == LinkTarget.INCIDENT:
+            if not data.incident_id:
+                raise BadRequestException("incident_id is required for this template category")
+            incident = session.get(Incident, data.incident_id)
+            if not incident or incident.deleted_at is not None:
+                raise NotFoundException("incident not found")
+            return None, data.incident_id
+
+        # LinkTarget.NONE — links are not accepted for this category.
+        if data.task_id or data.incident_id:
+            raise BadRequestException("this template category does not accept a domain link")
+        return None, None
+
     def _assert_can_access(self, submission: FormSubmission, current_user: TokenData) -> None:
         if is_management(current_user):
             return
@@ -67,6 +109,9 @@ class _FormSubmissionService:
         template = self._get_active_template(template_id, session)
         structure = template.structure_model()
 
+        # Enforce the category's required domain link (task/incident/none).
+        task_id, incident_id = self._resolve_link(template, data, session)
+
         # Raises FormValidationException (422) with a per-field error map.
         coerced_values, coerced_attachments = validate_submission(
             structure, data.values, data.attachments
@@ -74,6 +119,8 @@ class _FormSubmissionService:
 
         submission = FormSubmission(
             template_id=template.id,
+            task_id=task_id,
+            incident_id=incident_id,
             template_version=template.version,
             template_snapshot=template.structure,
             values=coerced_values,

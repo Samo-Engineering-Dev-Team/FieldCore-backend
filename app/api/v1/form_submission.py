@@ -6,9 +6,12 @@ from app.models import FormSubmissionCreate, FormSubmissionResponse
 from app.services import FormSubmissionService, CurrentUser
 from app.database import Session
 
+# DEPRECATED: canonical routes now live under /api/v2/form-templates/{id}/submissions.
+# Kept as a shim (same service) for backwards compatibility; remove later.
 router = APIRouter(
     prefix="/form-templates/{template_id}/submissions",
     tags=["Form Submissions"],
+    deprecated=True,
 )
 
 
