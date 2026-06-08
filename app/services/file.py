@@ -1,5 +1,6 @@
 import uuid
 import httpx
+from typing import Any
 from fastapi import HTTPException, status
 
 from app.core.settings import app_settings
@@ -7,14 +8,14 @@ from app.core.settings import app_settings
 
 class FileService:
     """Service for managing file uploads/downloads via Supabase Storage."""
-    
-    def __init__(self):
-        self.supabase_url = app_settings.SUPABASE_URL
-        self.service_key = app_settings.SUPABASE_SERVICE_KEY
-        self.bucket = app_settings.SUPABASE_STORAGE_BUCKET
-        
+
+    def __init__(self) -> None:
+        self.supabase_url: str = app_settings.SUPABASE_URL
+        self.service_key: str = app_settings.SUPABASE_SERVICE_KEY
+        self.bucket: str = app_settings.SUPABASE_STORAGE_BUCKET
+
     @property
-    def _headers(self) -> dict:
+    def _headers(self) -> dict[str, str]:
         """Get headers for Supabase API requests."""
         return {
             "Authorization": f"Bearer {self.service_key}",
@@ -47,7 +48,7 @@ class FileService:
         filename: str,
         content_type: str,
         folder: str = "incidents"
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Upload a file to Supabase Storage.
         
@@ -82,8 +83,8 @@ class FileService:
                 )
         
         # Generate access URLs
-        public_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
-        signed_url = None
+        public_url: str = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        signed_url: str | None = None
         try:
             signed_url = await self.get_signed_url(file_path, expires_in=86400)
         except Exception:
@@ -106,7 +107,7 @@ class FileService:
         filename: str,
         content_type: str,
         folder: str = "incidents",
-    ) -> dict:
+    ) -> dict[str, Any]:
         """
         Synchronous variant used by synchronous services (e.g., PDF export flow).
         """
@@ -130,8 +131,8 @@ class FileService:
                     detail=f"Failed to upload file: {response.text}",
                 )
 
-        public_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
-        signed_url = None
+        public_url: str = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        signed_url: str | None = None
         try:
             signed_url = self.get_signed_url_sync(file_path, expires_in=86400)
         except Exception:
