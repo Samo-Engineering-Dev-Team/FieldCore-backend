@@ -172,7 +172,6 @@ class _TechnicianService:
             .where(Technician.user_id == user_id)
             .where(Technician.deleted_at.is_(None))  # type: ignore
         )
-        LOG.debug("Reached here...")
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician profile not found for current user")
