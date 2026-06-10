@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import and_
 
-from app.utils.enums import AccessRequestStatus, UserRole
+from app.utils.enums import AccessRequestStatus, TaskType, UserRole
 from app.models import (
     AccessRequest,
     AccessRequestCreate,
@@ -197,18 +197,18 @@ class _AccessRequestService:
         access_request.soft_delete()
         session.commit()
     
-    def approve_access_request(self, access_request_id: UUID, seacom_ref: str, session: Session) -> AccessRequestResponse:
-        """Approve an access request, update related task with seacom_ref, and notify the technician."""
+    def approve_access_request(self, access_request_id: UUID, seacom_ref: str, session: Session, current_user: TokenData) -> AccessRequestResponse:
+        """Approve an access request, create (or update) its work task, and notify the technician."""
         from app.models import Task
-        
+
         access_request = self._get_access_request(access_request_id, session)
         access_request.approve(seacom_ref)
         try:
             session.commit()
             session.refresh(access_request)
-            
-            # Update the related task with the seacom_ref if it exists
+
             if access_request.task_id:
+                # Legacy requests that already carry a task: propagate the seacom_ref
                 task = session.exec(
                     select(Task).where(Task.id == access_request.task_id, Task.deleted_at.is_(None))
                 ).first()
@@ -217,7 +217,30 @@ class _AccessRequestService:
                     task.touch()
                     session.commit()
                     session.refresh(task)
-            
+            else:
+                # Create the work task for the approved request
+                assigner = session.get(User, current_user.user_id)
+                task = Task(
+                    seacom_ref=seacom_ref,
+                    description=access_request.description,
+                    start_time=access_request.start_time,
+                    end_time=access_request.end_time,
+                    task_type=TaskType.ROUTINE_MAINTENANCE,
+                    report_type=access_request.report_type or "general",
+                    site_id=access_request.site_id,
+                    technician_id=access_request.technician_id,
+                    assigned_by_user_id=assigner.id if assigner else None,
+                    assigned_by_name=f"{assigner.name} {assigner.surname}" if assigner else None,
+                )
+                session.add(task)
+                session.commit()
+                session.refresh(task)
+
+                access_request.task_id = task.id
+                access_request.touch()
+                session.commit()
+                session.refresh(access_request)
+
             # Notify the technician that their access request was approved
             from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()

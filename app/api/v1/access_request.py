@@ -90,7 +90,7 @@ def approve_access_request(
     The seacom_ref is provided by SEACOM client and will be propagated to related task.
     """
     require_management(user, "Only NOC, managers, or admins can approve access requests.")
-    return service.approve_access_request(access_request_id, seacom_ref, session)
+    return service.approve_access_request(access_request_id, seacom_ref, session, user)
 
 
 @router.patch("/{access_request_id}/reject", response_model=AccessRequestResponse, status_code=200)
