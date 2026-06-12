@@ -21,7 +21,7 @@ def create_user(
     current_user: CurrentUser
 ) -> UserResponse:
     """Create a new user. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to create users.")
     return service.create_user(payload, session)
 
@@ -87,7 +87,7 @@ def set_user_role(
     current_user: CurrentUser
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to perform this action.")
     return service.set_user_role(user_id, payload.new_role, session)
 
@@ -101,7 +101,7 @@ def reset_user_password(
     current_user: CurrentUser,
 ) -> dict:
     """Reset a user's password. Only accessible to admins."""
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
         raise UnauthorizedException("You do not have permission to reset passwords.")
     return service.reset_password(user_id, payload, session)
 
@@ -114,7 +114,7 @@ def activate_user(
     current_user: CurrentUser
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to perform this action.")
     return service.activate_user(user_id, session)
 
@@ -127,7 +127,7 @@ def deactivate_user(
     current_user: CurrentUser
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to perform this action.")
     return service.deactivate_user(user_id, session)
 
@@ -140,6 +140,6 @@ def delete_user(
     current_user: CurrentUser
 ) -> None:
     """Soft delete a user. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER]:
         raise UnauthorizedException("You do not have permission to delete users.")
     service.delete_user(user_id, session)

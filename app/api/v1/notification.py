@@ -12,7 +12,7 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 def _is_management_user(current_user: CurrentUser) -> bool:
-    return current_user.role in (UserRole.ADMIN, UserRole.MANAGER)
+    return current_user.role in (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER)
 
 
 def _assert_can_access_user_notifications(target_user_id: UUID, current_user: CurrentUser) -> None:

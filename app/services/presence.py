@@ -163,7 +163,7 @@ class PresenceService:
         if user_id:
             # remove all sessions for user across roles
             # (we only expect a few entries)
-            for role in [UserRole.NOC, UserRole.TECHNICIAN, UserRole.MANAGER, UserRole.ADMIN]:
+            for role in [UserRole.NOC, UserRole.TECHNICIAN, UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
                 members = r.zrange(cls._ZKEY_ROLE.format(role=role), 0, -1)
                 for m in members:
                     meta_json = r.hget(cls._HASH_SESSION.format(session_id=m), "meta")

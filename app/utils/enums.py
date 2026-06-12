@@ -4,7 +4,7 @@ from enum import StrEnum
 class UserRole(StrEnum):
     """"""
     ADMIN = "admin"
-    SUPER_ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"

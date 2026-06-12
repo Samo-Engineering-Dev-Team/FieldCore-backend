@@ -20,7 +20,7 @@ public_router = APIRouter(prefix="/settings", tags=["System Settings"])
 
 def _require_admin(current_user):
     """Check if user has admin privileges."""
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
         raise UnauthorizedException("Only administrators can access system settings")
 
 

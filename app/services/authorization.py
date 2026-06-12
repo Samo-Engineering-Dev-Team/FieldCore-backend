@@ -7,8 +7,8 @@ from app.models import Technician
 from app.models.auth import TokenData
 from app.utils.enums import UserRole
 
-MANAGEMENT_ROLES = (UserRole.ADMIN, UserRole.MANAGER, UserRole.NOC)
-ADMIN_MANAGER_ROLES = (UserRole.ADMIN, UserRole.MANAGER)
+MANAGEMENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.NOC)
+ADMIN_MANAGER_ROLES = (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER)
 
 
 def is_management(current_user: TokenData) -> bool:
