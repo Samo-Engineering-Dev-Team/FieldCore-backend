@@ -22,6 +22,8 @@ from .maintenance_schedule import (
 from .route_patrol import RoutePatrolService, get_route_patrol_service
 from .pdf import PDFService, get_pdf_service
 from .system_settings import SystemSettingsService, get_system_settings_service
+from .form_template import FormTemplateService, get_form_template_service
+from .form_submission import FormSubmissionService, get_form_submission_service
 
 __all__ = [
     "AuthService",

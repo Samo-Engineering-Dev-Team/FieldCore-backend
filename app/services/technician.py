@@ -1,11 +1,12 @@
-from uuid import UUID
-from fastapi import Depends
-from typing import List, Annotated
 from datetime import timedelta
-from sqlmodel import Session, select
-from sqlalchemy.exc import IntegrityError
-from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
+from typing import Annotated, List
+from uuid import UUID
+
+from fastapi import Depends
+from geoalchemy2.functions import ST_Distance, ST_DWithin, ST_MakePoint, ST_SetSRID
 from loguru import logger as LOG
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
 
 from app.models import (
     Technician,
@@ -21,9 +22,18 @@ from app.exceptions.http import (
     InternalServerErrorException,
     NotFoundException,
 )
-from app.utils.funcs import utcnow
+from app.models import (
+    Site,
+    Technician,
+    TechnicianCreate,
+    TechnicianLocationUpdate,
+    TechnicianResponse,
+    TechnicianUpdate,
+    User,
+)
 from app.models.auth import TokenData
 from app.services.authorization import assert_technician_self_or_roles, is_management
+from app.utils.funcs import utcnow
 
 
 class _TechnicianService:
@@ -171,6 +181,7 @@ class _TechnicianService:
             .where(Technician.user_id == user_id)
             .where(Technician.deleted_at.is_(None))  # type: ignore
         )
+        LOG.debug("Reached here...")
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician profile not found for current user")
