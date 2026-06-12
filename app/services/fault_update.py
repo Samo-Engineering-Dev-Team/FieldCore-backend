@@ -6,23 +6,23 @@ Per Annexure H update intervals:
   Major    : every 2 hours; twice-weekly after restore
 """
 
-from uuid import UUID
-from typing import Annotated
 from datetime import timedelta
+from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends
 from sqlmodel import Session, select
 
-from app.models.fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from app.models import Incident
+from app.models.fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from app.utils.funcs import utcnow
 
 # Maximum interval between updates before flagging as overdue (minutes)
 UPDATE_INTERVALS: dict[str, int] = {
-    "critical": 60,    # hourly
-    "major":    120,   # every 2 hours
-    "minor":    1440,  # daily
-    "query":    1440,
+    "critical": 60,  # hourly
+    "major": 120,  # every 2 hours
+    "minor": 1440,  # daily
+    "query": 1440,
 }
 
 
@@ -42,7 +42,7 @@ def _is_update_overdue(incident: Incident, session: Session) -> bool:
         select(FaultUpdate)
         .where(
             FaultUpdate.incident_id == incident.id,
-            FaultUpdate.deleted_at.is_(None),
+            FaultUpdate.deleted_at.is_(None),  # type: ignore
         )
         .order_by(FaultUpdate.created_at.desc())  # type: ignore
         .limit(1)
@@ -68,6 +68,7 @@ class _FaultUpdateService:
         incident = session.get(Incident, incident_id)
         if not incident or incident.deleted_at:
             from app.exceptions.http import NotFoundException
+
             raise NotFoundException("incident not found")
 
         is_overdue = _is_update_overdue(incident, session)
@@ -85,12 +86,14 @@ class _FaultUpdateService:
         session.refresh(update)
         return FaultUpdateResponse.model_validate(update)
 
-    def list_updates(self, incident_id: UUID, session: Session) -> list[FaultUpdateResponse]:
+    def list_updates(
+        self, incident_id: UUID, session: Session
+    ) -> list[FaultUpdateResponse]:
         rows = session.exec(
             select(FaultUpdate)
             .where(
                 FaultUpdate.incident_id == incident_id,
-                FaultUpdate.deleted_at.is_(None),
+                FaultUpdate.deleted_at.is_(None),  # type: ignore
             )
             .order_by(FaultUpdate.created_at.asc())  # type: ignore
         ).all()
@@ -103,16 +106,17 @@ class _FaultUpdateService:
         incident = session.get(Incident, incident_id)
         if not incident or incident.deleted_at:
             from app.exceptions.http import NotFoundException
+
             raise NotFoundException("incident not found")
 
         severity = str(incident.severity) if incident.severity else "minor"
         interval = UPDATE_INTERVALS.get(severity, 1440)
-        overdue  = _is_update_overdue(incident, session)
+        overdue = _is_update_overdue(incident, session)
 
         return {
-            "is_overdue":        overdue,
-            "interval_minutes":  interval,
-            "severity":          severity,
+            "is_overdue": overdue,
+            "interval_minutes": interval,
+            "severity": severity,
         }
 
 

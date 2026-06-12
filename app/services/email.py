@@ -69,7 +69,7 @@ def _html_wrap(title: str, body_html: str) -> str:
         <tr>
           <td style="background:#f9fafb;padding:16px 32px;border-top:1px solid #e5e7eb;">
             <p style="margin:0;font-size:11px;color:#9ca3af;">
-              Sent by SAMO Field Operations System · {datetime.utcnow().strftime('%d %b %Y %H:%M UTC')} ·
+              Sent by SAMO Field Operations System · {datetime.utcnow().strftime("%d %b %Y %H:%M UTC")} ·
               Do not reply to this email.
             </p>
           </td>
@@ -83,10 +83,10 @@ def _html_wrap(title: str, body_html: str) -> str:
 
 def _kv_row(label: str, value: str) -> str:
     return (
-        f'<tr>'
+        f"<tr>"
         f'<td style="padding:6px 12px 6px 0;color:#6b7280;font-size:13px;white-space:nowrap;">{label}</td>'
         f'<td style="padding:6px 0;font-weight:600;">{value}</td>'
-        f'</tr>'
+        f"</tr>"
     )
 
 
@@ -94,8 +94,8 @@ def _detail_table(*rows: str) -> str:
     inner = "".join(rows)
     return (
         f'<table cellpadding="0" cellspacing="0" style="margin-top:16px;width:100%;">'
-        f'{inner}'
-        f'</table>'
+        f"{inner}"
+        f"</table>"
     )
 
 
@@ -107,14 +107,18 @@ def _badge(text: str, colour: str = "#008181") -> str:
 
 
 def _severity_colour(severity: str) -> str:
-    return {"critical": "#dc2626", "major": "#d97706", "minor": "#008181", "query": "#6b7280"}.get(
-        severity.lower(), "#6b7280"
-    )
+    return {
+        "critical": "#dc2626",
+        "major": "#d97706",
+        "minor": "#008181",
+        "query": "#6b7280",
+    }.get(severity.lower(), "#6b7280")
 
 
 # ---------------------------------------------------------------------------
 # Individual email builders
 # ---------------------------------------------------------------------------
+
 
 def _build_task_completed(
     *,
@@ -129,13 +133,15 @@ def _build_task_completed(
     body = f"""
     <h2 style="margin:0 0 8px;font-size:18px;">Task Completed</h2>
     <p style="margin:0 0 16px;color:#6b7280;">The following task has been completed and the report is ready for review.</p>
-    {_detail_table(
-        _kv_row("Reference", ref_no),
-        _kv_row("Site", site_name),
-        _kv_row("Technician", technician_name),
-        _kv_row("Task Type", task_type.replace("_", " ").title()),
-        _kv_row("Completed At", completed_at),
-    )}
+    {
+        _detail_table(
+            _kv_row("Reference", ref_no),
+            _kv_row("Site", site_name),
+            _kv_row("Technician", technician_name),
+            _kv_row("Task Type", task_type.replace("_", " ").title()),
+            _kv_row("Completed At", completed_at),
+        )
+    }
     <p style="margin:24px 0 0;color:#6b7280;font-size:13px;">
       Log in to the NOC dashboard to review and export the report.
     </p>"""
@@ -154,15 +160,22 @@ def _build_incident_resolved(
     subject = f"Incident Resolved — {ref_no} at {site_name}"
     body = f"""
     <h2 style="margin:0 0 8px;font-size:18px;">Incident Resolved</h2>
-    <p style="margin:0 0 16px;color:#6b7280;">{_badge(severity.upper(), _severity_colour(severity))} Incident has been resolved.</p>
-    {_detail_table(
-        _kv_row("Reference", ref_no),
-        _kv_row("Site", site_name),
-        _kv_row("Severity", severity.upper()),
-        _kv_row("Resolved By", technician_name),
-        _kv_row("Resolved At", resolved_at),
-        _kv_row("Description", description[:200] + ("…" if len(description) > 200 else "")),
-    )}
+    <p style="margin:0 0 16px;color:#6b7280;">{
+        _badge(severity.upper(), _severity_colour(severity))
+    } Incident has been resolved.</p>
+    {
+        _detail_table(
+            _kv_row("Reference", ref_no),
+            _kv_row("Site", site_name),
+            _kv_row("Severity", severity.upper()),
+            _kv_row("Resolved By", technician_name),
+            _kv_row("Resolved At", resolved_at),
+            _kv_row(
+                "Description",
+                description[:200] + ("…" if len(description) > 200 else ""),
+            ),
+        )
+    }
     <p style="margin:24px 0 0;color:#6b7280;font-size:13px;">
       Please confirm closure and check if an incident report has been submitted.
     </p>"""
@@ -182,22 +195,28 @@ def _build_sla_breach(
         "onsite": "On-site arrival",
         "temp_restore": "Temporary restoration",
     }
-    milestone_label = _MILESTONE_LABELS.get(milestone, milestone.replace("_", " ").title())
+    milestone_label = _MILESTONE_LABELS.get(
+        milestone, milestone.replace("_", " ").title()
+    )
     ref = ref_no or "N/A"
     subject = f"⚠ SLA BREACHED — {milestone_label} | {ref} | {site_name}"
     body = f"""
     <h2 style="margin:0 0 8px;font-size:18px;color:#dc2626;">SLA Milestone Breached</h2>
     <p style="margin:0 0 16px;color:#6b7280;">
-      {_badge("BREACH", "#dc2626")} {_badge(severity.upper(), _severity_colour(severity))}
+      {_badge("BREACH", "#dc2626")} {
+        _badge(severity.upper(), _severity_colour(severity))
+    }
       The following SLA milestone has been missed. Penalty exposure applies per Annexure H.
     </p>
-    {_detail_table(
-        _kv_row("Reference", ref),
-        _kv_row("Site", site_name),
-        _kv_row("Severity", severity.upper()),
-        _kv_row("Milestone", milestone_label),
-        _kv_row("Time Overdue", time_overdue),
-    )}
+    {
+        _detail_table(
+            _kv_row("Reference", ref),
+            _kv_row("Site", site_name),
+            _kv_row("Severity", severity.upper()),
+            _kv_row("Milestone", milestone_label),
+            _kv_row("Time Overdue", time_overdue),
+        )
+    }
     <p style="margin:24px 0 0;padding:12px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:4px;font-size:13px;">
       <strong>Action required:</strong> Escalate to management and log an incident update immediately.
       Three or more breaches in a quarter allows SEACOM to terminate the contract (Annexure H).
@@ -218,22 +237,28 @@ def _build_sla_warning(
         "onsite": "On-site arrival",
         "temp_restore": "Temporary restoration",
     }
-    milestone_label = _MILESTONE_LABELS.get(milestone, milestone.replace("_", " ").title())
+    milestone_label = _MILESTONE_LABELS.get(
+        milestone, milestone.replace("_", " ").title()
+    )
     ref = ref_no or "N/A"
     subject = f"SLA At Risk — {milestone_label} | {ref} | {site_name}"
     body = f"""
     <h2 style="margin:0 0 8px;font-size:18px;color:#d97706;">SLA Milestone At Risk</h2>
     <p style="margin:0 0 16px;color:#6b7280;">
-      {_badge("AT RISK", "#d97706")} {_badge(severity.upper(), _severity_colour(severity))}
+      {_badge("AT RISK", "#d97706")} {
+        _badge(severity.upper(), _severity_colour(severity))
+    }
       The following SLA deadline is approaching. Take action now to avoid a breach.
     </p>
-    {_detail_table(
-        _kv_row("Reference", ref),
-        _kv_row("Site", site_name),
-        _kv_row("Severity", severity.upper()),
-        _kv_row("Milestone", milestone_label),
-        _kv_row("Time Remaining", time_remaining),
-    )}"""
+    {
+        _detail_table(
+            _kv_row("Reference", ref),
+            _kv_row("Site", site_name),
+            _kv_row("Severity", severity.upper()),
+            _kv_row("Milestone", milestone_label),
+            _kv_row("Time Remaining", time_remaining),
+        )
+    }"""
     return subject, _html_wrap(subject, body)
 
 
@@ -248,12 +273,14 @@ def _build_incident_report_submitted(
     body = f"""
     <h2 style="margin:0 0 8px;font-size:18px;">Incident Report Submitted</h2>
     <p style="margin:0 0 16px;color:#6b7280;">A technician has submitted an incident report. Please review and export it from the Incident Reports tab.</p>
-    {_detail_table(
-        _kv_row("Reference", ref_no),
-        _kv_row("Site", site_name),
-        _kv_row("Submitted By", technician_name),
-        _kv_row("Submitted At", submitted_at),
-    )}"""
+    {
+        _detail_table(
+            _kv_row("Reference", ref_no),
+            _kv_row("Site", site_name),
+            _kv_row("Submitted By", technician_name),
+            _kv_row("Submitted At", submitted_at),
+        )
+    }"""
     return subject, _html_wrap(subject, body)
 
 
@@ -268,19 +295,24 @@ def _build_technician_escalation(
     subject = f"Technician Escalation — {priority.upper()} — {technician_name}"
     body = f"""
     <h2 style="margin:0 0 8px;font-size:18px;color:{colour};">Technician Escalation</h2>
-    <p style="margin:0 0 16px;color:#6b7280;">{_badge(priority.upper(), colour)} An escalation request has been raised.</p>
-    {_detail_table(
-        _kv_row("Technician", technician_name),
-        _kv_row("Priority", priority.upper()),
-        _kv_row("Raised By", escalated_by),
-        _kv_row("Reason", reason[:300] + ("…" if len(reason) > 300 else "")),
-    )}"""
+    <p style="margin:0 0 16px;color:#6b7280;">{
+        _badge(priority.upper(), colour)
+    } An escalation request has been raised.</p>
+    {
+        _detail_table(
+            _kv_row("Technician", technician_name),
+            _kv_row("Priority", priority.upper()),
+            _kv_row("Raised By", escalated_by),
+            _kv_row("Reason", reason[:300] + ("…" if len(reason) > 300 else "")),
+        )
+    }"""
     return subject, _html_wrap(subject, body)
 
 
 # ---------------------------------------------------------------------------
 # Low-level send helper
 # ---------------------------------------------------------------------------
+
 
 async def _send_email_async(
     to: Sequence[str],
@@ -314,6 +346,7 @@ async def _send_email_async(
 
 def _fire_and_forget(to: Sequence[str], subject: str, html: str) -> None:
     """Run email sending in a daemon thread so it never blocks the request."""
+
     def _run() -> None:
         asyncio.run(_send_email_async(to, subject, html))
 
@@ -324,6 +357,7 @@ def _fire_and_forget(to: Sequence[str], subject: str, html: str) -> None:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 class EmailService:
     """Convenience wrappers — call these from service/API layers."""
@@ -342,8 +376,11 @@ class EmailService:
         if not to:
             return
         subject, html = _build_task_completed(
-            ref_no=ref_no, site_name=site_name, technician_name=technician_name,
-            task_type=task_type, completed_at=completed_at,
+            ref_no=ref_no,
+            site_name=site_name,
+            technician_name=technician_name,
+            task_type=task_type,
+            completed_at=completed_at,
         )
         _fire_and_forget(to, subject, html)
 
@@ -362,8 +399,12 @@ class EmailService:
         if not to:
             return
         subject, html = _build_incident_resolved(
-            ref_no=ref_no, site_name=site_name, technician_name=technician_name,
-            severity=severity, resolved_at=resolved_at, description=description,
+            ref_no=ref_no,
+            site_name=site_name,
+            technician_name=technician_name,
+            severity=severity,
+            resolved_at=resolved_at,
+            description=description,
         )
         _fire_and_forget(to, subject, html)
 
@@ -381,8 +422,11 @@ class EmailService:
         if not to:
             return
         subject, html = _build_sla_breach(
-            ref_no=ref_no, site_name=site_name, severity=severity,
-            milestone=milestone, time_overdue=time_overdue,
+            ref_no=ref_no,
+            site_name=site_name,
+            severity=severity,
+            milestone=milestone,
+            time_overdue=time_overdue,
         )
         _fire_and_forget(to, subject, html)
 
@@ -400,8 +444,11 @@ class EmailService:
         if not to:
             return
         subject, html = _build_sla_warning(
-            ref_no=ref_no, site_name=site_name, severity=severity,
-            milestone=milestone, time_remaining=time_remaining,
+            ref_no=ref_no,
+            site_name=site_name,
+            severity=severity,
+            milestone=milestone,
+            time_remaining=time_remaining,
         )
         _fire_and_forget(to, subject, html)
 
@@ -418,8 +465,10 @@ class EmailService:
         if not to:
             return
         subject, html = _build_incident_report_submitted(
-            ref_no=ref_no, site_name=site_name,
-            technician_name=technician_name, submitted_at=submitted_at,
+            ref_no=ref_no,
+            site_name=site_name,
+            technician_name=technician_name,
+            submitted_at=submitted_at,
         )
         _fire_and_forget(to, subject, html)
 
@@ -436,7 +485,9 @@ class EmailService:
         if not to:
             return
         subject, html = _build_technician_escalation(
-            technician_name=technician_name, priority=priority,
-            reason=reason, escalated_by=escalated_by,
+            technician_name=technician_name,
+            priority=priority,
+            reason=reason,
+            escalated_by=escalated_by,
         )
         _fire_and_forget(to, subject, html)

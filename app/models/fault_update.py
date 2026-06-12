@@ -21,21 +21,25 @@ UPDATE_TYPES = ["phone_call", "email", "app_update"]
 
 class BaseFaultUpdate(SQLModel):
     incident_id: UUID = Field(foreign_key="incidents.id", nullable=False)
-    update_type: str  = Field(max_length=20, nullable=False)   # phone_call | email | app_update
-    message:     str  = Field(max_length=4000, nullable=False)
-    sent_by:     UUID = Field(foreign_key="users.id", nullable=False)
-    is_overdue:  bool = Field(default=False, nullable=False)
+    update_type: str = Field(
+        max_length=20, nullable=False
+    )  # phone_call | email | app_update
+    message: str = Field(max_length=4000, nullable=False)
+    sent_by: UUID = Field(foreign_key="users.id", nullable=False)
+    is_overdue: bool = Field(default=False, nullable=False)
 
 
 class FaultUpdate(BaseDB, BaseFaultUpdate, table=True):
     __tablename__ = "incident_updates"  # type: ignore
 
-    sent_by_name: str = Field(default="", max_length=200)  # denormalized for quick display
+    sent_by_name: str = Field(
+        default="", max_length=200
+    )  # denormalized for quick display
 
 
 class FaultUpdateCreate(SQLModel):
     update_type: str = Field(max_length=20)
-    message:     str = Field(max_length=4000)
+    message: str = Field(max_length=4000)
 
 
 class FaultUpdateResponse(BaseDB, BaseFaultUpdate):

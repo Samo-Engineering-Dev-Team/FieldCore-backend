@@ -2,6 +2,7 @@ import strawberry
 from typing import List, Optional
 from enum import Enum
 
+
 # Enums
 @strawberry.enum
 class SLAStatus(Enum):
@@ -10,17 +11,20 @@ class SLAStatus(Enum):
     CRITICAL = "CRITICAL"
     BREACHED = "BREACHED"
 
+
 @strawberry.enum
 class AlertLevel(Enum):
     BREACHED = "BREACHED"
     CRITICAL = "CRITICAL"
     AT_RISK = "AT_RISK"
 
+
 @strawberry.enum
 class RiskLevel(Enum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
+
 
 @strawberry.enum
 class PerformanceLevel(Enum):
@@ -29,11 +33,13 @@ class PerformanceLevel(Enum):
     NEEDS_SUPPORT = "NEEDS_SUPPORT"
     AT_RISK = "AT_RISK"
 
+
 @strawberry.enum
 class WorkloadLevel(Enum):
     HIGH = "HIGH"
     MEDIUM = "MEDIUM"
     LOW = "LOW"
+
 
 # Types
 @strawberry.type
@@ -46,6 +52,7 @@ class ExecutiveSLAOverview:
     compliance_percentage: float
     at_risk_percentage: float
     last_updated: str
+
 
 @strawberry.type
 class IncidentSLARecord:
@@ -68,6 +75,7 @@ class IncidentSLARecord:
     technician_id: str
     technician_name: str
     technician_email: str
+
 
 @strawberry.type
 class TaskPerformanceRecord:
@@ -93,6 +101,7 @@ class TaskPerformanceRecord:
     technician_name: str
     technician_email: str
 
+
 @strawberry.type
 class SiteRiskReliabilityRecord:
     site_id: str
@@ -112,6 +121,7 @@ class SiteRiskReliabilityRecord:
     site_status: str
     last_updated: str
 
+
 @strawberry.type
 class TechnicianPerformanceRecord:
     technician_id: str
@@ -130,6 +140,7 @@ class TechnicianPerformanceRecord:
     performance_level: PerformanceLevel
     last_updated: str
 
+
 @strawberry.type
 class NocOperatorStatus:
     technician_id: str
@@ -138,6 +149,7 @@ class NocOperatorStatus:
     role: str
     is_active: bool
     last_seen: str
+
 
 @strawberry.type
 class AccessRequestSLARecord:
@@ -158,6 +170,7 @@ class AccessRequestSLARecord:
     approver_id: Optional[str]
     approver_name: Optional[str]
 
+
 @strawberry.type
 class RegionalSLARecord:
     region: str
@@ -171,6 +184,7 @@ class RegionalSLARecord:
     task_count: int
     access_request_count: int
 
+
 @strawberry.type
 class SLATrendRecord:
     date: str
@@ -181,6 +195,7 @@ class SLATrendRecord:
     critical_count: int
     breached_count: int
     compliance_percentage: float
+
 
 @strawberry.type
 class SLAAlertRecord:
@@ -195,6 +210,7 @@ class SLAAlertRecord:
     technician_name: Optional[str]
     region: Optional[str]
 
+
 # Input types for filters
 @strawberry.input
 class IncidentSLAFilters:
@@ -207,6 +223,7 @@ class IncidentSLAFilters:
     limit: Optional[int] = 100
     offset: Optional[int] = 0
 
+
 @strawberry.input
 class TaskPerformanceFilters:
     task_type: Optional[str] = None
@@ -218,6 +235,7 @@ class TaskPerformanceFilters:
     limit: Optional[int] = 100
     offset: Optional[int] = 0
 
+
 @strawberry.input
 class SiteRiskFilters:
     region: Optional[str] = None
@@ -226,12 +244,14 @@ class SiteRiskFilters:
     limit: Optional[int] = 100
     offset: Optional[int] = 0
 
+
 @strawberry.input
 class TechnicianPerformanceFilters:
     workload_level: Optional[WorkloadLevel] = None
     performance_level: Optional[PerformanceLevel] = None
     limit: Optional[int] = 100
     offset: Optional[int] = 0
+
 
 @strawberry.input
 class AccessRequestFilters:
@@ -241,12 +261,14 @@ class AccessRequestFilters:
     limit: Optional[int] = 100
     offset: Optional[int] = 0
 
+
 @strawberry.input
 class SLATrendFilters:
     region: Optional[str] = None
     from_date: Optional[str] = None
     to_date: Optional[str] = None
     limit: Optional[int] = 100
+
 
 @strawberry.input
 class AlertFilters:
@@ -256,6 +278,7 @@ class AlertFilters:
     limit: Optional[int] = 100
     offset: Optional[int] = 0
 
+
 # Query
 @strawberry.type
 class Query:
@@ -263,6 +286,7 @@ class Query:
     def executive_sla_overview(self) -> ExecutiveSLAOverview:
         # Import here to avoid circular imports
         from app.services.management_dashboard import ManagementDashboardService
+
         data = ManagementDashboardService.get_executive_sla_overview()
         return ExecutiveSLAOverview(
             total_items=data["total_items"],
@@ -272,13 +296,18 @@ class Query:
             breached_count=data["breached_count"],
             compliance_percentage=data["compliance_percentage"],
             at_risk_percentage=data["at_risk_percentage"],
-            last_updated=data["last_updated"]
+            last_updated=data["last_updated"],
         )
 
     @strawberry.field
-    def incident_sla_monitoring(self, filters: Optional[IncidentSLAFilters] = None) -> List[IncidentSLARecord]:
+    def incident_sla_monitoring(
+        self, filters: Optional[IncidentSLAFilters] = None
+    ) -> List[IncidentSLARecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_incident_sla_monitoring(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_incident_sla_monitoring(
+            filters.__dict__ if filters else {}
+        )
         return [
             IncidentSLARecord(
                 id=str(row["id"]),
@@ -299,14 +328,20 @@ class Query:
                 region=row["region"],
                 technician_id=row["technician_id"],
                 technician_name=row["technician_name"],
-                technician_email=row["technician_email"]
-            ) for row in data["data"]
+                technician_email=row["technician_email"],
+            )
+            for row in data["data"]
         ]
 
     @strawberry.field
-    def task_performance(self, filters: Optional[TaskPerformanceFilters] = None) -> List[TaskPerformanceRecord]:
+    def task_performance(
+        self, filters: Optional[TaskPerformanceFilters] = None
+    ) -> List[TaskPerformanceRecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_task_performance(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_task_performance(
+            filters.__dict__ if filters else {}
+        )
         return [
             TaskPerformanceRecord(
                 id=str(row["id"]),
@@ -329,14 +364,20 @@ class Query:
                 region=row["region"],
                 technician_id=row["technician_id"],
                 technician_name=row["technician_name"],
-                technician_email=row["technician_email"]
-            ) for row in data["data"]
+                technician_email=row["technician_email"],
+            )
+            for row in data["data"]
         ]
 
     @strawberry.field
-    def site_risk_reliability(self, filters: Optional[SiteRiskFilters] = None) -> List[SiteRiskReliabilityRecord]:
+    def site_risk_reliability(
+        self, filters: Optional[SiteRiskFilters] = None
+    ) -> List[SiteRiskReliabilityRecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_site_risk_reliability(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_site_risk_reliability(
+            filters.__dict__ if filters else {}
+        )
         return [
             SiteRiskReliabilityRecord(
                 site_id=row["site_id"],
@@ -354,14 +395,20 @@ class Query:
                 sla_compliance_percentage=row["sla_compliance_percentage"],
                 risk_level=RiskLevel(row["risk_level"]),
                 site_status=row["site_status"],
-                last_updated=row["last_updated"]
-            ) for row in data["data"]
+                last_updated=row["last_updated"],
+            )
+            for row in data["data"]
         ]
 
     @strawberry.field
-    def technician_performance(self, filters: Optional[TechnicianPerformanceFilters] = None) -> List[TechnicianPerformanceRecord]:
+    def technician_performance(
+        self, filters: Optional[TechnicianPerformanceFilters] = None
+    ) -> List[TechnicianPerformanceRecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_technician_performance(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_technician_performance(
+            filters.__dict__ if filters else {}
+        )
         return [
             TechnicianPerformanceRecord(
                 technician_id=row["technician_id"],
@@ -374,32 +421,44 @@ class Query:
                 total_workload=row["total_workload"],
                 incident_sla_compliance=row["incident_sla_compliance"],
                 task_sla_compliance=row["task_sla_compliance"],
-                avg_incident_resolution_minutes=row.get("avg_incident_resolution_minutes"),
+                avg_incident_resolution_minutes=row.get(
+                    "avg_incident_resolution_minutes"
+                ),
                 avg_task_completion_minutes=row.get("avg_task_completion_minutes"),
                 workload_level=WorkloadLevel(row["workload_level"]),
                 performance_level=PerformanceLevel(row["performance_level"]),
-                last_updated=row["last_updated"]
-            ) for row in data["data"]
+                last_updated=row["last_updated"],
+            )
+            for row in data["data"]
         ]
 
     @strawberry.field
     def noc_online_operators(self, cutoff_minutes: int = 10) -> List[NocOperatorStatus]:
         """List active NOC operators (useful for management panels)."""
         from app.services.presence import PresenceService
+
         rows = PresenceService.list_active_noc_operators(cutoff_minutes=cutoff_minutes)
-        return [NocOperatorStatus(
-            technician_id=r.get("user_id") or r.get("technician_id") or "",
-            user_id=r.get("user_id"),
-            fullname=r.get("fullname"),
-            role=r.get("role"),
-            is_active=r.get("is_active", False),
-            last_seen=r.get("last_seen")
-        ) for r in rows]
+        return [
+            NocOperatorStatus(
+                technician_id=r.get("user_id") or r.get("technician_id") or "",
+                user_id=r.get("user_id"),
+                fullname=r.get("fullname"),
+                role=r.get("role"),
+                is_active=r.get("is_active", False),
+                last_seen=r.get("last_seen"),
+            )
+            for r in rows
+        ]
 
     @strawberry.field
-    def access_request_sla(self, filters: Optional[AccessRequestFilters] = None) -> List[AccessRequestSLARecord]:
+    def access_request_sla(
+        self, filters: Optional[AccessRequestFilters] = None
+    ) -> List[AccessRequestSLARecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_access_request_sla(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_access_request_sla(
+            filters.__dict__ if filters else {}
+        )
         return [
             AccessRequestSLARecord(
                 id=str(row["id"]),
@@ -417,13 +476,15 @@ class Query:
                 requester_name=row["requester_name"],
                 requester_email=row["requester_email"],
                 approver_id=row.get("approver_id"),
-                approver_name=row.get("approver_name")
-            ) for row in data["data"]
+                approver_name=row.get("approver_name"),
+            )
+            for row in data["data"]
         ]
 
     @strawberry.field
     def regional_sla_analytics(self) -> List[RegionalSLARecord]:
         from app.services.management_dashboard import ManagementDashboardService
+
         data = ManagementDashboardService.get_regional_sla_analytics()
         return [
             RegionalSLARecord(
@@ -436,14 +497,20 @@ class Query:
                 compliance_percentage=row["compliance_percentage"],
                 incident_count=row["incident_count"],
                 task_count=row["task_count"],
-                access_request_count=row["access_request_count"]
-            ) for row in data
+                access_request_count=row["access_request_count"],
+            )
+            for row in data
         ]
 
     @strawberry.field
-    def sla_trend_analysis(self, filters: Optional[SLATrendFilters] = None) -> List[SLATrendRecord]:
+    def sla_trend_analysis(
+        self, filters: Optional[SLATrendFilters] = None
+    ) -> List[SLATrendRecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_sla_trend_analysis(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_sla_trend_analysis(
+            filters.__dict__ if filters else {}
+        )
         return [
             SLATrendRecord(
                 date=row["date"],
@@ -453,14 +520,20 @@ class Query:
                 at_risk_count=row["at_risk_count"],
                 critical_count=row["critical_count"],
                 breached_count=row["breached_count"],
-                compliance_percentage=row["compliance_percentage"]
-            ) for row in data["data"]
+                compliance_percentage=row["compliance_percentage"],
+            )
+            for row in data["data"]
         ]
 
     @strawberry.field
-    def sla_alerts(self, filters: Optional[AlertFilters] = None) -> List[SLAAlertRecord]:
+    def sla_alerts(
+        self, filters: Optional[AlertFilters] = None
+    ) -> List[SLAAlertRecord]:
         from app.services.management_dashboard import ManagementDashboardService
-        data = ManagementDashboardService.get_sla_alerts(filters.__dict__ if filters else {})
+
+        data = ManagementDashboardService.get_sla_alerts(
+            filters.__dict__ if filters else {}
+        )
         return [
             SLAAlertRecord(
                 id=str(row["id"]),
@@ -472,9 +545,11 @@ class Query:
                 created_at=row["created_at"],
                 site_name=row.get("site_name"),
                 technician_name=row.get("technician_name"),
-                region=row.get("region")
-            ) for row in data["data"]
+                region=row.get("region"),
+            )
+            for row in data["data"]
         ]
+
 
 # Schema
 schema = strawberry.Schema(query=Query)

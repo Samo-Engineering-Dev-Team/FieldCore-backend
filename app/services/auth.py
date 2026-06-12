@@ -98,6 +98,7 @@ def _record_login(
 
 
 class _AuthService:
+    """"""
 
     def authenticate(
         self,
@@ -107,7 +108,10 @@ class _AuthService:
         user_agent: Optional[str] = None,
     ) -> Token:
         """"""
-        statement = select(User).where(User.email == form.email, User.deleted_at.is_(None))  # type: ignore
+        statement = select(User).where(
+            User.email == form.email,
+            User.deleted_at.is_(None),  # type: ignore
+        )
         user: User | None = session.exec(statement).first()
 
         if not user:
@@ -132,7 +136,9 @@ class _AuthService:
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            raise UnauthorizedException("This account has been deactivated. Please contact your admin.")
+            raise UnauthorizedException(
+                "This account has been deactivated. Please contact your admin."
+            )
 
         if not SecurityUtils.check_password(form.password, user.password_hash):
             _record_login(
@@ -210,7 +216,8 @@ class _AuthService:
             challenge=bytes_to_base64url(options.challenge),
             rp_id=rp_id,
             origin=origin,
-            expires_at=utcnow() + timedelta(milliseconds=app_settings.PASSKEY_CEREMONY_TIMEOUT_MS),
+            expires_at=utcnow()
+            + timedelta(milliseconds=app_settings.PASSKEY_CEREMONY_TIMEOUT_MS),
         )
         session.add(ceremony)
         session.commit()
@@ -250,7 +257,9 @@ class _AuthService:
                 require_user_verification=True,
             )
         except Exception as exc:
-            LOG.warning("Passkey registration verification failed for user {}: {}", user.id, exc)
+            LOG.warning(
+                "Passkey registration verification failed for user {}: {}", user.id, exc
+            )
             raise BadRequestException("Passkey registration could not be verified")
 
         passkey = PasskeyCredential(
@@ -297,7 +306,8 @@ class _AuthService:
             challenge=bytes_to_base64url(options.challenge),
             rp_id=rp_id,
             origin=origin,
-            expires_at=utcnow() + timedelta(milliseconds=app_settings.PASSKEY_CEREMONY_TIMEOUT_MS),
+            expires_at=utcnow()
+            + timedelta(milliseconds=app_settings.PASSKEY_CEREMONY_TIMEOUT_MS),
         )
         session.add(ceremony)
         session.commit()
@@ -348,7 +358,9 @@ class _AuthService:
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            raise UnauthorizedException("This account has been deactivated. Please contact your admin.")
+            raise UnauthorizedException(
+                "This account has been deactivated. Please contact your admin."
+            )
 
         if user.must_change_password:
             _record_login(
@@ -361,7 +373,9 @@ class _AuthService:
                 ip_address=ip_address,
                 user_agent=user_agent,
             )
-            raise UnauthorizedException("Password reset required. Please sign in with your password.")
+            raise UnauthorizedException(
+                "Password reset required. Please sign in with your password."
+            )
 
         if user.role not in PASSKEY_ELIGIBLE_ROLES:
             _record_login(
@@ -450,7 +464,7 @@ class _AuthService:
         passkey = session.exec(
             select(PasskeyCredential).where(
                 PasskeyCredential.id == passkey_id,
-                PasskeyCredential.deleted_at.is_(None),
+                PasskeyCredential.deleted_at.is_(None),  # type: ignore
             )
         ).first()
         if not passkey or passkey.user_id != current_user.user_id:
@@ -462,18 +476,24 @@ class _AuthService:
         session.commit()
         return PasskeyMutationResponse(message="Passkey removed")
 
-    def change_password(self, user_id: UUID, payload: PasswordChange, session: Session) -> dict:
+    def change_password(
+        self, user_id: UUID, payload: PasswordChange, session: Session
+    ) -> dict:
         """Change the password for a user."""
         if payload.new_password != payload.confirm_password:
             raise BadRequestException("New password and confirmation do not match")
 
         user = self._get_user(user_id, session)
 
-        if not SecurityUtils.check_password(payload.current_password, user.password_hash):
+        if not SecurityUtils.check_password(
+            payload.current_password, user.password_hash
+        ):
             raise BadRequestException("Current password is incorrect")
 
         if payload.current_password == payload.new_password:
-            raise BadRequestException("New password must be different from current password")
+            raise BadRequestException(
+                "New password must be different from current password"
+            )
 
         user.password_hash = SecurityUtils.hash_password(payload.new_password)
         user.credentials_updated_at = utcnow()
@@ -499,7 +519,9 @@ class _AuthService:
             raise BadRequestException("New password and confirmation do not match")
 
         if SecurityUtils.check_password(payload.new_password, user.password_hash):
-            raise BadRequestException("New password must be different from temporary password")
+            raise BadRequestException(
+                "New password must be different from temporary password"
+            )
 
         user.password_hash = SecurityUtils.hash_password(payload.new_password)
         user.credentials_updated_at = utcnow()
@@ -533,7 +555,7 @@ class _AuthService:
 
     def _get_user(self, user_id: UUID, session: Session) -> User:
         user = session.exec(
-            select(User).where(User.id == user_id, User.deleted_at.is_(None))
+            select(User).where(User.id == user_id, User.deleted_at.is_(None))  # type: ignore
         ).first()
 
         if not user:
@@ -543,24 +565,30 @@ class _AuthService:
 
     def _require_passkey_role(self, role: UserRole) -> None:
         if role not in PASSKEY_ELIGIBLE_ROLES:
-            raise ForbiddenException("Passkeys are only available for admin, manager, and NOC users")
+            raise ForbiddenException(
+                "Passkeys are only available for admin, manager, and NOC users"
+            )
 
     def _ensure_user_can_manage_passkeys(self, user: User) -> None:
         self._require_passkey_role(user.role)
         if not user.is_active():
             raise ForbiddenException("Only active users can manage passkeys")
         if user.must_change_password:
-            raise ForbiddenException("Complete your password reset before managing passkeys")
+            raise ForbiddenException(
+                "Complete your password reset before managing passkeys"
+            )
 
-    def _list_user_passkey_models(self, user_id: UUID, session: Session) -> list[PasskeyCredential]:
+    def _list_user_passkey_models(
+        self, user_id: UUID, session: Session
+    ) -> list[PasskeyCredential]:
         return list(
             session.exec(
                 select(PasskeyCredential)
                 .where(
                     PasskeyCredential.user_id == user_id,
-                    PasskeyCredential.deleted_at.is_(None),
+                    PasskeyCredential.deleted_at.is_(None),  # type: ignore
                 )
-                .order_by(PasskeyCredential.created_at.desc())
+                .order_by(PasskeyCredential.created_at.desc())  # type: ignore
             ).all()
         )
 
@@ -572,7 +600,7 @@ class _AuthService:
         return session.exec(
             select(PasskeyCredential).where(
                 PasskeyCredential.credential_id == credential_id,
-                PasskeyCredential.deleted_at.is_(None),
+                PasskeyCredential.deleted_at.is_(None),  # type: ignore
             )
         ).first()
 
@@ -587,7 +615,7 @@ class _AuthService:
         ceremony = session.exec(
             select(PasskeyChallenge).where(
                 PasskeyChallenge.id == ceremony_id,
-                PasskeyChallenge.deleted_at.is_(None),
+                PasskeyChallenge.deleted_at.is_(None),  # type: ignore
             )
         ).first()
 
@@ -608,13 +636,17 @@ class _AuthService:
     def _resolve_passkey_context(self, request: Request) -> tuple[str, str]:
         origin = request.headers.get("Origin")
         if not origin:
-            forwarded_proto = request.headers.get("X-Forwarded-Proto", request.url.scheme)
-            forwarded_host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+            forwarded_proto = request.headers.get(
+                "X-Forwarded-Proto", request.url.scheme
+            )
+            forwarded_host = request.headers.get(
+                "X-Forwarded-Host"
+            ) or request.headers.get("Host")
             if not forwarded_host:
                 raise BadRequestException("Could not determine passkey origin")
             origin = f"{forwarded_proto}://{forwarded_host}"
 
-        allowed_origins = app_settings.passkey_allowed_origins
+        allowed_origins = app_settings.PASSKEY_ALLOWED_ORIGINS
         if allowed_origins and origin not in allowed_origins:
             raise BadRequestException("Passkey origin is not allowed")
 
@@ -660,7 +692,9 @@ class _AuthService:
 
         return [transport for transport in transports if isinstance(transport, str)]
 
-    def _deserialize_transports(self, transports_json: str | None) -> list[AuthenticatorTransport] | None:
+    def _deserialize_transports(
+        self, transports_json: str | None
+    ) -> list[AuthenticatorTransport] | None:
         if not transports_json:
             return None
 
@@ -683,7 +717,9 @@ class _AuthService:
 
         return transports or None
 
-    def _serialize_passkey(self, passkey: PasskeyCredential) -> PasskeyCredentialResponse:
+    def _serialize_passkey(
+        self, passkey: PasskeyCredential
+    ) -> PasskeyCredentialResponse:
         transports: list[str] = []
         if passkey.transports_json:
             try:
@@ -709,19 +745,23 @@ def get_auth_service() -> _AuthService:
     return _AuthService()
 
 
-def get_current_user(token: str = Depends(oauth), session: Session = Depends(get_session)) -> TokenData:
+def get_current_user(
+    token: str = Depends(oauth), session: Session = Depends(get_session)
+) -> TokenData:
     """Decode access token, then validate it against live user credentials."""
     current_user = SecurityUtils.decode_token(token, "access")
 
     user = session.exec(
-        select(User).where(User.id == current_user.user_id, User.deleted_at.is_(None))
+        select(User).where(User.id == current_user.user_id, User.deleted_at.is_(None))  # type: ignore
     ).first()
 
     if not user:
         raise UnauthorizedException("User not found")
 
     if not user.is_active():
-        raise UnauthorizedException("This account has been deactivated. Please contact your admin.")
+        raise UnauthorizedException(
+            "This account has been deactivated. Please contact your admin."
+        )
 
     if (
         current_user.iat is not None
@@ -749,21 +789,27 @@ def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenD
     return current_user
 
 
-def require_noc_or_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+def require_noc_or_admin(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
     """Dependency that ensures the current user is NOC or admin."""
     if current_user.role not in (UserRole.ADMIN, UserRole.NOC):
         raise ForbiddenException("NOC or Admin access required")
     return current_user
 
 
-def require_manager_or_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+def require_manager_or_admin(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
     """Dependency that ensures the current user is manager or admin."""
     if current_user.role not in (UserRole.ADMIN, UserRole.MANAGER):
         raise ForbiddenException("Manager or Admin access required")
     return current_user
 
 
-def require_noc_or_manager_or_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
+def require_noc_or_manager_or_admin(
+    current_user: TokenData = Depends(get_current_user),
+) -> TokenData:
     """Dependency that ensures the current user is NOC, manager, or admin."""
     if current_user.role not in (UserRole.ADMIN, UserRole.MANAGER, UserRole.NOC):
         raise ForbiddenException("NOC, Manager, or Admin access required")

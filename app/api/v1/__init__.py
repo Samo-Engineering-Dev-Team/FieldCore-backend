@@ -25,9 +25,10 @@ from .form_template import router as form_template_router
 from .form_submission import router as form_submission_router
 from app.services.auth import get_current_user
 from os import getenv
+
 _allow_dev = getenv("ALLOW_DEV_ENDPOINTS", "false").lower() == "true"
 if _allow_dev:
-	from .dev_client import router as dev_client_router
+    from .dev_client import router as dev_client_router
 
 router = APIRouter(prefix="/v1")
 router.include_router(auth_router)
@@ -42,17 +43,23 @@ router.include_router(notification_router, dependencies=[Depends(get_current_use
 router.include_router(access_request_router, dependencies=[Depends(get_current_user)])
 router.include_router(routine_check_router, dependencies=[Depends(get_current_user)])
 router.include_router(routine_issue_router, dependencies=[Depends(get_current_user)])
-router.include_router(routine_inspection_router, dependencies=[Depends(get_current_user)])
-router.include_router(management_dashboard_router, dependencies=[Depends(get_current_user)])
+router.include_router(
+    routine_inspection_router, dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    management_dashboard_router, dependencies=[Depends(get_current_user)]
+)
 router.include_router(file_router, dependencies=[Depends(get_current_user)])
 router.include_router(client_router, dependencies=[Depends(get_current_user)])
 router.include_router(webhook_router)
 router.include_router(sessions_router, dependencies=[Depends(get_current_user)])
 router.include_router(system_settings_router, dependencies=[Depends(get_current_user)])
 router.include_router(incident_report_router, dependencies=[Depends(get_current_user)])
-router.include_router(maintenance_schedule_router, dependencies=[Depends(get_current_user)])
+router.include_router(
+    maintenance_schedule_router, dependencies=[Depends(get_current_user)]
+)
 router.include_router(route_patrol_router, dependencies=[Depends(get_current_user)])
 router.include_router(form_template_router, dependencies=[Depends(get_current_user)])
 router.include_router(form_submission_router, dependencies=[Depends(get_current_user)])
 if _allow_dev:
-	router.include_router(dev_client_router)
+    router.include_router(dev_client_router)

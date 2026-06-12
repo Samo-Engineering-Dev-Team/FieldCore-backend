@@ -18,7 +18,7 @@ from app.models.route_patrol import (
 from app.services.route_patrol import RoutePatrolService
 from app.services import CurrentUser
 from app.services.auth import NocOrManagerOrAdminUser
-from app.database import Session
+from app.database import SessionDep
 
 router = APIRouter(prefix="/route-patrols", tags=["Route Patrols"])
 
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/route-patrols", tags=["Route Patrols"])
 def create_patrol(
     payload: RoutePatrolCreate,
     service: RoutePatrolService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> RoutePatrolResponse:
     return service.create(payload, session, current_user)
@@ -36,7 +36,7 @@ def create_patrol(
 @router.get("/", response_model=List[RoutePatrolResponse], status_code=200)
 def list_patrols(
     service: RoutePatrolService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     technician_id: UUID | None = Query(None),
     site_id: UUID | None = Query(None),
@@ -47,14 +47,16 @@ def list_patrols(
     Technicians are automatically scoped to their own patrols.
     NOC / Manager / Admin can filter freely or omit filters to see all.
     """
-    return service.list_patrols(session, current_user, technician_id, site_id, limit, offset)
+    return service.list_patrols(
+        session, current_user, technician_id, site_id, limit, offset
+    )
 
 
 @router.get("/{patrol_id}", response_model=RoutePatrolResponse, status_code=200)
 def get_patrol(
     patrol_id: UUID,
     service: RoutePatrolService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> RoutePatrolResponse:
     return service.get(patrol_id, session, current_user)
@@ -65,7 +67,7 @@ def update_patrol(
     patrol_id: UUID,
     payload: RoutePatrolUpdate,
     service: RoutePatrolService,
-    session: Session,
+    session: SessionDep,
     current_user: NocOrManagerOrAdminUser,
 ) -> RoutePatrolResponse:
     return service.update(patrol_id, payload, session)
@@ -75,7 +77,7 @@ def update_patrol(
 def delete_patrol(
     patrol_id: UUID,
     service: RoutePatrolService,
-    session: Session,
+    session: SessionDep,
     current_user: NocOrManagerOrAdminUser,
 ) -> None:
     service.delete(patrol_id, session)

@@ -32,7 +32,6 @@ from app.services.report_support import (
 
 
 class _IncidentReportService:
-
     # ─────────────────────────────────────── helpers ──────────────────────────
 
     def _to_response(self, report: IncidentReport) -> IncidentReportResponse:
@@ -129,18 +128,24 @@ class _IncidentReportService:
         # (technicians submit the report and resolve in one action, so the
         #  incident is still in-progress at the point the report is created)
         if incident.status == IncidentStatus.OPEN:
-            raise ForbiddenException("Cannot create a report for an open incident — start working on it first")
+            raise ForbiddenException(
+                "Cannot create a report for an open incident — start working on it first"
+            )
 
         # Rule 2: Technicians may only report their own incidents
         if current_user.role == UserRole.TECHNICIAN:
             technician = self._get_technician_by_user(current_user.user_id, session)
             if incident.technician_id != technician.id:
-                raise ForbiddenException("Technicians can only create reports for their own incidents")
+                raise ForbiddenException(
+                    "Technicians can only create reports for their own incidents"
+                )
             # Auto-fill technician_id from JWT
             data = data.model_copy(update={"technician_id": technician.id})
         elif data.technician_id is None:
             # Admin/NOC creating – still need a valid technician_id
-            raise ForbiddenException("technician_id is required when not submitted by a technician")
+            raise ForbiddenException(
+                "technician_id is required when not submitted by a technician"
+            )
 
         # Rule 3: NOC operators cannot create reports
         if current_user.role == UserRole.NOC:
@@ -154,7 +159,11 @@ class _IncidentReportService:
             )
         ).first()
         if existing:
-            LOG.warning("Rule 4 blocked: existing report id={} for incident_id={}", existing.id, data.incident_id)
+            LOG.warning(
+                "Rule 4 blocked: existing report id={} for incident_id={}",
+                existing.id,
+                data.incident_id,
+            )
             raise ConflictException("A report already exists for this incident")
 
         report_data = data.model_dump()
@@ -174,14 +183,21 @@ class _IncidentReportService:
                 technician_name=data.technician_name,
                 site_name=data.site_name,
                 session=session,
-                ref_no=getattr(data, "seacom_ref", None) or getattr(data, "ref_no", None),
+                ref_no=getattr(data, "seacom_ref", None)
+                or getattr(data, "ref_no", None),
             )
 
             return self._to_response(report)
         except IntegrityError as e:
             session.rollback()
-            LOG.warning("IntegrityError creating incident report for incident_id={}: {}", data.incident_id, e.orig)
-            raise ConflictException(f"A report already exists for this incident: {e.orig}")
+            LOG.warning(
+                "IntegrityError creating incident report for incident_id={}: {}",
+                data.incident_id,
+                e.orig,
+            )
+            raise ConflictException(
+                f"A report already exists for this incident: {e.orig}"
+            )
         except Exception as e:
             LOG.exception("Unexpected error creating incident report")
             session.rollback()
@@ -218,7 +234,11 @@ class _IncidentReportService:
         if incident_id is not None:
             statement = statement.where(IncidentReport.incident_id == incident_id)
 
-        statement = statement.order_by(IncidentReport.created_at.desc()).offset(offset).limit(limit)
+        statement = (
+            statement.order_by(IncidentReport.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
         reports = session.exec(statement).all()
         return [self._to_response(r) for r in reports]
 
@@ -255,9 +275,13 @@ class _IncidentReportService:
         if current_user.role == UserRole.TECHNICIAN:
             tech = self._get_technician_by_user(current_user.user_id, session)
             if report.technician_id != tech.id:
-                raise ForbiddenException("Technicians can only edit their own incident reports")
+                raise ForbiddenException(
+                    "Technicians can only edit their own incident reports"
+                )
 
-        update_data = data.model_dump(exclude_none=True, exclude_defaults=True, exclude_unset=True)
+        update_data = data.model_dump(
+            exclude_none=True, exclude_defaults=True, exclude_unset=True
+        )
         if not update_data:
             return self._to_response(report)
 
@@ -305,11 +329,15 @@ class _IncidentReportService:
         report = self._get_report(report_id, session)
 
         if current_user.role == UserRole.NOC:
-            raise ForbiddenException("NOC operators cannot upload photos to incident reports")
+            raise ForbiddenException(
+                "NOC operators cannot upload photos to incident reports"
+            )
         if current_user.role == UserRole.TECHNICIAN:
             tech = self._get_technician_by_user(current_user.user_id, session)
             if report.technician_id != tech.id:
-                raise ForbiddenException("Technicians can only upload photos to their own reports")
+                raise ForbiddenException(
+                    "Technicians can only upload photos to their own reports"
+                )
 
         unique_filename = f"{report_id}_{utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
         upload_result = upload_storage_file(
@@ -330,7 +358,9 @@ class _IncidentReportService:
         photos: list = list(current_attachments.get("photos", []))
         if len(photos) >= 15:
             raise ForbiddenException("Maximum of 15 photos allowed per report")
-        report.attachments = append_attachment_entry(current_attachments, "photos", photo_entry)
+        report.attachments = append_attachment_entry(
+            current_attachments, "photos", photo_entry
+        )
         report.touch()
 
         try:
@@ -355,7 +385,9 @@ class _IncidentReportService:
         if current_user.role == UserRole.TECHNICIAN:
             tech = self._get_technician_by_user(current_user.user_id, session)
             if report.technician_id != tech.id:
-                raise ForbiddenException("Technicians can only export their own incident reports")
+                raise ForbiddenException(
+                    "Technicians can only export their own incident reports"
+                )
 
         from app.services.pdf import get_pdf_service
 
@@ -380,11 +412,15 @@ class _IncidentReportService:
         if current_user.role == UserRole.TECHNICIAN:
             tech = self._get_technician_by_user(current_user.user_id, session)
             if report.technician_id != tech.id:
-                raise ForbiddenException("Technicians can only view their own incident reports")
+                raise ForbiddenException(
+                    "Technicians can only view their own incident reports"
+                )
 
 
 def get_incident_report_service() -> _IncidentReportService:
     return _IncidentReportService()
 
 
-IncidentReportService = Annotated[_IncidentReportService, Depends(get_incident_report_service)]
+IncidentReportService = Annotated[
+    _IncidentReportService, Depends(get_incident_report_service)
+]

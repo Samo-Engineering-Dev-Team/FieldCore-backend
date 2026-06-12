@@ -11,7 +11,7 @@ from app.models.incident_report import (
 )
 from app.services import CurrentUser
 from app.services.incident_report import IncidentReportService
-from app.database import Session
+from app.database import SessionDep
 
 router = APIRouter(prefix="/incident-reports", tags=["Incident Reports"])
 
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/incident-reports", tags=["Incident Reports"])
 def create_incident_report(
     payload: IncidentReportCreate,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentReportResponse:
     """"""
@@ -30,7 +30,7 @@ def create_incident_report(
 @router.get("/", response_model=List[IncidentReportResponse], status_code=200)
 def read_incident_reports(
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     incident_id: UUID | None = Query(None, description="Filter by incident ID"),
     technician_id: UUID | None = Query(None, description="Filter by technician ID"),
@@ -47,18 +47,22 @@ def read_incident_reports(
 def read_incident_report(
     report_id: UUID,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentReportResponse:
     """"""
     return service.read_incident_report(report_id, session, current_user)
 
 
-@router.get("/{incident_id}/by-incident", response_model=IncidentReportResponse | None, status_code=200)
+@router.get(
+    "/{incident_id}/by-incident",
+    response_model=IncidentReportResponse | None,
+    status_code=200,
+)
 def get_report_by_incident(
     incident_id: UUID,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentReportResponse | None:
     """"""
@@ -70,7 +74,7 @@ def update_incident_report(
     report_id: UUID,
     payload: IncidentReportUpdate,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> IncidentReportResponse:
     """"""
@@ -81,18 +85,20 @@ def update_incident_report(
 def delete_incident_report(
     report_id: UUID,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> None:
     """"""
     service.delete_incident_report(report_id, session, current_user)
 
 
-@router.post("/{report_id}/photos", response_model=IncidentReportResponse, status_code=200)
+@router.post(
+    "/{report_id}/photos", response_model=IncidentReportResponse, status_code=200
+)
 def upload_report_photo(
     report_id: UUID,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
     file: UploadFile = File(...),
 ) -> IncidentReportResponse:
@@ -112,7 +118,7 @@ def upload_report_photo(
 def export_incident_report_pdf(
     report_id: UUID,
     service: IncidentReportService,
-    session: Session,
+    session: SessionDep,
     current_user: CurrentUser,
 ) -> StreamingResponse:
     """"""

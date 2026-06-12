@@ -8,6 +8,15 @@ from loguru import logger as LOG
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from app.models import (
+    Technician,
+    TechnicianCreate,
+    TechnicianUpdate,
+    TechnicianResponse,
+    TechnicianLocationUpdate,
+    User,
+    Site,
+)
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -353,8 +362,8 @@ class _TechnicianService:
     ) -> dict:
         """Escalate a technician issue to management."""
         from app.services.notification import (
-            NotificationTemplates,
             _NotificationService,
+            NotificationTemplates,
         )
 
         # Get technician details

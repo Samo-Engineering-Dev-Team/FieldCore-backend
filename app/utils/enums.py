@@ -3,6 +3,7 @@ from enum import StrEnum
 
 class UserRole(StrEnum):
     """"""
+
     ADMIN = "admin"
     SUPER_ADMIN = "admin"
     MANAGER = "manager"
@@ -12,12 +13,14 @@ class UserRole(StrEnum):
 
 class UserStatus(StrEnum):
     """"""
+
     ACTIVE = "active"
     DISABLED = "disabled"
 
 
 class PasskeyCeremonyType(StrEnum):
     """"""
+
     REGISTRATION = "registration"
     AUTHENTICATION = "authentication"
 
@@ -63,6 +66,7 @@ class ReportType(StrEnum):
     DIESEL = "diesel"
     REPEATER = "repeater"
     ROUTINE_DRIVE = "routine-drive"
+
 
 class ReportStatus(StrEnum):
     PENDING = "pending"
@@ -114,7 +118,8 @@ class IncidentSeverity(StrEnum):
       MINOR    : non-urgent — on-site next business day, temp restore 2 business days
       QUERY    : information request — resolution within 20 business days
     """
+
     CRITICAL = "critical"
-    MAJOR    = "major"
-    MINOR    = "minor"
-    QUERY    = "query"
+    MAJOR = "major"
+    MINOR = "minor"
+    QUERY = "query"

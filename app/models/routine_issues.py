@@ -16,16 +16,17 @@ class BaseRoutineIssue(SQLModel):
 
 
 class RoutineIssue(BaseDB, BaseRoutineIssue, table=True):
-    __tablename__ = "routine_issues" # type: ignore
+    __tablename__ = "routine_issues"  # type: ignore
 
-    report: 'Report' = Relationship(back_populates="routine_issues")
+    report: "Report" = Relationship(back_populates="routine_issues")
+
 
 class RoutineIssueCreate(BaseRoutineIssue): ...
+
 
 class RoutineIssueUpdate(SQLModel):
     severity: RoutineIssueSeverity | None = Field(default=None)
     comments: str | None = Field(default=None, max_length=2000)
 
 
-class RoutineIssueResponse(BaseDB, BaseRoutineIssue):
-    ...
+class RoutineIssueResponse(BaseDB, BaseRoutineIssue): ...

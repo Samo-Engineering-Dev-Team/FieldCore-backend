@@ -24,19 +24,19 @@ class BaseReport(SQLModel):
 
 
 class Report(BaseDB, BaseReport, table=True):
-    __tablename__ = "reports" # type: ignore
+    __tablename__ = "reports"  # type: ignore
 
     status: ReportStatus = Field(default=ReportStatus.PENDING, nullable=False)
 
-    technician: 'Technician' = Relationship(back_populates="reports")
-    task: 'Task' = Relationship(back_populates="reports")
-    routine_check: 'RoutineCheck' = Relationship(back_populates="report")
-    routine_issues: List['RoutineIssue'] = Relationship(back_populates="report")
+    technician: "Technician" = Relationship(back_populates="reports")
+    task: "Task" = Relationship(back_populates="reports")
+    routine_check: "RoutineCheck" = Relationship(back_populates="report")
+    routine_issues: List["RoutineIssue"] = Relationship(back_populates="report")
 
     def start(self) -> None:
         self.status = ReportStatus.STARTED
         self.touch()
-    
+
     def complete(self) -> None:
         self.status = ReportStatus.COMPLETED
         self.touch()
