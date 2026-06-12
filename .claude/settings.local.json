@@ -32,7 +32,9 @@
       "Bash(.venv/Scripts/python -m pytest tests/ -v)",
       "Bash(.venv/Scripts/python -c \":*)",
       "Bash(npx eslint src/ --ext .ts,.tsx --max-warnings 0)",
-      "Bash(npx eslint src/ --ext .ts,.tsx)"
+      "Bash(npx eslint src/ --ext .ts,.tsx)",
+      "Bash(git checkout *)",
+      "Bash(git add *)"
     ]
   }
 }
