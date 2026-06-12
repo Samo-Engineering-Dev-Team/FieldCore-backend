@@ -1,43 +1,41 @@
-from typing import Annotated, List
 from uuid import UUID
-
 from fastapi import Depends
-from sqlalchemy.exc import IntegrityError
+from typing import List, Annotated
 from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_
 
+from app.utils.enums import AccessRequestStatus, TaskType, UserRole
+from app.models import (
+    AccessRequest,
+    AccessRequestCreate,
+    AccessRequestUpdate,
+    AccessRequestResponse,
+    Site,
+    Technician,
+    User,
+    )
 from app.exceptions.http import (
     ConflictException,
     ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
-from app.models import (
-    AccessRequest,
-    AccessRequestCreate,
-    AccessRequestResponse,
-    AccessRequestUpdate,
-    Site,
-    Technician,
-    User,
-)
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
-from app.utils.enums import AccessRequestStatus, UserRole
 
 
 class _AccessRequestService:
-    def access_request_to_response(
-        self, access_request: AccessRequest
-    ) -> AccessRequestResponse:
+    def access_request_to_response(self, access_request: AccessRequest) -> AccessRequestResponse:
         user = access_request.technician.user
-        data = access_request.model_dump(exclude={"report_type"})
+        data = access_request.model_dump(exclude={'report_type'})
         return AccessRequestResponse(
             **data,
             report_type=access_request.report_type or "general",
             technician_name=f"{user.name} {user.surname}",
             technician_id_no=access_request.technician.id_no,
-            site_name=access_request.site.name,
-        )
+            site_name=access_request.site.name
+            )
 
     def _assert_can_access_request(
         self,
@@ -74,46 +72,36 @@ class _AccessRequestService:
             )
 
         # Handle site
-        statement = select(Site).where(
-            Site.id == data.site_id,
-            Site.deleted_at.is_(None),  # type: ignore
-        )
+        statement = select(Site).where(Site.id == data.site_id, Site.deleted_at.is_(None)) # type: ignore
         site: Site | None = session.exec(statement).first()
         if not site:
             raise NotFoundException("site not found")
-
+        
         # Handle technician
-        statement = select(Technician).where(
-            Technician.id == data.technician_id,
-            Technician.deleted_at.is_(None),  # type: ignore
-        )
+        statement = select(Technician).where(Technician.id == data.technician_id, Technician.deleted_at.is_(None)) # type: ignore
         technician: Technician | None = session.exec(statement).first()
         if not technician:
             raise NotFoundException("technician not found")
 
-        access_request: AccessRequest = AccessRequest(
-            **data.model_dump(), site=site, technician=technician
-        )
+        access_request: AccessRequest = AccessRequest(**data.model_dump(), site=site, technician=technician)
         try:
             session.add(access_request)
             session.commit()
             session.refresh(access_request)
-
+            
             # Notify all NOC operators about new access request
-            from app.services.notification import (
-                NotificationTemplates,
-                _NotificationService,
-            )
-
+            from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-
+            
             noc_users = session.exec(
                 select(User).where(
-                    User.role == UserRole.NOC,
-                    User.deleted_at.is_(None),  # type: ignore
+                    and_(
+                        User.role == UserRole.NOC,
+                        User.deleted_at.is_(None)
+                    )
                 )
             ).all()
-
+            
             tech_name = f"{technician.user.name} {technician.user.surname}"
             notification_service.create_notifications_from_template(
                 user_ids=(noc_user.id for noc_user in noc_users),
@@ -124,16 +112,14 @@ class _AccessRequestService:
                 ),
                 session=session,
             )
-
+            
             return self.access_request_to_response(access_request)
         except IntegrityError as e:
             session.rollback()
             raise ConflictException(f"Error creating access-request: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(
-                f"Unexpected error creating access-request: {e}"
-            )
+            raise InternalServerErrorException(f"Unexpected error creating access-request: {e}")
 
     def read_access_request(
         self,
@@ -166,10 +152,7 @@ class _AccessRequestService:
 
         statement = statement.offset(offset).limit(limit)
         access_requests = session.exec(statement).all()
-        return [
-            self.access_request_to_response(access_request)
-            for access_request in access_requests
-        ]
+        return [self.access_request_to_response(access_request) for access_request in access_requests]
 
     def update_access_request(
         self,
@@ -201,9 +184,7 @@ class _AccessRequestService:
             raise ConflictException(f"Error updating access_request: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(
-                f"Unexpected error updating access_request: {e}"
-            )
+            raise InternalServerErrorException(f"Unexpected error updating access_request: {e}")
 
     def delete_access_request(
         self,
@@ -215,11 +196,9 @@ class _AccessRequestService:
         self._assert_can_access_request(access_request, session, current_user, "delete")
         access_request.soft_delete()
         session.commit()
-
-    def approve_access_request(
-        self, access_request_id: UUID, seacom_ref: str, session: Session
-    ) -> AccessRequestResponse:
-        """Approve an access request, update related task with seacom_ref, and notify the technician."""
+    
+    def approve_access_request(self, access_request_id: UUID, seacom_ref: str, session: Session, current_user: TokenData) -> AccessRequestResponse:
+        """Approve an access request, create (or update) its work task, and notify the technician."""
         from app.models import Task
 
         access_request = self._get_access_request(access_request_id, session)
@@ -228,89 +207,84 @@ class _AccessRequestService:
             session.commit()
             session.refresh(access_request)
 
-            # Update the related task with the seacom_ref if it exists
             if access_request.task_id:
+                # Legacy requests that already carry a task: propagate the seacom_ref
                 task = session.exec(
-                    select(Task).where(
-                        Task.id == access_request.task_id,
-                        Task.deleted_at.is_(None),  # type: ignore
-                    )
+                    select(Task).where(Task.id == access_request.task_id, Task.deleted_at.is_(None))
                 ).first()
                 if task:
                     task.seacom_ref = seacom_ref
                     task.touch()
                     session.commit()
                     session.refresh(task)
+            else:
+                # Create the work task for the approved request
+                assigner = session.get(User, current_user.user_id)
+                task = Task(
+                    seacom_ref=seacom_ref,
+                    description=access_request.description,
+                    start_time=access_request.start_time,
+                    end_time=access_request.end_time,
+                    task_type=TaskType.ROUTINE_MAINTENANCE,
+                    report_type=access_request.report_type or "general",
+                    site_id=access_request.site_id,
+                    technician_id=access_request.technician_id,
+                    assigned_by_user_id=assigner.id if assigner else None,
+                    assigned_by_name=f"{assigner.name} {assigner.surname}" if assigner else None,
+                )
+                session.add(task)
+                session.commit()
+                session.refresh(task)
+
+                access_request.task_id = task.id
+                access_request.touch()
+                session.commit()
+                session.refresh(access_request)
 
             # Notify the technician that their access request was approved
-            from app.services.notification import (
-                NotificationTemplates,
-                _NotificationService,
-            )
-
+            from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-
-            site_name = (
-                access_request.site.name if access_request.site else "Unknown Site"
-            )
-
+            
+            site_name = access_request.site.name if access_request.site else "Unknown Site"
+            
             notification_service.create_notification_from_template(
                 user_id=access_request.technician.user_id,
-                template=NotificationTemplates.access_request_approved(
-                    site_name, seacom_ref
-                ),
+                template=NotificationTemplates.access_request_approved(site_name, seacom_ref),
                 session=session,
             )
-
+            
             return self.access_request_to_response(access_request)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(
-                f"Unexpected error approving access-request: {e}"
-            )
-
-    def reject_access_request(
-        self, access_request_id: UUID, session: Session
-    ) -> AccessRequestResponse:
+            raise InternalServerErrorException(f"Unexpected error approving access-request: {e}")
+    
+    def reject_access_request(self, access_request_id: UUID, session: Session) -> AccessRequestResponse:
         """Reject an access request and notify the technician."""
         access_request = self._get_access_request(access_request_id, session)
         access_request.reject()
         try:
             session.commit()
             session.refresh(access_request)
-
+            
             # Notify the technician that their access request was rejected
-            from app.services.notification import (
-                NotificationTemplates,
-                _NotificationService,
-            )
-
+            from app.services.notification import _NotificationService, NotificationTemplates
             notification_service = _NotificationService()
-
-            site_name = (
-                access_request.site.name if access_request.site else "Unknown Site"
-            )
-
+            
+            site_name = access_request.site.name if access_request.site else "Unknown Site"
+            
             notification_service.create_notification_from_template(
                 user_id=access_request.technician.user_id,
                 template=NotificationTemplates.access_request_rejected(site_name),
                 session=session,
             )
-
+            
             return self.access_request_to_response(access_request)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(
-                f"Unexpected error rejecting access-request: {e}"
-            )
+            raise InternalServerErrorException(f"Unexpected error rejecting access-request: {e}")
 
-    def _get_access_request(
-        self, access_request_id: UUID, session: Session
-    ) -> AccessRequest:
-        statement = select(AccessRequest).where(
-            AccessRequest.id == access_request_id,
-            AccessRequest.deleted_at.is_(None),  # type: ignore
-        )
+    def _get_access_request(self, access_request_id: UUID, session: Session) -> AccessRequest:
+        statement = select(AccessRequest).where(AccessRequest.id == access_request_id, AccessRequest.deleted_at.is_(None))  # type: ignore
         access_request: AccessRequest | None = session.exec(statement).first()
         if not access_request:
             raise NotFoundException("access-request not found")
@@ -321,6 +295,4 @@ def get_access_request_service() -> _AccessRequestService:
     return _AccessRequestService()
 
 
-AccessRequestService = Annotated[
-    _AccessRequestService, Depends(get_access_request_service)
-]
+AccessRequestService = Annotated[_AccessRequestService, Depends(get_access_request_service)]

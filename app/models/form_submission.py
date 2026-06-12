@@ -16,6 +16,16 @@ from .base import BaseDB
 
 class BaseFormSubmission(SQLModel):
     template_id: UUID = Field(foreign_key="form_templates.id", nullable=False, index=True)
+    # Domain links. Which one is required is dictated by the template's category
+    # (TemplateCategory.requires_link); enforced in the submission service.
+    task_id: UUID | None = Field(
+        default=None, foreign_key="tasks.id", nullable=True, index=True,
+        description="Set when the template's category requires_link == 'task'",
+    )
+    incident_id: UUID | None = Field(
+        default=None, foreign_key="incidents.id", nullable=True, index=True,
+        description="Set when the template's category requires_link == 'incident'",
+    )
     template_version: int = Field(nullable=False)
     template_snapshot: dict[str, Any] = Field(
         sa_type=JSONB, nullable=False,
@@ -39,6 +49,9 @@ class FormSubmission(BaseDB, BaseFormSubmission, table=True):
 class FormSubmissionCreate(SQLModel):
     """Raw submission. `values`/`attachments` are validated against the template."""
     template_id: UUID
+    # Provide the link the template's category requires (task_id or incident_id).
+    task_id: UUID | None = Field(default=None)
+    incident_id: UUID | None = Field(default=None)
     values: dict[str, Any] = Field(default_factory=dict)
     attachments: dict[str, Any] | None = Field(default=None)
 

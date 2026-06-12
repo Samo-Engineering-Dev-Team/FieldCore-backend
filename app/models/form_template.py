@@ -13,6 +13,7 @@ without schema changes (see app/services/form_validation.py).
 """
 
 from typing import Any
+from uuid import UUID
 from pydantic import BaseModel, model_validator
 from sqlmodel import SQLModel, Field
 from sqlalchemy.dialects.postgresql import JSONB
@@ -114,6 +115,10 @@ class TemplateStructure(BaseModel):
 
 
 class BaseFormTemplate(SQLModel):
+    category_id: UUID = Field(
+        foreign_key="template_categories.id", nullable=False, index=True,
+        description="The dynamic category (type) this template belongs to",
+    )
     key: str = Field(max_length=100, nullable=False, index=True,
                      description="Machine identifier, unique among active templates")
     name: str = Field(max_length=200, nullable=False)
@@ -136,6 +141,7 @@ class FormTemplate(BaseDB, BaseFormTemplate, table=True):
 
 class FormTemplateCreate(SQLModel):
     """Create a template with its full nested structure in one request."""
+    category_id: UUID = Field(description="The category (type) this template belongs to")
     key: str = Field(max_length=100)
     name: str = Field(max_length=200)
     description: str | None = Field(default=None, max_length=2000)

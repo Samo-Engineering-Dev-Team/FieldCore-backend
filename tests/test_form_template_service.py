@@ -5,7 +5,12 @@ from uuid import uuid4
 import pytest
 
 from app.exceptions.http import ForbiddenException
-from app.models import FormTemplate, FormTemplateCreate, FormTemplateUpdate
+from app.models import (
+    FormTemplate,
+    FormTemplateCreate,
+    FormTemplateUpdate,
+    TemplateCategory,
+)
 from app.models.auth import TokenData
 from app.models.form_template import (
     TemplateStructure,
@@ -54,16 +59,27 @@ def _structure():
     ])
 
 
-def _create_payload():
-    return FormTemplateCreate(key="k1", name="Template 1", structure=_structure())
+def _category():
+    return TemplateCategory(code="TASK", name="Task", is_active=True, is_system=True)
+
+
+def _create_payload(category_id=None):
+    return FormTemplateCreate(
+        category_id=category_id or uuid4(), key="k1", name="Template 1", structure=_structure()
+    )
 
 
 def test_create_template_management_allowed():
     service = _FormTemplateService()
-    session = FakeSession()
-    resp = service.create_template(_create_payload(), session, _user(UserRole.MANAGER))
+    category = _category()
+    # create_template looks the category up first (exec().first()).
+    session = FakeSession(first=category)
+    resp = service.create_template(
+        _create_payload(category.id), session, _user(UserRole.MANAGER)
+    )
     assert resp.key == "k1"
     assert resp.version == 1
+    assert resp.category_id == category.id
     assert session.committed
 
 
@@ -74,7 +90,7 @@ def test_create_template_technician_forbidden():
 
 
 def test_update_structure_bumps_version():
-    existing = FormTemplate(key="k1", name="T", version=1, structure=_structure().model_dump())
+    existing = FormTemplate(category_id=uuid4(), key="k1", name="T", version=1, structure=_structure().model_dump())
     service = _FormTemplateService()
     session = FakeSession(first=existing)
 
@@ -90,7 +106,7 @@ def test_update_structure_bumps_version():
 
 
 def test_update_without_structure_keeps_version():
-    existing = FormTemplate(key="k1", name="T", version=3, structure=_structure().model_dump())
+    existing = FormTemplate(category_id=uuid4(), key="k1", name="T", version=3, structure=_structure().model_dump())
     service = _FormTemplateService()
     session = FakeSession(first=existing)
     resp = service.update_template(
@@ -101,7 +117,7 @@ def test_update_without_structure_keeps_version():
 
 
 def test_delete_template_soft_deletes():
-    existing = FormTemplate(key="k1", name="T", version=1, structure=_structure().model_dump())
+    existing = FormTemplate(category_id=uuid4(), key="k1", name="T", version=1, structure=_structure().model_dump())
     service = _FormTemplateService()
     session = FakeSession(first=existing)
     service.delete_template(uuid4(), session, _user(UserRole.ADMIN))

@@ -5,10 +5,25 @@ class UserRole(StrEnum):
     """"""
 
     ADMIN = "admin"
-    SUPER_ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"
+    SHEQ = "sheq"
+
+
+class LinkTarget(StrEnum):
+    """
+    Domain object a form submission must attach to, declared per template
+    category (TemplateCategory.requires_link).
+
+    Each non-NONE value maps to a real nullable FK column on form_submissions
+    (TASK -> task_id, INCIDENT -> incident_id). Adding a new target means adding
+    a new FK column + a migration.
+    """
+    NONE = "none"
+    TASK = "task"
+    INCIDENT = "incident"
 
 
 class UserStatus(StrEnum):

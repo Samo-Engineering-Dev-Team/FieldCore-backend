@@ -15,43 +15,25 @@ from .webhook import WebhookService
 from .presence import PresenceService
 from .incident_report import IncidentReportService, get_incident_report_service
 from .fault_update import FaultUpdateService, get_fault_update_service
-from .maintenance_schedule import (
-    MaintenanceScheduleService,
-    get_maintenance_schedule_service,
-)
+from .maintenance_schedule import MaintenanceScheduleService, get_maintenance_schedule_service
 from .route_patrol import RoutePatrolService, get_route_patrol_service
 from .pdf import PDFService, get_pdf_service
 from .system_settings import SystemSettingsService, get_system_settings_service
 from .form_template import FormTemplateService, get_form_template_service
 from .form_submission import FormSubmissionService, get_form_submission_service
+from .template_category import TemplateCategoryService, get_template_category_service
 
-__all__ = [
-    "AuthService",
-    "CurrentUser",
-    "UserService",
-    "TechnicianService",
-    "SiteService",
-    "TaskService",
-    "IncidentService",
-    "ReportService",
-    "NotificationService",
-    "AccessRequestService",
-    "RoutineCheckService",
-    "RoutineIssueService",
-    "RoutineInspectionService",
-    "ManagementDashboardService",
-    "WebhookService",
-    "PresenceService",
-    "IncidentReportService",
-    "get_incident_report_service",
-    "PDFService",
-    "get_pdf_service",
-    "SystemSettingsService",
-    "get_system_settings_service",
-    "FaultUpdateService",
-    "get_fault_update_service",
-    "MaintenanceScheduleService",
-    "get_maintenance_schedule_service",
-    "RoutePatrolService",
-    "get_route_patrol_service",
-]
+__all__ = ["AuthService", "CurrentUser", "UserService", "TechnicianService",
+           "SiteService", "TaskService", "IncidentService", "ReportService",
+           "NotificationService", "AccessRequestService", "RoutineCheckService",
+           "RoutineIssueService", "RoutineInspectionService", "ManagementDashboardService",
+           "WebhookService", "PresenceService", "IncidentReportService", "get_incident_report_service",
+           "PDFService", "get_pdf_service",
+           "SystemSettingsService", "get_system_settings_service",
+           "FaultUpdateService", "get_fault_update_service",
+           "MaintenanceScheduleService", "get_maintenance_schedule_service",
+           "RoutePatrolService", "get_route_patrol_service",
+           "FormTemplateService", "get_form_template_service",
+           "FormSubmissionService", "get_form_submission_service",
+           "TemplateCategoryService", "get_template_category_service",
+           ]

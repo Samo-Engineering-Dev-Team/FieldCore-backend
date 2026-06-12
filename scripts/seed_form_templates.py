@@ -30,6 +30,7 @@ from app.core import app_settings
 from app.database import Database
 from app.models import (
     FormTemplate,
+    TemplateCategory,
     TemplateStructure,
     SectionDefinition,
     FieldDefinition,
@@ -183,24 +184,38 @@ def _templates() -> list[dict]:
     ])
 
     return [
-        {"key": "diesel", "name": "Generator Diesel Refill",
+        {"key": "diesel", "name": "Generator Diesel Refill", "category": "DIESEL",
          "description": "Diesel refill report for site generators.", "structure": diesel},
-        {"key": "repeater", "name": "Repeater Site Visit",
+        {"key": "repeater", "name": "Repeater Site Visit", "category": "REPEATER",
          "description": "Monthly repeater site inspection report.", "structure": repeater},
-        {"key": "routine-drive", "name": "Routine Drive / Fibre Route Patrol",
+        {"key": "routine-drive", "name": "Routine Drive / Fibre Route Patrol", "category": "ROUTINE_DRIVE",
          "description": "Weekly routine drive checklist and issues log.", "structure": routine_drive},
-        {"key": "incident-report", "name": "Incident Report",
+        {"key": "incident-report", "name": "Incident Report", "category": "INCIDENT",
          "description": "Narrative incident report.", "structure": incident_report},
-        {"key": "routine-generator-inspection", "name": "Routine Generator Inspection",
+        {"key": "routine-generator-inspection", "name": "Routine Generator Inspection", "category": "ROUTINE_DRIVE",
          "description": "Routine generator inspection.", "structure": routine_generator_inspection},
-        {"key": "route-patrol", "name": "Route Patrol",
+        {"key": "route-patrol", "name": "Route Patrol", "category": "ROUTINE_DRIVE",
          "description": "Weekly fibre route surveillance patrol.", "structure": route_patrol},
     ]
 
 
+def _category_map(session) -> dict:
+    """code -> category id, for assigning templates to their category."""
+    categories = session.exec(select(TemplateCategory)).all()
+    return {c.code: c.id for c in categories}
+
+
 def seed_form_templates() -> None:
     with Database.session() as session:
+        cat_by_code = _category_map(session)
         for spec in _templates():
+            category_id = cat_by_code.get(spec["category"])
+            if category_id is None:
+                raise RuntimeError(
+                    f"category '{spec['category']}' not found — run migration "
+                    f"0035_create_template_categories.sql first"
+                )
+
             existing = session.exec(
                 select(FormTemplate).where(
                     FormTemplate.key == spec["key"],
@@ -212,6 +227,7 @@ def seed_form_templates() -> None:
             if existing:
                 existing.name = spec["name"]
                 existing.description = spec["description"]
+                existing.category_id = category_id
                 if existing.structure != structure_dump:
                     existing.structure = structure_dump
                     existing.version += 1
@@ -220,6 +236,7 @@ def seed_form_templates() -> None:
                 print(f"  Updated template: {spec['key']} (v{existing.version})")
             else:
                 template = FormTemplate(
+                    category_id=category_id,
                     key=spec["key"],
                     name=spec["name"],
                     description=spec["description"],
