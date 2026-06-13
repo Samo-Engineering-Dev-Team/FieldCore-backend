@@ -10,17 +10,10 @@ from app.core.settings import app_settings
 class FileService:
     """Service for managing file uploads/downloads via Supabase Storage."""
 
-<<<<<<< HEAD
-    def __init__(self):
-        self.supabase_url = app_settings.SUPABASE_URL
-        self.service_key = app_settings.SUPABASE_SERVICE_KEY
-        self.bucket = app_settings.SUPABASE_STORAGE_BUCKET
-=======
     def __init__(self) -> None:
         self.supabase_url: str = app_settings.SUPABASE_URL
         self.service_key: str = app_settings.SUPABASE_SERVICE_KEY
         self.bucket: str = app_settings.SUPABASE_STORAGE_BUCKET
->>>>>>> sheq-intergration
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -55,13 +48,8 @@ class FileService:
         file_content: bytes,
         filename: str,
         content_type: str,
-<<<<<<< HEAD
         folder: str = "incidents",
-    ) -> dict:
-=======
-        folder: str = "incidents"
     ) -> dict[str, Any]:
->>>>>>> sheq-intergration
         """
         Upload a file to Supabase Storage.
 
@@ -96,15 +84,10 @@ class FileService:
                 )
 
         # Generate access URLs
-<<<<<<< HEAD
-        public_url = (
+        public_url: str = (
             f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         )
-        signed_url = None
-=======
-        public_url: str = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         signed_url: str | None = None
->>>>>>> sheq-intergration
         try:
             signed_url = await self.get_signed_url(file_path, expires_in=86400)
         except Exception:
@@ -151,15 +134,10 @@ class FileService:
                     detail=f"Failed to upload file: {response.text}",
                 )
 
-<<<<<<< HEAD
-        public_url = (
+        public_url: str = (
             f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         )
-        signed_url = None
-=======
-        public_url: str = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         signed_url: str | None = None
->>>>>>> sheq-intergration
         try:
             signed_url = self.get_signed_url_sync(file_path, expires_in=86400)
         except Exception:

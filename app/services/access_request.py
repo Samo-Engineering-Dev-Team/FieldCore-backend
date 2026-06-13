@@ -1,23 +1,10 @@
 from typing import Annotated, List
 from uuid import UUID
 
-<<<<<<< HEAD
 from fastapi import Depends
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-=======
-from app.utils.enums import AccessRequestStatus, TaskType, UserRole
-from app.models import (
-    AccessRequest,
-    AccessRequestCreate,
-    AccessRequestUpdate,
-    AccessRequestResponse,
-    Site,
-    Technician,
-    User,
-    )
->>>>>>> sheq-intergration
 from app.exceptions.http import (
     ConflictException,
     ForbiddenException,
@@ -35,7 +22,7 @@ from app.models import (
 )
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
-from app.utils.enums import AccessRequestStatus, UserRole
+from app.utils.enums import AccessRequestStatus, TaskType, UserRole
 
 
 class _AccessRequestService:
@@ -228,17 +215,15 @@ class _AccessRequestService:
         self._assert_can_access_request(access_request, session, current_user, "delete")
         access_request.soft_delete()
         session.commit()
-<<<<<<< HEAD
 
     def approve_access_request(
-        self, access_request_id: UUID, seacom_ref: str, session: Session
+        self,
+        access_request_id: UUID,
+        seacom_ref: str,
+        session: Session,
+        current_user: TokenData,
     ) -> AccessRequestResponse:
-        """Approve an access request, update related task with seacom_ref, and notify the technician."""
-=======
-    
-    def approve_access_request(self, access_request_id: UUID, seacom_ref: str, session: Session, current_user: TokenData) -> AccessRequestResponse:
         """Approve an access request, create (or update) its work task, and notify the technician."""
->>>>>>> sheq-intergration
         from app.models import Task
 
         access_request = self._get_access_request(access_request_id, session)
@@ -247,10 +232,6 @@ class _AccessRequestService:
             session.commit()
             session.refresh(access_request)
 
-<<<<<<< HEAD
-            # Update the related task with the seacom_ref if it exists
-=======
->>>>>>> sheq-intergration
             if access_request.task_id:
                 # Legacy requests that already carry a task: propagate the seacom_ref
                 task = session.exec(
@@ -264,8 +245,6 @@ class _AccessRequestService:
                     task.touch()
                     session.commit()
                     session.refresh(task)
-<<<<<<< HEAD
-=======
             else:
                 # Create the work task for the approved request
                 assigner = session.get(User, current_user.user_id)
@@ -289,7 +268,6 @@ class _AccessRequestService:
                 access_request.touch()
                 session.commit()
                 session.refresh(access_request)
->>>>>>> sheq-intergration
 
             # Notify the technician that their access request was approved
             from app.services.notification import (
