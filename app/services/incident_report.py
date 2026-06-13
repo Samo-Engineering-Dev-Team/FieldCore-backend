@@ -305,7 +305,7 @@ class _IncidentReportService:
     ) -> None:
         report = self._get_report(report_id, session)
 
-        if current_user.role not in (UserRole.ADMIN,):
+        if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
             raise ForbiddenException("Only admins can delete incident reports")
 
         report.soft_delete()

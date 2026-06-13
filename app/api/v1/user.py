@@ -1,19 +1,24 @@
-from fastapi import APIRouter, Query
 from typing import List
 from uuid import UUID
 
+from fastapi import APIRouter, Query
+
+from app.database import SessionDep
+from app.exceptions.http import UnauthorizedException
 from app.models import (
+    AdminPasswordReset,
     UserCreate,
-    UserUpdate,
     UserResponse,
     UserRoleUpdate,
-    AdminPasswordReset,
+    UserUpdate,
 )
-from app.services import UserService, CurrentUser
-from app.database import SessionDep
+from app.services import CurrentUser, UserService
+from app.services.authorization import (
+    ADMIN_MANAGER_ROLES,
+    MANAGEMENT_ROLES,
+    assert_self_or_roles,
+)
 from app.utils.enums import UserRole, UserStatus
-from app.exceptions.http import UnauthorizedException
-from app.services.authorization import ADMIN_MANAGER_ROLES, MANAGEMENT_ROLES, assert_self_or_roles
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -27,7 +32,11 @@ def create_user(
     current_user: CurrentUser,
 ) -> UserResponse:
     """Create a new user. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+    ]:
         raise UnauthorizedException("You do not have permission to create users.")
     return service.create_user(payload, session)
 
@@ -95,7 +104,11 @@ def set_user_role(
     current_user: CurrentUser,
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+    ]:
         raise UnauthorizedException(
             "You do not have permission to perform this action."
         )
@@ -111,7 +124,7 @@ def reset_user_password(
     current_user: CurrentUser,
 ) -> dict:
     """Reset a user's password. Only accessible to admins."""
-    if current_user.role != UserRole.ADMIN:
+    if current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ADMIN):
         raise UnauthorizedException("You do not have permission to reset passwords.")
     return service.reset_password(user_id, payload, session)
 
@@ -123,7 +136,11 @@ def activate_user(
     user_id: UUID, service: UserService, session: SessionDep, current_user: CurrentUser
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+    ]:
         raise UnauthorizedException(
             "You do not have permission to perform this action."
         )
@@ -137,7 +154,11 @@ def deactivate_user(
     user_id: UUID, service: UserService, session: SessionDep, current_user: CurrentUser
 ) -> UserResponse:
     """"""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+    ]:
         raise UnauthorizedException(
             "You do not have permission to perform this action."
         )
@@ -149,6 +170,10 @@ def delete_user(
     user_id: UUID, service: UserService, session: SessionDep, current_user: CurrentUser
 ) -> None:
     """Soft delete a user. Only accessible to admin and manager roles."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+    if current_user.role not in [
+        UserRole.SUPER_ADMIN,
+        UserRole.ADMIN,
+        UserRole.MANAGER,
+    ]:
         raise UnauthorizedException("You do not have permission to delete users.")
     service.delete_user(user_id, session)

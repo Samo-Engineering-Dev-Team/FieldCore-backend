@@ -117,7 +117,7 @@ def export_report_pdf(
     Export a completed report as a PDF document.
     Only accessible to NOC, Manager, and Admin roles.
     """
-    allowed_roles = [UserRole.NOC, UserRole.MANAGER, UserRole.ADMIN]
+    allowed_roles = [UserRole.NOC, UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN]
     if current_user.role not in allowed_roles:
         raise ForbiddenException("You do not have permission to export reports.")
 

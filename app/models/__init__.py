@@ -104,6 +104,12 @@ from .form_submission import (
     FormSubmissionCreate,
     FormSubmissionResponse,
 )
+from .template_category import (
+    TemplateCategory,
+    TemplateCategoryCreate,
+    TemplateCategoryUpdate,
+    TemplateCategoryResponse,
+)
 
 __all__ = [
     "BaseDB",
@@ -206,4 +212,8 @@ __all__ = [
     "FormSubmission",
     "FormSubmissionCreate",
     "FormSubmissionResponse",
+    "TemplateCategory",
+    "TemplateCategoryCreate",
+    "TemplateCategoryUpdate",
+    "TemplateCategoryResponse",
 ]

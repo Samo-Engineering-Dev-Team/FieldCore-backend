@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Query, Body
 from typing import List
 from uuid import UUID
 
-from app.models import AccessRequestCreate, AccessRequestUpdate, AccessRequestResponse
-from app.services import AccessRequestService, CurrentUser
+from fastapi import APIRouter, Body, Query
+
 from app.database import SessionDep
-from app.utils.enums import AccessRequestStatus
+from app.models import AccessRequestCreate, AccessRequestResponse, AccessRequestUpdate
+from app.services import AccessRequestService, CurrentUser
 from app.services.authorization import require_management
+from app.utils.enums import AccessRequestStatus
 
 router = APIRouter(prefix="/access-requests", tags=["Access Requests"])
 
@@ -104,7 +105,7 @@ def approve_access_request(
     require_management(
         user, "Only NOC, managers, or admins can approve access requests."
     )
-    return service.approve_access_request(access_request_id, seacom_ref, session)
+    return service.approve_access_request(access_request_id, seacom_ref, session, user)
 
 
 @router.patch(

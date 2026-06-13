@@ -10,9 +10,7 @@ from app.models import (
 from app.services import FormTemplateService, CurrentUser
 from app.database import Session
 
-# DEPRECATED: canonical routes now live under /api/v2/form-templates.
-# Kept as a shim (same service) for backwards compatibility; remove later.
-router = APIRouter(prefix="/form-templates", tags=["Form Templates"], deprecated=True)
+router = APIRouter(prefix="/form-templates", tags=["Form Templates"])
 
 
 @router.post("/", response_model=FormTemplateResponse, status_code=201)
@@ -22,7 +20,7 @@ def create_form_template(
     session: Session,
     current_user: CurrentUser,
 ) -> FormTemplateResponse:
-    """Create a form template with its full nested structure (sections + typed fields)."""
+    """Create a form template. Requires `category_id` (see /template-categories)."""
     return service.create_template(payload, session, current_user)
 
 

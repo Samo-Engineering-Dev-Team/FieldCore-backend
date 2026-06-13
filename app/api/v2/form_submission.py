@@ -6,12 +6,9 @@ from app.models import FormSubmissionCreate, FormSubmissionResponse
 from app.services import FormSubmissionService, CurrentUser
 from app.database import Session
 
-# DEPRECATED: canonical routes now live under /api/v2/form-templates/{id}/submissions.
-# Kept as a shim (same service) for backwards compatibility; remove later.
 router = APIRouter(
     prefix="/form-templates/{template_id}/submissions",
     tags=["Form Submissions"],
-    deprecated=True,
 )
 
 
@@ -24,12 +21,15 @@ def create_form_submission(
     current_user: CurrentUser,
 ) -> FormSubmissionResponse:
     """
-    Create a submission for a template. The submission is validated server-side
-    against the template structure; failures return 422 with a per-field error map.
+    Create a submission for a template. Validated server-side against the
+    template structure; failures return 422 with a per-field error map.
+
+    Domain link: if the template's category requires_link is 'task' or
+    'incident', the matching `task_id` / `incident_id` must be supplied
+    (400 otherwise). Categories with requires_link 'none' reject both.
 
     Attachments: upload files first via POST /api/v1/files/upload, then pass the
-    returned reference objects (keyed by field key) in `attachments`. Per-field
-    mime/size constraints are enforced here against that upload metadata.
+    returned reference objects (keyed by field key) in `attachments`.
     """
     return service.create_submission(template_id, payload, session, current_user)
 
