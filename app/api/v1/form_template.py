@@ -8,7 +8,7 @@ from app.models import (
     FormTemplateResponse,
 )
 from app.services import FormTemplateService, CurrentUser
-from app.database import Session
+from app.database import SessionDep as Session
 
 # DEPRECATED: canonical routes now live under /api/v2/form-templates.
 # Kept as a shim (same service) for backwards compatibility; remove later.
