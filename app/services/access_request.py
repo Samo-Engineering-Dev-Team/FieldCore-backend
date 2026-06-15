@@ -1,10 +1,9 @@
+from typing import Annotated, List
 from uuid import UUID
 
 from fastapi import Depends
-from typing import List, Annotated
-from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import and_
+from sqlmodel import Session, select
 
 from app.exceptions.http import (
     ConflictException,
@@ -29,16 +28,18 @@ from app.utils.enums import AccessRequestStatus, TaskType, UserRole
 
 
 class _AccessRequestService:
-    def access_request_to_response(self, access_request: AccessRequest) -> AccessRequestResponse:
+    def access_request_to_response(
+        self, access_request: AccessRequest
+    ) -> AccessRequestResponse:
         user = access_request.technician.user
-        data = access_request.model_dump(exclude={'report_type'})
+        data = access_request.model_dump(exclude={"report_type"})
         return AccessRequestResponse(
             **data,
             report_type=access_request.report_type or "general",
             technician_name=f"{user.name} {user.surname}",
             technician_id_no=access_request.technician.id_no,
-            site_name=access_request.site.name
-            )
+            site_name=access_request.site.name,
+        )
 
     def _assert_can_access_request(
         self,
@@ -236,7 +237,10 @@ class _AccessRequestService:
 
         statement = statement.offset(offset).limit(limit)
         access_requests = session.exec(statement).all()
-        return [self.access_request_to_response(access_request) for access_request in access_requests]
+        return [
+            self.access_request_to_response(access_request)
+            for access_request in access_requests
+        ]
 
     def update_access_request(
         self,
@@ -268,7 +272,9 @@ class _AccessRequestService:
             raise ConflictException(f"Error updating access_request: {e.orig}")
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error updating access_request: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error updating access_request: {e}"
+            )
 
     def delete_access_request(
         self,
@@ -300,7 +306,10 @@ class _AccessRequestService:
             if access_request.task_id:
                 # Legacy requests that already carry a task: propagate the seacom_ref
                 task = session.exec(
-                    select(Task).where(Task.id == access_request.task_id, Task.deleted_at.is_(None))
+                    select(Task).where(
+                        Task.id == access_request.task_id,
+                        Task.deleted_at.is_(None),  # type: ignore
+                    )
                 ).first()
                 if task:
                     task.seacom_ref = seacom_ref
@@ -354,16 +363,20 @@ class _AccessRequestService:
             return self.access_request_to_response(access_request)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error approving access-request: {e}")
-    
-    def reject_access_request(self, access_request_id: UUID, session: Session) -> AccessRequestResponse:
+            raise InternalServerErrorException(
+                f"Unexpected error approving access-request: {e}"
+            )
+
+    def reject_access_request(
+        self, access_request_id: UUID, session: Session
+    ) -> AccessRequestResponse:
         """Reject an access request and notify the technician."""
         access_request = self._get_access_request(access_request_id, session)
         access_request.reject()
         try:
             session.commit()
             session.refresh(access_request)
-            
+
             # Notify the technician that their access request was rejected
             site_name = (
                 access_request.site.name if access_request.site else "Unknown Site"
@@ -383,10 +396,17 @@ class _AccessRequestService:
             return self.access_request_to_response(access_request)
         except Exception as e:
             session.rollback()
-            raise InternalServerErrorException(f"Unexpected error rejecting access-request: {e}")
+            raise InternalServerErrorException(
+                f"Unexpected error rejecting access-request: {e}"
+            )
 
-    def _get_access_request(self, access_request_id: UUID, session: Session) -> AccessRequest:
-        statement = select(AccessRequest).where(AccessRequest.id == access_request_id, AccessRequest.deleted_at.is_(None))  # type: ignore
+    def _get_access_request(
+        self, access_request_id: UUID, session: Session
+    ) -> AccessRequest:
+        statement = select(AccessRequest).where(
+            AccessRequest.id == access_request_id,
+            AccessRequest.deleted_at.is_(None),  # type: ignore
+        )
         access_request: AccessRequest | None = session.exec(statement).first()
         if not access_request:
             raise NotFoundException("access-request not found")
@@ -397,4 +417,6 @@ def get_access_request_service() -> _AccessRequestService:
     return _AccessRequestService()
 
 
-AccessRequestService = Annotated[_AccessRequestService, Depends(get_access_request_service)]
+AccessRequestService = Annotated[
+    _AccessRequestService, Depends(get_access_request_service)
+]
