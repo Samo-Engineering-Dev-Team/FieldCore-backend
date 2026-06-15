@@ -56,32 +56,37 @@ class _AccessRequestService:
             raise ForbiddenException(
                 f"You do not have permission to {action} this access request."
             )
-    
-    def create_access_request(self, data: AccessRequestCreate, session: Session, current_user: TokenData) -> AccessRequestResponse:
+
+    def create_access_request(
+        self, data: AccessRequestCreate, session: Session, current_user: TokenData
+    ) -> AccessRequestResponse:
         """"""
         if current_user.role != UserRole.TECHNICIAN:
-            raise ForbiddenException(
-                "Only technicians can create access requests."
-            )
-        
+            raise ForbiddenException("Only technicians can create access requests.")
+
         statement = select(Technician).where(
             Technician.user_id == current_user.user_id,
-            Technician.deleted_at.is_(None) # type: ignore
-            )
+            Technician.deleted_at.is_(None),  # type: ignore
+        )
         technician = session.exec(statement).first()
         if not technician:
             raise NotFoundException("Technician not found")
-        
+
         # Handle Site
         statement = select(Site).where(
             Site.id == data.site_id,
-            Site.deleted_at.is_(None) # type: ignore
+            Site.deleted_at.is_(None),  # type: ignore
         )
         site = session.exec(statement).first()
         if not site:
             raise NotFoundException("Site not found")
-        
-        ar = AccessRequest(**data.model_dump(), technician_id=technician.id, site_id=site.id)
+
+        ar = AccessRequest(
+            **data.model_dump(),
+            technician_id=technician.id,
+            site=site,
+            technician=technician,
+        )
 
         # Notify all NOC operators about the new access request
         noc_users = session.exec(
@@ -120,7 +125,6 @@ class _AccessRequestService:
             raise InternalServerErrorException(
                 f"Unexpected error creating access request: {e}"
             )
-
 
     # def create_access_request(
     #     self,
@@ -325,7 +329,9 @@ class _AccessRequestService:
                     site_id=access_request.site_id,
                     technician_id=access_request.technician_id,
                     assigned_by_user_id=assigner.id if assigner else None,
-                    assigned_by_name=f"{assigner.name} {assigner.surname}" if assigner else None,
+                    assigned_by_name=f"{assigner.name} {assigner.surname}"
+                    if assigner
+                    else None,
                 )
                 session.add(task)
                 session.commit()

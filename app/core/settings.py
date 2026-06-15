@@ -148,9 +148,9 @@ class AppSettings(BaseSettings):
         cross-origin requests, so we fail closed instead (see C2).
         """
         return [
-            origin.strip().strip("\"'")
+            origin.strip().strip("\"'").rstrip("/")
             for origin in self.ALLOWED_ORIGINS.split(",")
-            if origin.strip().strip("\"'")
+            if origin.strip().strip("\"'").rstrip("/")
         ]
 
     @property
