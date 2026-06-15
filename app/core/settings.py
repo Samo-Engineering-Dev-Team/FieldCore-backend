@@ -98,12 +98,18 @@ class AppSettings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        """Parse allowed origins from comma-separated string."""
+        """Parse allowed origins from a comma-separated string.
+
+        Strips surrounding whitespace and accidental quotes. Returns an empty
+        list when unset — never a wildcard. A wildcard combined with
+        ``allow_credentials=True`` would let any site make credentialed
+        cross-origin requests, so we fail closed instead (see C2).
+        """
         return [
-            origin.strip()
+            origin.strip().strip("\"'")
             for origin in self.ALLOWED_ORIGINS.split(",")
-            if origin.strip()
-        ] or ["*"]
+            if origin.strip().strip("\"'")
+        ]
 
     @property
     def database_url(self) -> str:

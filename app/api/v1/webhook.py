@@ -1,24 +1,38 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
-from pydantic import BaseModel
-from app.models import Webhook
+from pydantic import BaseModel, HttpUrl
+
+from app.services import CurrentUser
+from app.services.authorization import require_management
 from app.services.webhook import WebhookService
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
+_MANAGE_MSG = "Only NOC, managers, or admins can manage webhooks."
+
 
 class WebhookCreate(BaseModel):
-    url: str
+    url: HttpUrl
     event_type: str
     secret: Optional[str] = None
 
 
-@router.post("/", response_model=Webhook)
-async def register_webhook(webhook_data: WebhookCreate):
-    """Register a new webhook for event notifications."""
+class WebhookResponse(BaseModel):
+    """Public webhook shape — never exposes the signing secret."""
+
+    id: int
+    url: str
+    event_type: str
+    is_active: bool
+
+
+@router.post("/", response_model=WebhookResponse)
+async def register_webhook(webhook_data: WebhookCreate, current_user: CurrentUser):
+    """Register a new webhook for event notifications. Management only."""
+    require_management(current_user, _MANAGE_MSG)
     try:
         webhook = WebhookService.register_webhook(
-            webhook_data.url, webhook_data.event_type, webhook_data.secret
+            str(webhook_data.url), webhook_data.event_type, webhook_data.secret
         )
         return webhook
     except Exception as e:
@@ -27,15 +41,17 @@ async def register_webhook(webhook_data: WebhookCreate):
         )
 
 
-@router.get("/", response_model=List[Webhook])
-async def list_webhooks(event_type: str = None):
-    """List active webhooks, optionally filtered by event type."""
+@router.get("/", response_model=List[WebhookResponse])
+async def list_webhooks(current_user: CurrentUser, event_type: Optional[str] = None):
+    """List active webhooks, optionally filtered by event type. Management only."""
+    require_management(current_user, _MANAGE_MSG)
     return WebhookService.list_webhooks(event_type)
 
 
 @router.delete("/{webhook_id}")
-async def deactivate_webhook(webhook_id: int):
-    """Deactivate a webhook."""
+async def deactivate_webhook(webhook_id: int, current_user: CurrentUser):
+    """Deactivate a webhook. Management only."""
+    require_management(current_user, _MANAGE_MSG)
     success = WebhookService.deactivate_webhook(webhook_id)
     if not success:
         raise HTTPException(status_code=404, detail="Webhook not found")

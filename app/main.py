@@ -98,9 +98,16 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
+_cors_origins = app_settings.allowed_origins
+if not _cors_origins:
+    LOG.warning(
+        "ALLOWED_ORIGINS is not set — all cross-origin browser requests will be "
+        "blocked. Set ALLOWED_ORIGINS to a comma-separated list of trusted origins."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=app_settings.allowed_origins,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

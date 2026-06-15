@@ -3,7 +3,7 @@ import json
 import hmac
 import hashlib
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlmodel import select
 from app.database import Database
 from app.models import Webhook
@@ -69,7 +69,9 @@ class WebhookService:
             LOG.error(f"Error sending webhook to {webhook.url}: {e}")
 
     @staticmethod
-    def register_webhook(url: str, event_type: str, secret: str = None) -> Webhook:
+    def register_webhook(
+        url: str, event_type: str, secret: Optional[str] = None
+    ) -> Webhook:
         """Register a new webhook."""
         with Database.session() as session:
             webhook = Webhook(url=url, event_type=event_type, secret=secret)
@@ -79,7 +81,7 @@ class WebhookService:
             return webhook
 
     @staticmethod
-    def list_webhooks(event_type: str = None) -> List[Webhook]:
+    def list_webhooks(event_type: Optional[str] = None) -> List[Webhook]:
         """List active webhooks, optionally filtered by event type."""
         with Database.session() as session:
             query = select(Webhook).where(Webhook.is_active)
