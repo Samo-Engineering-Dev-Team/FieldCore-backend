@@ -6,12 +6,14 @@ from sqlalchemy import and_
 from fastapi import Depends
 
 from app.models import (
+    Notification,
     RoutineInspection,
     RoutineInspectionCreate,
     RoutineInspectionUpdate,
     RoutineInspectionResponse,
     Task,
     Technician,
+    User,
 )
 from app.exceptions.http import (
     ConflictException,
@@ -19,6 +21,8 @@ from app.exceptions.http import (
     NotFoundException,
     ForbiddenException,
 )
+from app.services.notification import NotificationTemplates
+from app.utils.enums import UserRole
 
 
 class _RoutineInspectionService:
@@ -63,15 +67,6 @@ class _RoutineInspectionService:
 
             if task and technician:
                 # Create notification for NOC operators about new inspection
-                from app.services.notification import (
-                    _NotificationService,
-                    NotificationTemplates,
-                )
-                from app.models import User
-                from app.utils.enums import UserRole
-
-                notification_service = _NotificationService()
-
                 # Notify all NOC operators
                 noc_users = session.exec(
                     select(User).where(
@@ -85,13 +80,19 @@ class _RoutineInspectionService:
                     technician.user.name if technician.user else "Unknown Technician"
                 )
 
-                notification_service.create_notifications_from_template(
-                    user_ids=(noc_user.id for noc_user in noc_users),
-                    template=NotificationTemplates.inspection_started(
-                        site_name, technician_name
-                    ),
-                    session=session,
+                template = NotificationTemplates.inspection_started(
+                    site_name, technician_name
                 )
+                for noc_user in noc_users:
+                    session.add(
+                        Notification(
+                            user_id=noc_user.id,
+                            title=template.title,
+                            message=template.message,
+                            priority=template.priority,
+                        )
+                    )
+                session.commit()
 
             return self.inspection_to_response(inspection)
         except IntegrityError as e:
@@ -191,19 +192,10 @@ class _RoutineInspectionService:
             session.refresh(inspection)
 
             # Create notification for NOC operators about completion
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-            from app.models import User
-            from app.utils.enums import UserRole
-
             task = session.exec(
                 select(Task).where(Task.id == inspection.task_id)
             ).first()
             site_name = task.site.name if task and task.site else "Unknown Site"
-
-            notification_service = _NotificationService()
 
             noc_users = session.exec(
                 select(User).where(
@@ -211,11 +203,17 @@ class _RoutineInspectionService:
                 )
             ).all()
 
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.inspection_completed(site_name),
-                session=session,
-            )
+            template = NotificationTemplates.inspection_completed(site_name)
+            for noc_user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=noc_user.id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
+                )
+            session.commit()
 
             return self.inspection_to_response(inspection)
         except IntegrityError as e:
