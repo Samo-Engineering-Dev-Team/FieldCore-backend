@@ -3,6 +3,7 @@ import json
 import hmac
 import hashlib
 import asyncio
+from uuid import UUID
 from typing import Dict, Any, List, Optional
 from sqlmodel import select
 from app.database import Database
@@ -18,7 +19,9 @@ class WebhookService:
             with Database.session() as session:
                 webhooks = session.exec(
                     select(Webhook).where(
-                        Webhook.event_type == event_type, Webhook.is_active
+                        Webhook.event_type == event_type,
+                        Webhook.is_active,
+                        Webhook.deleted_at.is_(None),  # type: ignore
                     )
                 ).all()
 
@@ -84,18 +87,22 @@ class WebhookService:
     def list_webhooks(event_type: Optional[str] = None) -> List[Webhook]:
         """List active webhooks, optionally filtered by event type."""
         with Database.session() as session:
-            query = select(Webhook).where(Webhook.is_active)
+            query = select(Webhook).where(
+                Webhook.is_active,
+                Webhook.deleted_at.is_(None),  # type: ignore
+            )
             if event_type:
                 query = query.where(Webhook.event_type == event_type)
             return session.exec(query).all()
 
     @staticmethod
-    def deactivate_webhook(webhook_id: int) -> bool:
+    def deactivate_webhook(webhook_id: UUID) -> bool:
         """Deactivate a webhook."""
         with Database.session() as session:
             webhook = session.get(Webhook, webhook_id)
-            if webhook:
+            if webhook and webhook.deleted_at is None:
                 webhook.is_active = False
+                webhook.touch()
                 session.commit()
                 return True
             return False

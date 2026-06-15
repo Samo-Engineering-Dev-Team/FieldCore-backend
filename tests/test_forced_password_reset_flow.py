@@ -33,8 +33,8 @@ def test_complete_password_reset_clears_flag_and_returns_clean_token() -> None:
     service._get_user = MagicMock(return_value=user)  # type: ignore[method-assign]
 
     payload = PasswordResetCompletion(
-        new_password="FinalPass1!",
-        confirm_password="FinalPass1!",
+        new_password="FinalPassword1!",
+        confirm_password="FinalPassword1!",
     )
 
     token = service.complete_password_reset(user.id, payload, session)
@@ -42,7 +42,7 @@ def test_complete_password_reset_clears_flag_and_returns_clean_token() -> None:
 
     assert decoded.must_change_password is False
     assert decoded.iat is not None
-    assert SecurityUtils.check_password("FinalPass1!", user.password_hash)
+    assert SecurityUtils.check_password("FinalPassword1!", user.password_hash)
     assert user.must_change_password is False
     session.commit.assert_called_once()
     session.refresh.assert_called_once_with(user)
@@ -55,8 +55,8 @@ def test_complete_password_reset_requires_pending_flag() -> None:
     service._get_user = MagicMock(return_value=user)  # type: ignore[method-assign]
 
     payload = PasswordResetCompletion(
-        new_password="FinalPass1!",
-        confirm_password="FinalPass1!",
+        new_password="FinalPassword1!",
+        confirm_password="FinalPassword1!",
     )
 
     with pytest.raises(BadRequestException, match="Password reset is not required"):

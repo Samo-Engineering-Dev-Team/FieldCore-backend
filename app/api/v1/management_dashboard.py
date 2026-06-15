@@ -545,8 +545,8 @@ def get_system_alerts(
                                 "action": "Review at-risk items before they breach",
                             }
                         )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
             # 2. Incident spike — today vs 30-day daily average
             try:
@@ -574,8 +574,8 @@ def get_system_alerts(
                                 "action": "Investigate root cause — check NOC queue",
                             }
                         )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
             # 3. Bulk stale locations (>40% of technicians)
             try:
@@ -605,8 +605,8 @@ def get_system_alerts(
                                 "action": "Contact technicians to re-enable location sharing",
                             }
                         )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
             # 4. No NOC operators online in the last 30 minutes
             try:
@@ -626,8 +626,8 @@ def get_system_alerts(
                             "action": "Contact on-call NOC operator immediately",
                         }
                     )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
             # 5. Technician overload (any technician with > 8 active items)
             try:
@@ -660,8 +660,8 @@ def get_system_alerts(
                             "action": "Redistribute workload via Live Tracking → Dispatch",
                         }
                     )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
             # 6. Repeated failed logins in last hour (brute-force indicator)
             try:
@@ -692,8 +692,8 @@ def get_system_alerts(
                             "action": "Review Login Activity — consider disabling affected accounts",
                         }
                     )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
             # 7. Maintenance mode active
             try:
@@ -717,8 +717,8 @@ def get_system_alerts(
                             "action": "Disable maintenance mode in Settings when ready",
                         }
                     )
-            except Exception:
-                pass
+            except Exception as alert_exc:
+                LOG.warning("System alert check failed: {}", alert_exc)
 
         severity_order = {"critical": 0, "warning": 1, "info": 2}
         alerts.sort(key=lambda a: severity_order.get(a["severity"], 3))

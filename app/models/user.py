@@ -2,7 +2,13 @@ from datetime import datetime
 
 from sqlmodel import SQLModel, Index, Field, Relationship, Column
 from abc import ABC
-from pydantic import EmailStr
+from pydantic import EmailStr, field_validator
+
+from .auth import (
+    PASSWORD_MAX_LENGTH,
+    PASSWORD_MIN_LENGTH,
+    validate_password_strength,
+)
 from typing import TYPE_CHECKING, List
 from sqlalchemy import DateTime, Enum as SAEnum, func
 
@@ -93,7 +99,11 @@ class User(BaseDB, BaseUser, table=True):
 class UserCreate(BaseUser):
     """"""
 
-    password: str = Field(min_length=8, max_length=16)
+    password: str = Field(
+        min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH
+    )
+
+    _password_strength = field_validator("password")(validate_password_strength)
 
 
 class UserUpdate(SQLModel):

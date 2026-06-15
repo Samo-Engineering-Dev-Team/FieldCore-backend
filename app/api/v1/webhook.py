@@ -1,5 +1,7 @@
+from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
+from loguru import logger as LOG
 from pydantic import BaseModel, HttpUrl
 
 from app.services import CurrentUser
@@ -20,7 +22,7 @@ class WebhookCreate(BaseModel):
 class WebhookResponse(BaseModel):
     """Public webhook shape — never exposes the signing secret."""
 
-    id: int
+    id: UUID
     url: str
     event_type: str
     is_active: bool
@@ -40,9 +42,8 @@ def register_webhook(webhook_data: WebhookCreate, current_user: CurrentUser):
         )
         return webhook
     except Exception as e:
-        raise HTTPException(
-            status_code=400, detail=f"Failed to register webhook: {str(e)}"
-        )
+        LOG.exception("Failed to register webhook: {}", e)
+        raise HTTPException(status_code=400, detail="Failed to register webhook")
 
 
 @router.get("/", response_model=List[WebhookResponse])
@@ -53,7 +54,7 @@ def list_webhooks(current_user: CurrentUser, event_type: Optional[str] = None):
 
 
 @router.delete("/{webhook_id}")
-def deactivate_webhook(webhook_id: int, current_user: CurrentUser):
+def deactivate_webhook(webhook_id: UUID, current_user: CurrentUser) -> dict:
     """Deactivate a webhook. Management only."""
     require_management(current_user, _MANAGE_MSG)
     success = WebhookService.deactivate_webhook(webhook_id)
