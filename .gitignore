@@ -12,3 +12,9 @@ wheels/
 
 # Secret — real secrets only. .env.example is committed as a placeholder template.
 .env
+
+# Agent / vector-store tooling artifacts (not part of the application)
+*.rvf
+*.rvf.lock
+ruvector.db
+**/ruvector.db

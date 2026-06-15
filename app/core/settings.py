@@ -1,5 +1,5 @@
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
@@ -49,6 +49,26 @@ class AppSettings(BaseSettings):
         le=23,
         description="Hour (UTC) to run the daily weekly-task checker (self-skips except Wed/Fri)",
     )
+
+    # Celery (durable task queue for notifications/email/webhooks).
+    # When no broker is configured, tasks run eagerly (inline) so local/dev/tests
+    # work without a worker; production should set CELERY_BROKER_URL.
+    CELERY_BROKER_URL: str | None = Field(
+        default=None,
+        description="Celery broker URL, e.g. redis://host:6379/0",
+    )
+    CELERY_RESULT_BACKEND: str | None = Field(
+        default=None,
+        description="Optional Celery result backend URL",
+    )
+    CELERY_TASK_ALWAYS_EAGER: bool = Field(
+        default=False,
+        description="Force tasks to run inline (auto-enabled when no broker is set)",
+    )
+
+    @property
+    def celery_eager(self) -> bool:
+        return self.CELERY_TASK_ALWAYS_EAGER or not self.CELERY_BROKER_URL
 
     # Presence backend (db | redis). If 'redis' and REDIS_URL is set, presence uses Redis for heartbeats.
     PRESENCE_BACKEND: str = Field(
@@ -178,8 +198,7 @@ class AppSettings(BaseSettings):
 
         return self
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 app_settings = AppSettings()

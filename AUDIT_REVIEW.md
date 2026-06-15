@@ -59,21 +59,21 @@ Line numbers reference the state at audit time.
 
 ## LOW
 
-- [ ] **L1 — Docker build ignores the lockfile** — `Dockerfile:21-23` — covered above under reproducibility; also means CVE-patched pins in `uv.lock` are not what ships. **Fix:** install from `uv.lock`.
+- [x] **L1 — Docker build ignores the lockfile** *(Dockerfile now installs via `uv sync --frozen --no-dev` from `uv.lock`; runs through `uv run`)* — `Dockerfile:21-23` — covered above under reproducibility; also means CVE-patched pins in `uv.lock` are not what ships. **Fix:** install from `uv.lock`.
 
-- [ ] **L2 — In-process BackgroundTasks for notifications/email** — `app/api/v1/incident.py:33,143,163` — fire-and-forget tasks are lost on restart/crash and don't retry. **Fix:** move to a durable queue (arq/Celery) for email/webhook delivery.
+- [x] **L2 — In-process BackgroundTasks for notifications/email** *(added Celery: `app/core/celery_app.py` + `app/tasks/notifications.py` with retrying tasks; incident routes now `.delay(...)` instead of `BackgroundTasks`; compose `worker` service; eager fallback when no broker so dev/tests work)* — `app/api/v1/incident.py:33,143,163` — fire-and-forget tasks are lost on restart/crash and don't retry. **Fix:** move to a durable queue (arq/Celery) for email/webhook delivery.
 
-- [ ] **L3 — Deprecated pydantic-settings config style** — `app/core/settings.py:118-119` — uses inner `class Config` instead of `SettingsConfigDict`/`model_config` (pydantic v2). **Fix:** migrate to `model_config = SettingsConfigDict(env_file=".env")`.
+- [x] **L3 — Deprecated pydantic-settings config style** *(replaced inner `class Config` with `model_config = SettingsConfigDict(...)`; deprecation warning gone)* — `app/core/settings.py:118-119` — uses inner `class Config` instead of `SettingsConfigDict`/`model_config` (pydantic v2). **Fix:** migrate to `model_config = SettingsConfigDict(env_file=".env")`.
 
-- [ ] **L4 — `__import__("datetime").datetime.utcnow()` inline** — `app/api/v1/incident.py:300` — code smell and uses the deprecated naive `utcnow()`. **Fix:** use the project's `app.utils.funcs.utcnow` and a normal import.
+- [x] **L4 — `__import__("datetime").datetime.utcnow()` inline** *(replaced with the project's `utcnow()` helper)* — `app/api/v1/incident.py:300` — code smell and uses the deprecated naive `utcnow()`. **Fix:** use the project's `app.utils.funcs.utcnow` and a normal import.
 
-- [ ] **L5 — Obsolete `version` key in compose; external frontend build path** — `docker-compose.yml:1,55` — `version: '3.8'` is ignored by modern Compose, and `build: ../seacom-app-frontend` couples this repo to a sibling checkout. **Fix:** drop the version key; document/decouple the frontend service.
+- [x] **L5 — Obsolete `version` key in compose; external frontend build path** *(dropped `version`; frontend moved behind a `frontend` profile with configurable `FRONTEND_PATH`; added Celery `worker` service)* — `docker-compose.yml:1,55` — `version: '3.8'` is ignored by modern Compose, and `build: ../seacom-app-frontend` couples this repo to a sibling checkout. **Fix:** drop the version key; document/decouple the frontend service.
 
-- [ ] **L6 — Large binary/agent artifacts in the repo dir** — `ruvector.db` (~1.5MB), `agentdb.rvf`, `app/services/ruvector.db` — tooling databases living next to source. **Fix:** git-ignore and move out of `app/`.
+- [x] **L6 — Large binary/agent artifacts in the repo dir** *(git-ignored `*.rvf`/`ruvector.db` and untracked them with `git rm --cached`; files left on disk in case tooling is using them)* — `ruvector.db` (~1.5MB), `agentdb.rvf`, `app/services/ruvector.db` — tooling databases living next to source. **Fix:** git-ignore and move out of `app/`.
 
-- [ ] **L7 — Health check is buried and does no dependency depth** — `app/api/v1/management_dashboard.py:801` — `/health` sits under an authenticated dashboard prefix and is awkward for load balancers. **Fix:** expose an unauthenticated top-level `/health` (liveness) and a `/ready` that checks DB/Redis.
+- [x] **L7 — Health check is buried and does no dependency depth** *(added top-level unauthenticated `GET /health` (liveness) and `GET /ready` (DB check, 503 when down))* — `app/api/v1/management_dashboard.py:801` — `/health` sits under an authenticated dashboard prefix and is awkward for load balancers. **Fix:** expose an unauthenticated top-level `/health` (liveness) and a `/ready` that checks DB/Redis.
 
-- [ ] **L8 — Root endpoint returns a playful message in debug** — `app/main.py:118-123` — minor; harmless but undocumented behavior. **Fix:** none required, or standardize.
+- [x] **L8 — Root endpoint returns a playful message in debug** *(root now always redirects to the API docs)* — `app/main.py:118-123` — minor; harmless but undocumented behavior. **Fix:** none required, or standardize.
 
 ---
 

@@ -91,10 +91,30 @@ app.include_router(router)
 
 @app.get("/", include_in_schema=False, status_code=307)
 def root():
-    """"""
-    if app.debug:
-        return {"message": "Are you sure you're supposed to be here?"}
+    """Redirect to the API docs."""
     return RedirectResponse(app.docs_url or "/docs")
+
+
+@app.get("/health", tags=["Health"])
+def health() -> dict:
+    """Liveness probe — process is up. No dependency checks (fast, unauthenticated)."""
+    return {"status": "ok"}
+
+
+@app.get("/ready", tags=["Health"])
+def ready() -> JSONResponse:
+    """Readiness probe — verifies the database is reachable."""
+    from sqlalchemy import text
+
+    try:
+        with Database.session() as session:
+            session.execute(text("SELECT 1"))
+        return JSONResponse(status_code=200, content={"status": "ready"})
+    except Exception as exc:
+        LOG.warning("Readiness check failed: {}", exc)
+        return JSONResponse(
+            status_code=503, content={"status": "not_ready", "detail": "database unavailable"}
+        )
 
 
 @app.exception_handler(RequestValidationError)

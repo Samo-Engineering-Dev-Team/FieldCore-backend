@@ -27,6 +27,7 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     "webauthn>=2.7.1",
     "apscheduler>=3.10,<4",
+    "celery[redis]>=5.3,<6",
 ]
 
 [dependency-groups]
