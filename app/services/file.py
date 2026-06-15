@@ -1,3 +1,4 @@
+import re
 import uuid
 import httpx
 from typing import Any
@@ -38,7 +39,10 @@ class FileService:
 
     def _build_file_path(self, filename: str, folder: str) -> str:
         # Generate unique filename to avoid collisions.
-        file_ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        raw_ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        # Sanitize the extension so it can't inject path segments or junk
+        # (e.g. "jp/g", "../x") into the storage object path.
+        file_ext = re.sub(r"[^A-Za-z0-9]", "", raw_ext).lower()[:10]
         unique_name = f"{uuid.uuid4()}.{file_ext}" if file_ext else str(uuid.uuid4())
         return f"{folder}/{unique_name}"
     
@@ -47,7 +51,7 @@ class FileService:
         file_content: bytes,
         filename: str,
         content_type: str,
-        folder: str = "incidents"
+        folder: str = "incidents",
     ) -> dict[str, Any]:
         """
         Upload a file to Supabase Storage.
@@ -83,7 +87,9 @@ class FileService:
                 )
         
         # Generate access URLs
-        public_url: str = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        public_url: str = (
+            f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        )
         signed_url: str | None = None
         try:
             signed_url = await self.get_signed_url(file_path, expires_in=86400)
@@ -131,7 +137,9 @@ class FileService:
                     detail=f"Failed to upload file: {response.text}",
                 )
 
-        public_url: str = f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        public_url: str = (
+            f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        )
         signed_url: str | None = None
         try:
             signed_url = self.get_signed_url_sync(file_path, expires_in=86400)

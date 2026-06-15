@@ -8,7 +8,7 @@ from app.models import (
     TemplateCategoryResponse,
 )
 from app.services import TemplateCategoryService, CurrentUser
-from app.database import Session
+from app.database import SessionDep as Session
 
 router = APIRouter(prefix="/template-categories", tags=["Template Categories"])
 

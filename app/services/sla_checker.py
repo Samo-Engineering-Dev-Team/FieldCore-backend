@@ -15,7 +15,8 @@ from typing import List, Tuple
 from sqlalchemy import and_
 from sqlmodel import Session, select
 
-from app.models import Incident, User
+from app.models import Incident, Notification, User
+from app.services.notification import NotificationTemplates
 from app.utils.enums import IncidentStatus
 from app.utils.funcs import utcnow
 from app.utils.sla_utils import calculate_sla_deadlines, get_milestone_status
@@ -83,12 +84,10 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
     Returns:
         (warnings, breaches) — lists of dicts describing each triggered event.
     """
-    from app.services.notification import _NotificationService, NotificationTemplates
     from app.services.email import EmailService
     from app.services.webhook import WebhookService
     import threading
 
-    notification_service = _NotificationService()
     now = utcnow()
     warnings: list[dict] = []
     breaches: list[dict] = []
@@ -169,33 +168,29 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                     }
                     warnings.append(event)
 
-                    # Warn the assigned technician
+                    warning_template = NotificationTemplates.sla_warning(
+                        site_name,
+                        severity,
+                        time_str,
+                        milestone=milestone_name,
+                        ref_no=ref_no,
+                    )
+                    # Warn the assigned technician and NOC so they can follow up
+                    warning_recipients = [
+                        noc_id for noc_id in noc_user_ids if noc_id != tech_user_id
+                    ]
                     if tech_user_id:
-                        notification_service.create_notification_from_template(
-                            user_id=tech_user_id,
-                            template=NotificationTemplates.sla_warning(
-                                site_name,
-                                severity,
-                                time_str,
-                                milestone=milestone_name,
-                                ref_no=ref_no,
-                            ),
-                            session=session,
-                        )
-                    # Also warn NOC so they can follow up
-                    for noc_id in noc_user_ids:
-                        if noc_id != tech_user_id:
-                            notification_service.create_notification_from_template(
-                                user_id=noc_id,
-                                template=NotificationTemplates.sla_warning(
-                                    site_name,
-                                    severity,
-                                    time_str,
-                                    milestone=milestone_name,
-                                    ref_no=ref_no,
-                                ),
-                                session=session,
+                        warning_recipients.insert(0, tech_user_id)
+                    for recipient_id in warning_recipients:
+                        session.add(
+                            Notification(
+                                user_id=recipient_id,
+                                title=warning_template.title,
+                                message=warning_template.message,
+                                priority=warning_template.priority,
                             )
+                        )
+                    session.commit()
 
                     # Email NOC distribution list
                     EmailService.send_sla_warning(
@@ -245,21 +240,22 @@ def check_sla_breaches(session: Session) -> Tuple[List[dict], List[dict]]:
                     time_overdue=overdue_str,
                 )
 
-                # Notify the technician
+                # Notify the technician, NOC and managers
+                breach_recipients = [
+                    noc_id for noc_id in noc_user_ids if noc_id != tech_user_id
+                ]
                 if tech_user_id:
-                    notification_service.create_notification_from_template(
-                        user_id=tech_user_id,
-                        template=breach_template,
-                        session=session,
-                    )
-                # Notify NOC and managers
-                for noc_id in noc_user_ids:
-                    if noc_id != tech_user_id:
-                        notification_service.create_notification_from_template(
-                            user_id=noc_id,
-                            template=breach_template,
-                            session=session,
+                    breach_recipients.insert(0, tech_user_id)
+                for recipient_id in breach_recipients:
+                    session.add(
+                        Notification(
+                            user_id=recipient_id,
+                            title=breach_template.title,
+                            message=breach_template.message,
+                            priority=breach_template.priority,
                         )
+                    )
+                session.commit()
 
                 # Email NOC distribution list immediately on breach
                 EmailService.send_sla_breach(

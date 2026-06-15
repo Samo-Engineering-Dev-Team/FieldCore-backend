@@ -4,7 +4,7 @@ from uuid import UUID
 
 from app.models import FormSubmissionCreate, FormSubmissionResponse
 from app.services import FormSubmissionService, CurrentUser
-from app.database import Session
+from app.database import SessionDep as Session
 
 # DEPRECATED: canonical routes now live under /api/v2/form-templates/{id}/submissions.
 # Kept as a shim (same service) for backwards compatibility; remove later.

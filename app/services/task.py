@@ -17,6 +17,7 @@ from app.models import (
     Technician,
     User,
     Report,
+    Notification,
 )
 from app.models.auth import TokenData
 from app.exceptions.http import (
@@ -27,6 +28,7 @@ from app.exceptions.http import (
     NotFoundException,
 )
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.notification import NotificationTemplates
 
 
 class _TaskService:
@@ -222,23 +224,22 @@ class _TaskService:
 
             # Notify the technician only when someone else assigned the task.
             # Skip when the technician created the task themselves (e.g. via an access request).
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-
-            notification_service = _NotificationService()
             is_self_assigned = (
                 current_user and current_user.user_id == technician.user_id
             )
             if not is_self_assigned:
-                notification_service.create_notification_from_template(
-                    user_id=technician.user_id,
-                    template=NotificationTemplates.task_assigned(
-                        site.name, data.description
-                    ),
-                    session=session,
+                template = NotificationTemplates.task_assigned(
+                    site.name, data.description
                 )
+                session.add(
+                    Notification(
+                        user_id=technician.user_id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
+                )
+                session.commit()
 
             return self.task_to_response(task, session)
         except IntegrityError as e:
@@ -329,18 +330,15 @@ class _TaskService:
 
         # Notify the assigned technician before deleting so they don't travel to the site.
         try:
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-
             site_name = task.site.name if task.site else "Unknown Site"
-            _NotificationService().create_notification_from_template(
-                user_id=task.technician.user_id,
-                template=NotificationTemplates.task_cancelled(
-                    site_name, task.seacom_ref
-                ),
-                session=session,
+            template = NotificationTemplates.task_cancelled(site_name, task.seacom_ref)
+            session.add(
+                Notification(
+                    user_id=task.technician.user_id,
+                    title=template.title,
+                    message=template.message,
+                    priority=template.priority,
+                )
             )
         except Exception as exc:
             LOG.warning(
@@ -372,13 +370,6 @@ class _TaskService:
             report = self._get_active_report_for_task(task.id, session)
 
             # Notify NOC operators that task has started
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-
-            notification_service = _NotificationService()
-
             noc_users = session.exec(
                 select(User).where(
                     and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
@@ -392,20 +383,33 @@ class _TaskService:
                 else "Unknown"
             )
 
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.task_started(tech_name, site_name),
-                session=session,
+            started_template = NotificationTemplates.task_started(
+                tech_name, site_name
             )
+            for noc_user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=noc_user.id,
+                        title=started_template.title,
+                        message=started_template.message,
+                        priority=started_template.priority,
+                    )
+                )
 
             if report_created and task.technician and task.technician.user_id:
-                notification_service.create_notification_from_template(
-                    user_id=task.technician.user_id,
-                    template=NotificationTemplates.report_auto_created(
-                        report.report_type, site_name
-                    ),
-                    session=session,
+                report_template = NotificationTemplates.report_auto_created(
+                    report.report_type, site_name
                 )
+                session.add(
+                    Notification(
+                        user_id=task.technician.user_id,
+                        title=report_template.title,
+                        message=report_template.message,
+                        priority=report_template.priority,
+                    )
+                )
+
+            session.commit()
 
             return self.task_to_response(task, session)
         except IntegrityError as e:
@@ -435,12 +439,6 @@ class _TaskService:
             session.commit()
             session.refresh(task)
 
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-
-            notification_service = _NotificationService()
             noc_users = session.exec(
                 select(User).where(
                     and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
@@ -453,13 +451,19 @@ class _TaskService:
                 else "Unknown"
             )
             ref_no = task.seacom_ref or None
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.task_completed(
-                    tech_name, site_name, ref_no=ref_no
-                ),
-                session=session,
+            template = NotificationTemplates.task_completed(
+                tech_name, site_name, ref_no=ref_no
             )
+            for noc_user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=noc_user.id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
+                )
+            session.commit()
             from app.services.email import EmailService
             from app.utils.funcs import utcnow
 
@@ -500,13 +504,6 @@ class _TaskService:
                 )
 
             # Notify NOC operators that task is completed
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-
-            notification_service = _NotificationService()
-
             noc_users = session.exec(
                 select(User).where(
                     and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
@@ -521,13 +518,19 @@ class _TaskService:
             )
 
             ref_no = task.seacom_ref or None
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.task_completed(
-                    tech_name, site_name, ref_no=ref_no
-                ),
-                session=session,
+            completed_template = NotificationTemplates.task_completed(
+                tech_name, site_name, ref_no=ref_no
             )
+            for noc_user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=noc_user.id,
+                        title=completed_template.title,
+                        message=completed_template.message,
+                        priority=completed_template.priority,
+                    )
+                )
+            session.commit()
 
             # Email NOC distribution list
             from app.services.email import EmailService
@@ -548,13 +551,18 @@ class _TaskService:
                 and task.technician
                 and task.technician.user_id
             ):
-                notification_service.create_notification_from_template(
-                    user_id=task.technician.user_id,
-                    template=NotificationTemplates.report_auto_created(
-                        report.report_type, site_name
-                    ),
-                    session=session,
+                report_template = NotificationTemplates.report_auto_created(
+                    report.report_type, site_name
                 )
+                session.add(
+                    Notification(
+                        user_id=task.technician.user_id,
+                        title=report_template.title,
+                        message=report_template.message,
+                        priority=report_template.priority,
+                    )
+                )
+                session.commit()
 
             return self.task_to_response(task, session)
         except IntegrityError as e:
@@ -580,13 +588,6 @@ class _TaskService:
             session.refresh(task)
 
             # Notify NOC operators that task has failed
-            from app.services.notification import (
-                _NotificationService,
-                NotificationTemplates,
-            )
-
-            notification_service = _NotificationService()
-
             noc_users = session.exec(
                 select(User).where(
                     and_(User.role == UserRole.NOC, User.deleted_at.is_(None))
@@ -600,11 +601,17 @@ class _TaskService:
                 else "Unknown"
             )
 
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.task_failed(tech_name, site_name),
-                session=session,
-            )
+            template = NotificationTemplates.task_failed(tech_name, site_name)
+            for noc_user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=noc_user.id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
+                )
+            session.commit()
 
             return self.task_to_response(task, session)
         except Exception as e:

@@ -20,12 +20,14 @@ from app.models import (
     IncidentCreate,
     IncidentResponse,
     IncidentUpdate,
+    Notification,
     Site,
     Technician,
     User,
 )
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.notification import NotificationTemplates
 from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
 
@@ -44,40 +46,45 @@ def _bg_notify_incident_created(
     """Background task: notify technician + NOC when a new incident is assigned."""
     try:
         from app.database import Database
-        from app.services.notification import (
-            NotificationTemplates,
-            _NotificationService,
-        )
 
         with Database.session() as session:
             technician = session.get(Technician, technician_id)
             if not technician:
                 return
-            notification_service = _NotificationService()
             is_self_assigned = (
                 assigning_user_id == technician.user_id if assigning_user_id else False
             )
             if not is_self_assigned:
-                notification_service.create_notification_from_template(
-                    user_id=technician.user_id,
-                    template=NotificationTemplates.incident_assigned_to_technician(
-                        site_name=site_name,
-                        description=description,
-                    ),
-                    session=session,
+                template = NotificationTemplates.incident_assigned_to_technician(
+                    site_name=site_name,
+                    description=description,
+                )
+                session.add(
+                    Notification(
+                        user_id=technician.user_id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
                 )
             noc_users = session.exec(
                 select(User).where(User.role == UserRole.NOC, User.deleted_at.is_(None))  # type: ignore
             ).all()
-            notification_service.create_notifications_from_template(
-                user_ids=[u.id for u in noc_users],
-                template=NotificationTemplates.incident_created_for_noc(
-                    site_name=site_name,
-                    technician_name=tech_name,
-                    description=description,
-                ),
-                session=session,
+            noc_template = NotificationTemplates.incident_created_for_noc(
+                site_name=site_name,
+                technician_name=tech_name,
+                description=description,
             )
+            for user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=user.id,
+                        title=noc_template.title,
+                        message=noc_template.message,
+                        priority=noc_template.priority,
+                    )
+                )
+            session.commit()
     except Exception as e:
         LOG.warning("Background incident-created notifications failed: {}", e)
 
@@ -86,23 +93,22 @@ def _bg_notify_incident_started(site_name: str, tech_name: str) -> None:
     """Background task: notify NOC when a technician starts working on an incident."""
     try:
         from app.database import Database
-        from app.services.notification import (
-            NotificationTemplates,
-            _NotificationService,
-        )
 
         with Database.session() as session:
-            notification_service = _NotificationService()
             noc_users = session.exec(
                 select(User).where(User.role == UserRole.NOC, User.deleted_at.is_(None))  # type: ignore
             ).all()
-            notification_service.create_notifications_from_template(
-                user_ids=[u.id for u in noc_users],
-                template=NotificationTemplates.incident_in_progress(
-                    tech_name, site_name
-                ),
-                session=session,
-            )
+            template = NotificationTemplates.incident_in_progress(tech_name, site_name)
+            for user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=user.id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
+                )
+            session.commit()
     except Exception as e:
         LOG.warning("Background incident-started notifications failed: {}", e)
 
@@ -117,26 +123,27 @@ def _bg_notify_incident_resolved(
     """Background task: notify NOC + send email when an incident is resolved."""
     try:
         from app.database import Database
-        from app.services.notification import (
-            NotificationTemplates,
-            _NotificationService,
-        )
 
         with Database.session() as session:
-            notification_service = _NotificationService()
             noc_users = session.exec(
                 select(User).where(
                     User.role == UserRole.NOC,
                     User.deleted_at.is_(None),  # type: ignore
                 )
             ).all()
-            notification_service.create_notifications_from_template(
-                user_ids=[u.id for u in noc_users],
-                template=NotificationTemplates.incident_resolved(
-                    tech_name, site_name, ref_no=ref_no
-                ),
-                session=session,
+            template = NotificationTemplates.incident_resolved(
+                tech_name, site_name, ref_no=ref_no
             )
+            for user in noc_users:
+                session.add(
+                    Notification(
+                        user_id=user.id,
+                        title=template.title,
+                        message=template.message,
+                        priority=template.priority,
+                    )
+                )
+            session.commit()
     except Exception as e:
         LOG.warning("Background incident-resolved notifications failed: {}", e)
 

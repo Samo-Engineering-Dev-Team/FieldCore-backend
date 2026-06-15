@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Query
+from fastapi import APIRouter, Query
 from typing import List, Literal
 from uuid import UUID
 from pydantic import BaseModel
@@ -7,10 +7,10 @@ from app.models import IncidentCreate, IncidentUpdate, IncidentResponse
 from app.models.fault_update import FaultUpdateCreate, FaultUpdateResponse
 from app.services import IncidentService, CurrentUser
 from app.services.fault_update import get_fault_update_service
-from app.services.incident import (
-    _bg_notify_incident_created,
-    _bg_notify_incident_started,
-    _bg_notify_incident_resolved,
+from app.tasks.notifications import (
+    notify_incident_created,
+    notify_incident_started,
+    notify_incident_resolved,
 )
 from app.database import SessionDep
 from app.utils.enums import IncidentStatus, UserRole
@@ -26,17 +26,15 @@ def create_incident(
     service: IncidentService,
     session: SessionDep,
     current_user: CurrentUser,
-    background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
     response = service.create_incident(payload, session, current_user)
-    background_tasks.add_task(
-        _bg_notify_incident_created,
-        technician_id=response.technician_id,
+    notify_incident_created.delay(
+        technician_id=str(response.technician_id),
         site_name=response.site_name,
         tech_name=response.technician_fullname,
         description=payload.description,
-        assigning_user_id=current_user.user_id,
+        assigning_user_id=str(current_user.user_id),
     )
     return response
 
@@ -136,12 +134,10 @@ def start_incident(
     service: IncidentService,
     session: SessionDep,
     current_user: CurrentUser,
-    background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
     response = service.start_incident(incident_id, session, current_user)
-    background_tasks.add_task(
-        _bg_notify_incident_started,
+    notify_incident_started.delay(
         site_name=response.site_name,
         tech_name=response.technician_fullname,
     )
@@ -156,12 +152,10 @@ def resolve_incident(
     service: IncidentService,
     session: SessionDep,
     current_user: CurrentUser,
-    background_tasks: BackgroundTasks,
 ) -> IncidentResponse:
     """"""
     response = service.resolve_incident(incident_id, session, current_user)
-    background_tasks.add_task(
-        _bg_notify_incident_resolved,
+    notify_incident_resolved.delay(
         site_name=response.site_name,
         tech_name=response.technician_fullname,
         ref_no=response.ref_no or response.seacom_ref,
@@ -288,6 +282,7 @@ def check_sla_breaches_endpoint(
     Intended to be called periodically (e.g., via a cron job every 15 minutes).
     """
     from app.services.sla_checker import check_sla_breaches
+    from app.utils.funcs import utcnow
 
     require_management(
         current_user,
@@ -297,7 +292,7 @@ def check_sla_breaches_endpoint(
     warnings, breaches = check_sla_breaches(session)
 
     return {
-        "checked_at": __import__("datetime").datetime.utcnow().isoformat(),
+        "checked_at": utcnow().isoformat(),
         "warnings_sent": len(warnings),
         "breaches_found": len(breaches),
         "warnings": warnings,

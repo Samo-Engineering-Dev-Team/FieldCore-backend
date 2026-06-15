@@ -154,6 +154,16 @@ def delete_passkey(
     return service.delete_passkey(current_user, UUID(passkey_id), session)
 
 
+@router.post("/logout", status_code=200)
+def logout(
+    current_user: CurrentUser,
+    service: AuthService,
+    session: SessionDep,
+) -> dict:
+    """Revoke all of the current user's tokens (global logout across devices)."""
+    return service.logout(current_user.user_id, session)
+
+
 @router.get("/me", response_model=TokenData, status_code=200)
 def get_current_user(user: CurrentUser) -> TokenData:
     """"""

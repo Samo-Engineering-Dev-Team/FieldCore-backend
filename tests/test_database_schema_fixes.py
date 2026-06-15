@@ -39,6 +39,7 @@ def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypat
     inspector.get_columns.return_value = [
         {"name": "must_change_password"},
         {"name": "credentials_updated_at"},
+        {"name": "sessions_revoked_at"},
     ]
 
     engine = MagicMock()

@@ -79,13 +79,28 @@ class Database:
             return
 
         user_columns = {column["name"] for column in inspector.get_columns("users")}
-        if (
-            "must_change_password" in user_columns
-            and "credentials_updated_at" in user_columns
-        ):
+        required_columns = {
+            "must_change_password",
+            "credentials_updated_at",
+            "sessions_revoked_at",
+        }
+        if required_columns.issubset(user_columns):
             return
 
         with cls.connection.begin() as connection:
+            if "sessions_revoked_at" not in user_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ADD COLUMN sessions_revoked_at TIMESTAMPTZ
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added users.sessions_revoked_at column"
+                )
+
             if "must_change_password" not in user_columns:
                 connection.execute(
                     text(

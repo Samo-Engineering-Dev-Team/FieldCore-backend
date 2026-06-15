@@ -3,7 +3,7 @@ from typing import Any
 from sqlalchemy import and_
 from sqlmodel import Session, select
 
-from app.models import User
+from app.models import Notification, User
 from app.utils.enums import UserRole
 from app.utils.funcs import utcnow
 
@@ -23,14 +23,16 @@ def get_noc_user_ids(session: Session) -> list:
 
 def create_noc_notifications(session: Session, template: Any) -> None:
     """Send notification template to all active NOC users."""
-    from app.services.notification import _NotificationService
-
-    notification_service = _NotificationService()
-    notification_service.create_notifications_from_template(
-        user_ids=(user_id for user_id in get_noc_user_ids(session)),
-        template=template,
-        session=session,
-    )
+    for user_id in get_noc_user_ids(session):
+        session.add(
+            Notification(
+                user_id=user_id,
+                title=template.title,
+                message=template.message,
+                priority=template.priority,
+            )
+        )
+    session.commit()
 
 
 def upload_storage_file(

@@ -8,7 +8,7 @@ from app.models import (
     FormTemplateResponse,
 )
 from app.services import FormTemplateService, CurrentUser
-from app.database import Session
+from app.database import SessionDep as Session
 
 router = APIRouter(prefix="/form-templates", tags=["Form Templates"])
 
