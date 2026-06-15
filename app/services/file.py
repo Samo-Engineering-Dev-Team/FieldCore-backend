@@ -1,3 +1,4 @@
+import re
 import uuid
 
 import httpx
@@ -39,7 +40,10 @@ class FileService:
 
     def _build_file_path(self, filename: str, folder: str) -> str:
         # Generate unique filename to avoid collisions.
-        file_ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        raw_ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+        # Sanitize the extension so it can't inject path segments or junk
+        # (e.g. "jp/g", "../x") into the storage object path.
+        file_ext = re.sub(r"[^A-Za-z0-9]", "", raw_ext).lower()[:10]
         unique_name = f"{uuid.uuid4()}.{file_ext}" if file_ext else str(uuid.uuid4())
         return f"{folder}/{unique_name}"
 
