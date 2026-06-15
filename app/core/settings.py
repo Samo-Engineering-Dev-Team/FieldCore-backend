@@ -1,9 +1,13 @@
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
 class AppSettings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    # Deployment environment: "development" | "staging" | "production".
+    # Controls how strict startup validation is (see _validate_required).
+    ENVIRONMENT: str = Field(default="development")
 
     # Database
     DB_HOST: str = ""
@@ -120,6 +124,41 @@ class AppSettings(BaseSettings):
             f"{self.DB_HOST}:{self.DB_PORT}/"
             f"{self.DB_NAME}"
         )
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() == "production"
+
+    @model_validator(mode="after")
+    def _validate_required(self) -> "AppSettings":
+        """Fail fast on missing required config instead of starting broken (H6).
+
+        Database connection settings are always required. In production we also
+        require file-storage credentials and an explicit CORS allow-list, so a
+        misconfigured prod deploy refuses to boot rather than silently running
+        with no storage or a wide-open CORS policy.
+        """
+        missing: list[str] = []
+
+        for name in ("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"):
+            if not str(getattr(self, name)).strip():
+                missing.append(name)
+
+        if self.is_production:
+            if not self.SUPABASE_URL.strip() or not self.SUPABASE_SERVICE_KEY.strip():
+                missing.append("SUPABASE_URL/SUPABASE_SERVICE_KEY")
+            if not self.allowed_origins:
+                missing.append("ALLOWED_ORIGINS")
+
+        if missing:
+            raise ValueError(
+                "Missing required settings: "
+                + ", ".join(missing)
+                + f" (ENVIRONMENT={self.ENVIRONMENT}). Set them in the environment "
+                "or .env before starting."
+            )
+
+        return self
 
     class Config:
         env_file = ".env"
