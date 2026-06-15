@@ -27,8 +27,12 @@ class WebhookResponse(BaseModel):
 
 
 @router.post("/", response_model=WebhookResponse)
-async def register_webhook(webhook_data: WebhookCreate, current_user: CurrentUser):
-    """Register a new webhook for event notifications. Management only."""
+def register_webhook(webhook_data: WebhookCreate, current_user: CurrentUser):
+    """Register a new webhook for event notifications. Management only.
+
+    Sync ``def`` on purpose: the service does blocking ORM I/O, so FastAPI runs
+    this in its threadpool instead of blocking the event loop (M3).
+    """
     require_management(current_user, _MANAGE_MSG)
     try:
         webhook = WebhookService.register_webhook(
@@ -42,14 +46,14 @@ async def register_webhook(webhook_data: WebhookCreate, current_user: CurrentUse
 
 
 @router.get("/", response_model=List[WebhookResponse])
-async def list_webhooks(current_user: CurrentUser, event_type: Optional[str] = None):
+def list_webhooks(current_user: CurrentUser, event_type: Optional[str] = None):
     """List active webhooks, optionally filtered by event type. Management only."""
     require_management(current_user, _MANAGE_MSG)
     return WebhookService.list_webhooks(event_type)
 
 
 @router.delete("/{webhook_id}")
-async def deactivate_webhook(webhook_id: int, current_user: CurrentUser):
+def deactivate_webhook(webhook_id: int, current_user: CurrentUser):
     """Deactivate a webhook. Management only."""
     require_management(current_user, _MANAGE_MSG)
     success = WebhookService.deactivate_webhook(webhook_id)

@@ -175,8 +175,11 @@ class DebugMiddleware(BaseHTTPMiddleware):
                     except json.JSONDecodeError:
                         log_data["body"] = f"<binary data: {len(body)} bytes>"
 
-                    # Re-create the request body for downstream handlers
-                    # Note: This works with Starlette's receive pattern
+                    # NOTE: reading the body here is safe — Starlette's
+                    # BaseHTTPMiddleware wraps the request in a _CachedRequest,
+                    # so the drained body is replayed to downstream handlers.
+                    # tests/test_debug_middleware_body.py guards this contract
+                    # against future Starlette upgrades.
             except Exception as e:
                 log_data["body_error"] = str(e)
 
