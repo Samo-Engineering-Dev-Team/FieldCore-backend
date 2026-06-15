@@ -26,6 +26,7 @@ dependencies = [
     "tzdata>=2024.1",
     "aiosmtplib>=3.0.0",
     "webauthn>=2.7.1",
+    "apscheduler>=3.10,<4",
 ]
 
 [dependency-groups]

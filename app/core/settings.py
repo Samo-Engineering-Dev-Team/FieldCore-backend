@@ -32,6 +32,24 @@ class AppSettings(BaseSettings):
     PASSKEY_ALLOWED_ORIGINS: str = Field(default="")
     PASSKEY_CEREMONY_TIMEOUT_MS: int = Field(default=120000, ge=30000, le=600000)
 
+    # Background scheduler (SLA breach + weekly task checkers)
+    SCHEDULER_ENABLED: bool = Field(
+        default=True,
+        description="Run the in-process APScheduler for SLA/weekly checks",
+    )
+    SLA_CHECK_INTERVAL_MINUTES: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="How often (minutes) to scan incidents for SLA breaches",
+    )
+    WEEKLY_CHECK_HOUR_UTC: int = Field(
+        default=6,
+        ge=0,
+        le=23,
+        description="Hour (UTC) to run the daily weekly-task checker (self-skips except Wed/Fri)",
+    )
+
     # Presence backend (db | redis). If 'redis' and REDIS_URL is set, presence uses Redis for heartbeats.
     PRESENCE_BACKEND: str = Field(
         default="db", description="Storage for presence: 'db' or 'redis'"

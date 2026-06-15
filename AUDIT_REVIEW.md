@@ -35,7 +35,7 @@ Line numbers reference the state at audit time.
 
 ## MEDIUM
 
-- [ ] **M1 — Automated SLA / weekly checkers are disabled** — `app/main.py:23-51,66-77` — the SLA background task is fully commented out, so `app/services/sla_checker.py` and `weekly_checker.py` never run automatically. Given penalty exposure (10-30% of quarterly fee per breach) this is domain-critical: breaches are only detected if someone hits the manual endpoint. **Fix:** run these on a proper scheduler (APScheduler/arq/cron container) rather than an in-process loop, with locking so multiple workers don't double-fire.
+- [x] **M1 — Automated SLA / weekly checkers are disabled** *(added `app/core/scheduler.py`: APScheduler `BackgroundScheduler` — SLA scan every 5 min, weekly check daily; each job guarded by a Postgres advisory lock for multi-instance safety; wired into lifespan)* — `app/main.py:23-51,66-77` — the SLA background task is fully commented out, so `app/services/sla_checker.py` and `weekly_checker.py` never run automatically. Given penalty exposure (10-30% of quarterly fee per breach) this is domain-critical: breaches are only detected if someone hits the manual endpoint. **Fix:** run these on a proper scheduler (APScheduler/arq/cron container) rather than an in-process loop, with locking so multiple workers don't double-fire.
 
 - [ ] **M2 — DebugMiddleware consumes the request body without re-injecting it** — `app/core/debug_middleware.py:164-183` — when request logging is enabled it `await request.body()` but the promised "re-create the request body" step is only a comment; downstream handlers then read an empty body, breaking all POST/PATCH/PUT routes. **Fix:** re-wrap `request._receive` after reading, or log via a route-level dependency instead of draining the stream.
 

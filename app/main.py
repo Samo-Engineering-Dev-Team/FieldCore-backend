@@ -15,41 +15,11 @@ from app.api import router
 from app.core import app_settings
 from app.core.debug_middleware import DebugMiddleware
 from app.core.rate_limiter import limiter
+from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import Database
 
 # from app.graphql.schema import schema
-
-
-# Background task for SLA checking
-# async def sla_check_background_task():
-#     """Background task that periodically checks for SLA breaches."""
-#     from loguru import logger as LOG
-
-#     # Wait for startup to complete
-#     await asyncio.sleep(30)
-
-#     while True:
-#         try:
-#             from sqlmodel import Session
-
-#             from app.services.sla_checker import check_sla_breaches
-
-#             with Session(Database.connection) as session:
-#                 warnings, breaches = check_sla_breaches(session)
-
-#                 if warnings or breaches:
-#                     LOG.info(
-#                         f"SLA Check: {len(warnings)} warnings, {len(breaches)} breaches found"
-#                     )
-#         except Exception as e:
-#             LOG.error(f"SLA check error: {e}")
-#             import traceback
-
-#             LOG.error(f"SLA check traceback: {traceback.format_exc()}")
-
-#         # Check every 15 minutes
-#         await asyncio.sleep(15 * 60)
 
 
 @asynccontextmanager
@@ -64,18 +34,13 @@ async def lifespan(app: FastAPI):
     Database.init()
     LOG.debug("Database init complete")
 
-    # Start SLA check background task
-    # sla_task = asyncio.create_task(sla_check_background_task())
+    # Start SLA + weekly background checkers (APScheduler, advisory-locked)
+    start_scheduler()
 
     yield
 
     LOG.info("Shutting down application lifespan")
-    # Cancel background task on shutdown
-    # sla_task.cancel()
-    # try:
-    #     await sla_task
-    # except asyncio.CancelledError:
-    #     pass
+    shutdown_scheduler()
 
     Database.disconnect()
     LOG.info("Database disconnected")
