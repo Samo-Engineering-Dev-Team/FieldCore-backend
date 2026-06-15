@@ -10,6 +10,5 @@ wheels/
 # Virtual environments
 .venv
 
-# Secret
+# Secret — real secrets only. .env.example is committed as a placeholder template.
 .env
-.env.example

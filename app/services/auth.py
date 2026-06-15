@@ -539,6 +539,20 @@ class _AuthService:
             user.must_change_password,
         )
 
+    def logout(self, user_id: UUID, session: Session) -> dict:
+        """Revoke all outstanding tokens for the user.
+
+        Bumps ``sessions_revoked_at`` to now; ``get_current_user`` then rejects
+        any access token issued before this moment. This is a global logout
+        across every device for the user.
+        """
+        user = self._get_user(user_id, session)
+        user.sessions_revoked_at = utcnow()
+        user.touch()
+        session.add(user)
+        session.commit()
+        return {"message": "Logged out successfully"}
+
     def read_current_user(self, current_user: TokenData, session: Session) -> TokenData:
         """Return latest user profile fields while keeping token metadata."""
         user = self._get_user(current_user.user_id, session)
@@ -770,6 +784,13 @@ def get_current_user(
         and current_user.iat < user.credentials_updated_at
     ):
         raise UnauthorizedException("Session expired. Please log in again.")
+
+    if (
+        current_user.iat is not None
+        and user.sessions_revoked_at is not None
+        and current_user.iat < user.sessions_revoked_at
+    ):
+        raise UnauthorizedException("Session ended. Please log in again.")
 
     return TokenData(
         user_id=user.id,

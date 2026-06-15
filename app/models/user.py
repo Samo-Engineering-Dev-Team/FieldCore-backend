@@ -66,6 +66,11 @@ class User(BaseDB, BaseUser, table=True):
         ),
     )
     must_change_password: bool = Field(default=False, nullable=False)
+    sessions_revoked_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
+        description="Tokens issued before this time are rejected (logout / revoke-all)",
+    )
     status: UserStatus = Field(default=UserStatus.ACTIVE, nullable=False, index=True)
 
     notifications: List["Notification"] = Relationship(back_populates="user")
