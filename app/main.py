@@ -81,17 +81,17 @@ async def lifespan(app: FastAPI):
     LOG.info("Database disconnected")
 
 
-app: FastAPI = FastAPI(
+fastapi_app: FastAPI = FastAPI(
     title="Seacom-App",
     version="0.1.0",
     description="Backend API for Seacom field technician management system",
     lifespan=lifespan,
 )
 
-app.state.limiter = limiter
+fastapi_app.state.limiter = limiter
 
 
-@app.exception_handler(RateLimitExceeded)
+@fastapi_app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
@@ -99,33 +99,35 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=app_settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(DebugMiddleware)
-app.add_middleware(SlowAPIMiddleware)
+fastapi_app.add_middleware(SecurityHeadersMiddleware)
+fastapi_app.add_middleware(DebugMiddleware)
+fastapi_app.add_middleware(SlowAPIMiddleware)
 
-app.include_router(router)
+fastapi_app.include_router(router)
 
 # GraphQL router
 # graphql_app = GraphQLRouter(schema)
 # app.include_router(graphql_app, prefix="/graphql")
 
 
-@app.get("/", include_in_schema=False, status_code=307)
+@fastapi_app.get("/", include_in_schema=False, status_code=307)
 def root():
     """"""
-    if app.debug:
+    if fastapi_app.debug:
         return {"message": "Are you sure you're supposed to be here?"}
-    return RedirectResponse(app.docs_url or "/docs")
+    return RedirectResponse(fastapi_app.docs_url or "/docs")
 
 
-@app.exception_handler(RequestValidationError)
+@fastapi_app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     LOG.debug("Validation error: {}", exc.errors())
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+app = CORSMiddleware(
+    fastapi_app,
+    allow_origins=app_settings.allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)

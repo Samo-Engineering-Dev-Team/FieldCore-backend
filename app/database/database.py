@@ -85,6 +85,20 @@ class Database:
             "credentials_updated_at",
         } - user_columns
 
+        access_request_columns = (
+            {column["name"] for column in inspector.get_columns("access_requests")}
+            if inspector.has_table("access_requests")
+            else set()
+        )
+        missing_access_request_columns = {"report_type"} - access_request_columns
+
+        task_columns = (
+            {column["name"] for column in inspector.get_columns("tasks")}
+            if inspector.has_table("tasks")
+            else set()
+        )
+        missing_task_columns = {"report_type"} - task_columns
+
         technician_indexes = (
             {index["name"] for index in inspector.get_indexes("technicians")}
             if inspector.has_table("technicians")
@@ -97,7 +111,12 @@ class Database:
             or "uq_active_technicians_id_no" not in technician_indexes
         )
 
-        if not missing_user_columns and not needs_technician_unique_index_fix:
+        if (
+            not missing_user_columns
+            and not missing_access_request_columns
+            and not missing_task_columns
+            and not needs_technician_unique_index_fix
+        ):
             return
 
         with cls.connection.begin() as connection:
@@ -150,6 +169,32 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added users.credentials_updated_at column"
+                )
+
+            if "report_type" in missing_access_request_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE access_requests
+                        ADD COLUMN report_type VARCHAR DEFAULT 'general'
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added access_requests.report_type column"
+                )
+
+            if "report_type" in missing_task_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE tasks
+                        ADD COLUMN report_type VARCHAR
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added tasks.report_type column"
                 )
 
             if needs_technician_unique_index_fix:
