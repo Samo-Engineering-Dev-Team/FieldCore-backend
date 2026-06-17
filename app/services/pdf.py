@@ -1,5 +1,7 @@
 import urllib.request
 import re
+import ipaddress
+import socket
 from urllib.parse import urlparse, unquote
 from io import BytesIO
 from datetime import datetime
@@ -1324,6 +1326,8 @@ class PDFService:
             return None
 
         auth_url = f"{self.supabase_url}/storage/v1/object/authenticated/{self.supabase_bucket}/{file_path.lstrip('/')}"
+        if not self._is_safe_remote_url(auth_url):
+            return None
         try:
             req = urllib.request.Request(
                 auth_url,
@@ -1338,18 +1342,70 @@ class PDFService:
         except Exception:
             return None
 
+    def _is_safe_remote_url(self, url: str) -> bool:
+        """Guard the direct image fetch against SSRF (M5).
+
+        Only http(s) is allowed; when Supabase is configured the host must match
+        it; and every resolved IP must be a public address (blocks loopback,
+        private, link-local, reserved and multicast targets).
+        """
+        try:
+            parsed = urlparse(url)
+        except Exception:
+            return False
+
+        if parsed.scheme not in {"http", "https"}:
+            return False
+
+        host = parsed.hostname
+        if not host:
+            return False
+
+        if self.supabase_url:
+            allowed_host = urlparse(self.supabase_url).hostname
+            if allowed_host and host.lower() != allowed_host.lower():
+                return False
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            addr_infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+        except Exception:
+            return False
+
+        for info in addr_infos:
+            ip_str = info[4][0]
+            try:
+                addr = ipaddress.ip_address(ip_str)
+            except ValueError:
+                return False
+            if (
+                not addr.is_global
+                or addr.is_loopback
+                or addr.is_private
+                or addr.is_link_local
+                or addr.is_reserved
+                or addr.is_multicast
+            ):
+                return False
+
+        return True
+
     def _fetch_image_bytes(self, url: str) -> BytesIO | None:
         """Download an image and support Supabase private storage fallbacks."""
         if not url:
             return None
 
-        # 1) Direct URL fetch first (works for signed/public links and standard URLs).
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                return BytesIO(resp.read())
-        except Exception:
-            pass
+        # 1) Direct URL fetch first (works for signed/public links and standard
+        #    URLs) — only if the URL passes the SSRF allowlist/IP check.
+        if self._is_safe_remote_url(url):
+            try:
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": "Mozilla/5.0"}
+                )
+                with urllib.request.urlopen(req, timeout=12) as resp:
+                    return BytesIO(resp.read())
+            except Exception:
+                pass
 
         # 2) Supabase private bucket fallback using service key.
         file_path = self._extract_supabase_file_path(url)

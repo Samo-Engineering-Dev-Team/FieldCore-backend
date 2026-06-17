@@ -17,12 +17,14 @@ from app.models import (
     AccessRequestCreate,
     AccessRequestResponse,
     AccessRequestUpdate,
+    Notification,
     Site,
     Technician,
     User,
 )
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.notification import NotificationTemplates
 from app.utils.enums import AccessRequestStatus, TaskType, UserRole
 
 
@@ -57,11 +59,9 @@ class _AccessRequestService:
             )
 
     def create_access_request(
-        self,
-        data: AccessRequestCreate,
-        session: Session,
-        current_user: TokenData,
+        self, data: AccessRequestCreate, session: Session, current_user: TokenData
     ) -> AccessRequestResponse:
+        """"""
         technician_id = data.technician_id
         if current_user.role == UserRole.TECHNICIAN:
             technician_id = get_technician_id_for_user(current_user.user_id, session)
@@ -76,69 +76,148 @@ class _AccessRequestService:
         elif technician_id is None:
             raise BadRequestException("technician_id is required")
 
-        data = data.model_copy(update={"technician_id": technician_id})
-
-        # Handle site
         statement = select(Site).where(
             Site.id == data.site_id,
             Site.deleted_at.is_(None),  # type: ignore
         )
-        site: Site | None = session.exec(statement).first()
+        site = session.exec(statement).first()
         if not site:
-            raise NotFoundException("site not found")
+            raise NotFoundException("Site not found")
 
-        # Handle technician
         statement = select(Technician).where(
-            Technician.id == data.technician_id,
+            Technician.id == technician_id,
             Technician.deleted_at.is_(None),  # type: ignore
         )
-        technician: Technician | None = session.exec(statement).first()
+        technician = session.exec(statement).first()
         if not technician:
-            raise NotFoundException("technician not found")
+            raise NotFoundException("Technician not found")
 
-        access_request: AccessRequest = AccessRequest(
-            **data.model_dump(), site=site, technician=technician
+        ar = AccessRequest(
+            **data.model_dump(exclude={"technician_id"}),
+            technician_id=technician_id,
+            site=site,
+            technician=technician,
         )
+
+        # Notify all NOC operators about the new access request
+        noc_users = session.exec(
+            select(User).where(
+                User.role == UserRole.NOC,
+                User.deleted_at.is_(None),  # type: ignore
+            )
+        ).all()
+
+        tech_name = f"{technician.user.name} {technician.user.surname}"
+        template = NotificationTemplates.access_request_created(
+            site_name=site.name,
+            technician_name=tech_name,
+            description=data.description,
+        )
+        notifications = [
+            Notification(
+                user_id=noc_user.id,
+                title=template.title,
+                message=template.message,
+                priority=template.priority,
+            )
+            for noc_user in noc_users
+        ]
+
         try:
-            session.add(access_request)
+            session.add(ar)
+            for notification in notifications:
+                session.add(notification)
             session.commit()
-            session.refresh(access_request)
-
-            # Notify all NOC operators about new access request
-            from app.services.notification import (
-                NotificationTemplates,
-                _NotificationService,
-            )
-
-            notification_service = _NotificationService()
-
-            noc_users = session.exec(
-                select(User).where(
-                    User.role == UserRole.NOC,
-                    User.deleted_at.is_(None),  # type: ignore
-                )
-            ).all()
-
-            tech_name = f"{technician.user.name} {technician.user.surname}"
-            notification_service.create_notifications_from_template(
-                user_ids=(noc_user.id for noc_user in noc_users),
-                template=NotificationTemplates.access_request_created(
-                    site_name=site.name,
-                    technician_name=tech_name,
-                    description=data.description,
-                ),
-                session=session,
-            )
-
-            return self.access_request_to_response(access_request)
+            session.refresh(ar)
+            return self.access_request_to_response(ar)
         except IntegrityError as e:
             session.rollback()
-            raise ConflictException(f"Error creating access-request: {e.orig}")
+            raise ConflictException(f"Error creating access request: {e.orig}")
         except Exception as e:
             session.rollback()
             raise InternalServerErrorException(
-                f"Unexpected error creating access-request: {e}"
+                f"Unexpected error creating access request: {e}"
             )
+
+    # def create_access_request(
+    #     self,
+    #     data: AccessRequestCreate,
+    #     session: Session,
+    #     current_user: TokenData,
+    # ) -> AccessRequestResponse:
+    #     if current_user.role == UserRole.TECHNICIAN:
+    #         technician_id = get_technician_id_for_user(current_user.user_id, session)
+    #         if data.technician_id != technician_id:
+    #             raise ForbiddenException(
+    #                 "Technicians can only create access requests for themselves."
+    #             )
+    #         data = data.model_copy(update={"technician_id": technician_id})
+    #     elif not is_management(current_user):
+    #         raise ForbiddenException(
+    #             "Only technicians, NOC, managers, or admins can create access requests."
+    #         )
+
+    #     # Handle site
+    #     statement = select(Site).where(
+    #         Site.id == data.site_id,
+    #         Site.deleted_at.is_(None),  # type: ignore
+    #     )
+    #     site: Site | None = session.exec(statement).first()
+    #     if not site:
+    #         raise NotFoundException("site not found")
+
+    #     # Handle technician
+    #     statement = select(Technician).where(
+    #         Technician.id == data.technician_id,
+    #         Technician.deleted_at.is_(None),  # type: ignore
+    #     )
+    #     technician: Technician | None = session.exec(statement).first()
+    #     if not technician:
+    #         raise NotFoundException("technician not found")
+
+    #     access_request: AccessRequest = AccessRequest(
+    #         **data.model_dump(), site=site, technician=technician
+    #     )
+    #     try:
+    #         session.add(access_request)
+    #         session.commit()
+    #         session.refresh(access_request)
+
+    #         # Notify all NOC operators about new access request
+    #         from app.services.notification import (
+    #             NotificationTemplates,
+    #             _NotificationService,
+    #         )
+
+    #         notification_service = _NotificationService()
+
+    #         noc_users = session.exec(
+    #             select(User).where(
+    #                 User.role == UserRole.NOC,
+    #                 User.deleted_at.is_(None),  # type: ignore
+    #             )
+    #         ).all()
+
+    #         tech_name = f"{technician.user.name} {technician.user.surname}"
+    #         notification_service.create_notifications_from_template(
+    #             user_ids=(noc_user.id for noc_user in noc_users),
+    #             template=NotificationTemplates.access_request_created(
+    #                 site_name=site.name,
+    #                 technician_name=tech_name,
+    #                 description=data.description,
+    #             ),
+    #             session=session,
+    #         )
+
+    #         return self.access_request_to_response(access_request)
+    #     except IntegrityError as e:
+    #         session.rollback()
+    #         raise ConflictException(f"Error creating access-request: {e.orig}")
+    #     except Exception as e:
+    #         session.rollback()
+    #         raise InternalServerErrorException(
+    #             f"Unexpected error creating access-request: {e}"
+    #         )
 
     def read_access_request(
         self,
@@ -263,7 +342,9 @@ class _AccessRequestService:
                     site_id=access_request.site_id,
                     technician_id=access_request.technician_id,
                     assigned_by_user_id=assigner.id if assigner else None,
-                    assigned_by_name=f"{assigner.name} {assigner.surname}" if assigner else None,
+                    assigned_by_name=f"{assigner.name} {assigner.surname}"
+                    if assigner
+                    else None,
                 )
                 session.add(task)
                 session.commit()
@@ -275,24 +356,22 @@ class _AccessRequestService:
                 session.refresh(access_request)
 
             # Notify the technician that their access request was approved
-            from app.services.notification import (
-                NotificationTemplates,
-                _NotificationService,
-            )
-
-            notification_service = _NotificationService()
-
             site_name = (
                 access_request.site.name if access_request.site else "Unknown Site"
             )
 
-            notification_service.create_notification_from_template(
-                user_id=access_request.technician.user_id,
-                template=NotificationTemplates.access_request_approved(
-                    site_name, seacom_ref
-                ),
-                session=session,
+            template = NotificationTemplates.access_request_approved(
+                site_name, seacom_ref
             )
+            session.add(
+                Notification(
+                    user_id=access_request.technician.user_id,
+                    title=template.title,
+                    message=template.message,
+                    priority=template.priority,
+                )
+            )
+            session.commit()
 
             return self.access_request_to_response(access_request)
         except Exception as e:
@@ -312,22 +391,20 @@ class _AccessRequestService:
             session.refresh(access_request)
 
             # Notify the technician that their access request was rejected
-            from app.services.notification import (
-                NotificationTemplates,
-                _NotificationService,
-            )
-
-            notification_service = _NotificationService()
-
             site_name = (
                 access_request.site.name if access_request.site else "Unknown Site"
             )
 
-            notification_service.create_notification_from_template(
-                user_id=access_request.technician.user_id,
-                template=NotificationTemplates.access_request_rejected(site_name),
-                session=session,
+            template = NotificationTemplates.access_request_rejected(site_name)
+            session.add(
+                Notification(
+                    user_id=access_request.technician.user_id,
+                    title=template.title,
+                    message=template.message,
+                    priority=template.priority,
+                )
             )
+            session.commit()
 
             return self.access_request_to_response(access_request)
         except Exception as e:

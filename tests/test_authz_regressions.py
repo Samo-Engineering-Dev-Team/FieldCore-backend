@@ -272,7 +272,7 @@ def test_create_technician_user_starts_disabled_until_profile_exists() -> None:
             surname="Tech",
             email="newtech@example.com",
             role=UserRole.TECHNICIAN,
-            password="Password1!",
+            password="Password123!",
         ),
         session,
     )

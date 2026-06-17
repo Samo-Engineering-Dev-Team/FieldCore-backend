@@ -15,41 +15,11 @@ from app.api import router
 from app.core import app_settings
 from app.core.debug_middleware import DebugMiddleware
 from app.core.rate_limiter import limiter
+from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import Database
 
 # from app.graphql.schema import schema
-
-
-# Background task for SLA checking
-# async def sla_check_background_task():
-#     """Background task that periodically checks for SLA breaches."""
-#     from loguru import logger as LOG
-
-#     # Wait for startup to complete
-#     await asyncio.sleep(30)
-
-#     while True:
-#         try:
-#             from sqlmodel import Session
-
-#             from app.services.sla_checker import check_sla_breaches
-
-#             with Session(Database.connection) as session:
-#                 warnings, breaches = check_sla_breaches(session)
-
-#                 if warnings or breaches:
-#                     LOG.info(
-#                         f"SLA Check: {len(warnings)} warnings, {len(breaches)} breaches found"
-#                     )
-#         except Exception as e:
-#             LOG.error(f"SLA check error: {e}")
-#             import traceback
-
-#             LOG.error(f"SLA check traceback: {traceback.format_exc()}")
-
-#         # Check every 15 minutes
-#         await asyncio.sleep(15 * 60)
 
 
 @asynccontextmanager
@@ -64,18 +34,13 @@ async def lifespan(app: FastAPI):
     Database.init()
     LOG.debug("Database init complete")
 
-    # Start SLA check background task
-    # sla_task = asyncio.create_task(sla_check_background_task())
+    # Start SLA + weekly background checkers (APScheduler, advisory-locked).
+    start_scheduler()
 
     yield
 
     LOG.info("Shutting down application lifespan")
-    # Cancel background task on shutdown
-    # sla_task.cancel()
-    # try:
-    #     await sla_task
-    # except asyncio.CancelledError:
-    #     pass
+    shutdown_scheduler()
 
     Database.disconnect()
     LOG.info("Database disconnected")
@@ -103,6 +68,13 @@ fastapi_app.add_middleware(SecurityHeadersMiddleware)
 fastapi_app.add_middleware(DebugMiddleware)
 fastapi_app.add_middleware(SlowAPIMiddleware)
 
+_cors_origins = app_settings.allowed_origins
+if not _cors_origins:
+    LOG.warning(
+        "ALLOWED_ORIGINS is not set - all cross-origin browser requests will be "
+        "blocked. Set ALLOWED_ORIGINS to a comma-separated list of trusted origins."
+    )
+
 fastapi_app.include_router(router)
 
 # GraphQL router
@@ -112,10 +84,31 @@ fastapi_app.include_router(router)
 
 @fastapi_app.get("/", include_in_schema=False, status_code=307)
 def root():
-    """"""
-    if fastapi_app.debug:
-        return {"message": "Are you sure you're supposed to be here?"}
+    """Redirect to the API docs."""
     return RedirectResponse(fastapi_app.docs_url or "/docs")
+
+
+@fastapi_app.get("/health", tags=["Health"])
+def health() -> dict:
+    """Liveness probe - process is up. No dependency checks."""
+    return {"status": "ok"}
+
+
+@fastapi_app.get("/ready", tags=["Health"])
+def ready() -> JSONResponse:
+    """Readiness probe - verifies the database is reachable."""
+    from sqlalchemy import text
+
+    try:
+        with Database.session() as session:
+            session.execute(text("SELECT 1"))
+        return JSONResponse(status_code=200, content={"status": "ready"})
+    except Exception as exc:
+        LOG.warning("Readiness check failed: {}", exc)
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "detail": "database unavailable"},
+        )
 
 
 @fastapi_app.exception_handler(RequestValidationError)
@@ -126,7 +119,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app = CORSMiddleware(
     fastapi_app,
-    allow_origins=app_settings.allowed_origins,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

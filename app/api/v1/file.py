@@ -22,6 +22,50 @@ ALLOWED_CONTENT_TYPES = {
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
+# Folders a caller is allowed to write into (prevents path injection via ?folder=).
+ALLOWED_FOLDERS = {"incidents", "reports", "tasks", "routine", "avatars", "misc"}
+
+
+def _validate_folder(folder: str) -> str:
+    if folder not in ALLOWED_FOLDERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid folder '{folder}'. Allowed: {', '.join(sorted(ALLOWED_FOLDERS))}",
+        )
+    return folder
+
+
+def _content_type_matches_bytes(content: bytes, content_type: str) -> bool:
+    """Verify the file's magic bytes match its declared content type (M4).
+
+    Stops a caller from smuggling, e.g., an HTML/script payload past the
+    Content-Type allowlist by lying about the header.
+    """
+    if not content:
+        return False
+
+    head = content[:16]
+
+    if content_type == "image/jpeg":
+        return head.startswith(b"\xff\xd8\xff")
+    if content_type == "image/png":
+        return head.startswith(b"\x89PNG\r\n\x1a\n")
+    if content_type == "image/gif":
+        return head.startswith((b"GIF87a", b"GIF89a"))
+    if content_type == "image/webp":
+        return head[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    if content_type == "application/pdf":
+        return head.startswith(b"%PDF-")
+    if content_type == "application/msword":
+        # Legacy OLE compound document (.doc).
+        return head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+    if content_type == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ):
+        # .docx is a ZIP container.
+        return head.startswith(b"PK\x03\x04")
+    return False
+
 
 class FileUploadResponse(BaseModel):
     """Response model for file upload."""
@@ -54,7 +98,8 @@ async def upload_file(
     Supported file types: JPEG, PNG, GIF, WebP, PDF, DOC, DOCX
     Max file size: 10MB
     """
-    # Validate content type
+    # Validate folder and content type
+    _validate_folder(folder)
     if file.content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -67,6 +112,13 @@ async def upload_file(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024 * 1024)}MB",
+        )
+
+    # Verify the bytes actually match the declared type (defeats spoofed headers)
+    if not _content_type_matches_bytes(content, file.content_type):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File contents do not match the declared file type.",
         )
 
     file_service = FileService()
@@ -103,6 +155,8 @@ async def upload_multiple_files(
             detail="Maximum 10 files can be uploaded at once",
         )
 
+    _validate_folder(folder)
+
     file_service = FileService()
     uploaded: List[FileUploadResponse] = []
     failed: List[str] = []
@@ -121,6 +175,13 @@ async def upload_multiple_files(
             if len(content) > MAX_FILE_SIZE:
                 failed.append(
                     f"{file.filename}: File too large (max {MAX_FILE_SIZE // (1024 * 1024)}MB)"
+                )
+                continue
+
+            # Verify magic bytes match the declared type
+            if not _content_type_matches_bytes(content, file.content_type):
+                failed.append(
+                    f"{file.filename}: contents do not match declared type"
                 )
                 continue
 

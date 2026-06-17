@@ -22,7 +22,7 @@ def make_inspector(
     return inspector
 
 
-def test_apply_schema_fixes_adds_missing_must_change_password_column(monkeypatch) -> None:
+def test_apply_schema_fixes_adds_missing_user_columns(monkeypatch) -> None:
     inspector = make_inspector(
         {
             "users": ["id", "password_hash"],
@@ -58,12 +58,17 @@ def test_apply_schema_fixes_adds_missing_must_change_password_column(monkeypatch
     assert "ALTER TABLE users" in executed_sql
     assert "must_change_password" in executed_sql
     assert "credentials_updated_at" in executed_sql
+    assert "sessions_revoked_at" in executed_sql
 
 
-def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypatch) -> None:
+def test_apply_schema_fixes_skips_when_columns_and_indexes_exist(monkeypatch) -> None:
     inspector = make_inspector(
         {
-            "users": ["must_change_password", "credentials_updated_at"],
+            "users": [
+                "must_change_password",
+                "credentials_updated_at",
+                "sessions_revoked_at",
+            ],
             "access_requests": ["report_type"],
             "tasks": ["report_type"],
         },
@@ -86,10 +91,16 @@ def test_apply_schema_fixes_skips_existing_must_change_password_column(monkeypat
     engine.begin.assert_not_called()
 
 
-def test_apply_schema_fixes_replaces_legacy_technician_unique_constraints(monkeypatch) -> None:
+def test_apply_schema_fixes_replaces_legacy_technician_unique_constraints(
+    monkeypatch,
+) -> None:
     inspector = make_inspector(
         {
-            "users": ["must_change_password", "credentials_updated_at"],
+            "users": [
+                "must_change_password",
+                "credentials_updated_at",
+                "sessions_revoked_at",
+            ],
             "access_requests": ["report_type"],
             "tasks": ["report_type"],
         },
@@ -127,7 +138,11 @@ def test_apply_schema_fixes_replaces_legacy_technician_unique_constraints(monkey
 def test_apply_schema_fixes_adds_missing_report_type_columns(monkeypatch) -> None:
     inspector = make_inspector(
         {
-            "users": ["must_change_password", "credentials_updated_at"],
+            "users": [
+                "must_change_password",
+                "credentials_updated_at",
+                "sessions_revoked_at",
+            ],
             "access_requests": ["id"],
             "tasks": ["id"],
         },

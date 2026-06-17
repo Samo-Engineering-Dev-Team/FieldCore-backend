@@ -4,17 +4,41 @@ from fastapi.testclient import TestClient
 from app.core.security_headers import SecurityHeadersMiddleware
 
 
-def test_security_headers_are_added_to_api_responses() -> None:
+def _client() -> TestClient:
     app = FastAPI()
     app.add_middleware(SecurityHeadersMiddleware)
 
-    @app.get("/api/v1/health")
-    def health() -> dict[str, str]:
+    @app.get("/ping")
+    def ping() -> dict[str, str]:
         return {"status": "ok"}
 
-    response = TestClient(app).get("/api/v1/health")
+    return TestClient(app)
 
-    assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["x-frame-options"] == "DENY"
-    assert response.headers["referrer-policy"] == "no-referrer"
-    assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+def test_security_headers_present_on_response() -> None:
+    response = _client().get("/ping")
+
+    assert response.status_code == 200
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "max-age=31536000" in response.headers["Strict-Transport-Security"]
+    assert "geolocation=()" in response.headers["Permissions-Policy"]
+
+
+def test_existing_header_not_overwritten() -> None:
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware)
+
+    @app.get("/custom")
+    def custom():
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            {"ok": True}, headers={"Referrer-Policy": "strict-origin"}
+        )
+
+    response = TestClient(app).get("/custom")
+    # Route-set header wins (middleware uses setdefault).
+    assert response.headers["Referrer-Policy"] == "strict-origin"
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
