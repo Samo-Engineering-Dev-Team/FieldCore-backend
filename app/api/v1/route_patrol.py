@@ -23,6 +23,12 @@ from app.database import SessionDep
 router = APIRouter(prefix="/route-patrols", tags=["Route Patrols"])
 
 
+@router.post(
+    "",
+    response_model=RoutePatrolResponse,
+    status_code=201,
+    include_in_schema=False,
+)
 @router.post("/", response_model=RoutePatrolResponse, status_code=201)
 def create_patrol(
     payload: RoutePatrolCreate,
@@ -33,6 +39,12 @@ def create_patrol(
     return service.create(payload, session, current_user)
 
 
+@router.get(
+    "",
+    response_model=List[RoutePatrolResponse],
+    status_code=200,
+    include_in_schema=False,
+)
 @router.get("/", response_model=List[RoutePatrolResponse], status_code=200)
 def list_patrols(
     service: RoutePatrolService,
