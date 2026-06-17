@@ -16,6 +16,12 @@ def test_allowed_origins_strip_accidental_quotes() -> None:
     ]
 
 
+def test_allowed_origins_do_not_fallback_to_wildcard() -> None:
+    settings = AppSettings.model_construct(ALLOWED_ORIGINS="")
+
+    assert settings.allowed_origins == []
+
+
 def test_prod_frontend_origin_gets_cors_header() -> None:
     settings = AppSettings.model_construct(
         ALLOWED_ORIGINS='"https://field-core-frontend.vercel.app"'

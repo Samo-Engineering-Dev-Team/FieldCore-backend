@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.exceptions.http import (
+    BadRequestException,
     ConflictException,
     ForbiddenException,
     InternalServerErrorException,

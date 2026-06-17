@@ -114,7 +114,7 @@ class Database:
                     "Applied schema compatibility fix: added users.must_change_password column"
                 )
 
-            if "credentials_updated_at" not in user_columns:
+            if "credentials_updated_at" in missing_user_columns:
                 connection.execute(
                     text(
                         """
@@ -150,6 +150,45 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added users.credentials_updated_at column"
+                )
+
+            if needs_technician_unique_index_fix:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE technicians
+                        DROP CONSTRAINT IF EXISTS technicians_phone_key
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE technicians
+                        DROP CONSTRAINT IF EXISTS technicians_id_no_key
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_active_technicians_phone
+                        ON technicians (phone)
+                        WHERE deleted_at IS NULL
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_active_technicians_id_no
+                        ON technicians (id_no)
+                        WHERE deleted_at IS NULL
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: technician phone/id_no uniqueness is active-row scoped"
                 )
 
     @classmethod
