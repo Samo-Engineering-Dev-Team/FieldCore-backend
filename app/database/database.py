@@ -1,9 +1,10 @@
-from sqlmodel import SQLModel, Session as _Session, create_engine
-from sqlalchemy import Engine, inspect, text
-from loguru import logger as LOG
-from typing import Generator, List, Annotated
-from fastapi import Depends
 from contextlib import contextmanager
+from typing import Annotated, Generator, List
+
+from fastapi import Depends
+from loguru import logger as LOG
+from sqlalchemy import Engine, inspect, text
+from sqlmodel import SQLModel, Session as _Session, create_engine
 
 
 class Database:
@@ -24,7 +25,7 @@ class Database:
                 url,
                 pool_size=10,
                 max_overflow=20,
-                pool_pre_ping=True,  # Verify connections before using them
+                pool_pre_ping=True,
             )
             LOG.debug(f"Connected to {cls.connection.url.database} database.")
         except Exception as e:
@@ -75,20 +76,66 @@ class Database:
 
         inspector = inspect(cls.connection)
 
-        if not inspector.has_table("users"):
-            return
+        has_users = inspector.has_table("users")
+        user_columns = (
+            {column["name"] for column in inspector.get_columns("users")}
+            if has_users
+            else set()
+        )
+        missing_user_columns = (
+            {
+                "must_change_password",
+                "credentials_updated_at",
+                "sessions_revoked_at",
+            }
+            - user_columns
+            if has_users
+            else set()
+        )
 
-        user_columns = {column["name"] for column in inspector.get_columns("users")}
-        required_columns = {
-            "must_change_password",
-            "credentials_updated_at",
-            "sessions_revoked_at",
-        }
-        if required_columns.issubset(user_columns):
+        has_access_requests = inspector.has_table("access_requests")
+        access_request_columns = (
+            {column["name"] for column in inspector.get_columns("access_requests")}
+            if has_access_requests
+            else set()
+        )
+        missing_access_request_columns = (
+            {"report_type"} - access_request_columns
+            if has_access_requests
+            else set()
+        )
+
+        has_tasks = inspector.has_table("tasks")
+        task_columns = (
+            {column["name"] for column in inspector.get_columns("tasks")}
+            if has_tasks
+            else set()
+        )
+        missing_task_columns = {"report_type"} - task_columns if has_tasks else set()
+
+        has_technicians = inspector.has_table("technicians")
+        technician_indexes = (
+            {index["name"] for index in inspector.get_indexes("technicians")}
+            if has_technicians
+            else set()
+        )
+        needs_technician_unique_index_fix = has_technicians and (
+            "technicians_phone_key" in technician_indexes
+            or "technicians_id_no_key" in technician_indexes
+            or "uq_active_technicians_phone" not in technician_indexes
+            or "uq_active_technicians_id_no" not in technician_indexes
+        )
+
+        if (
+            not missing_user_columns
+            and not missing_access_request_columns
+            and not missing_task_columns
+            and not needs_technician_unique_index_fix
+        ):
             return
 
         with cls.connection.begin() as connection:
-            if "sessions_revoked_at" not in user_columns:
+            if "sessions_revoked_at" in missing_user_columns:
                 connection.execute(
                     text(
                         """
@@ -101,7 +148,7 @@ class Database:
                     "Applied schema compatibility fix: added users.sessions_revoked_at column"
                 )
 
-            if "must_change_password" not in user_columns:
+            if "must_change_password" in missing_user_columns:
                 connection.execute(
                     text(
                         """
@@ -150,6 +197,32 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added users.credentials_updated_at column"
+                )
+
+            if "report_type" in missing_access_request_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE access_requests
+                        ADD COLUMN report_type VARCHAR DEFAULT 'general'
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added access_requests.report_type column"
+                )
+
+            if "report_type" in missing_task_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE tasks
+                        ADD COLUMN report_type VARCHAR
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added tasks.report_type column"
                 )
 
             if needs_technician_unique_index_fix:
@@ -203,7 +276,7 @@ class Database:
     @classmethod
     @contextmanager
     def session(cls):
-        """Context manager for database sessions (non-dependency injection)."""
+        """Context manager for database sessions."""
         if not cls.connection:
             LOG.critical("Cannot get session. Database is not connected.")
             raise RuntimeError("Cannot get session. Database is not connected.")

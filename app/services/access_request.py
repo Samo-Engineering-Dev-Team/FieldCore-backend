@@ -62,18 +62,20 @@ class _AccessRequestService:
         self, data: AccessRequestCreate, session: Session, current_user: TokenData
     ) -> AccessRequestResponse:
         """"""
-        if current_user.role != UserRole.TECHNICIAN:
-            raise ForbiddenException("Only technicians can create access requests.")
+        technician_id = data.technician_id
+        if current_user.role == UserRole.TECHNICIAN:
+            technician_id = get_technician_id_for_user(current_user.user_id, session)
+            if data.technician_id is not None and data.technician_id != technician_id:
+                raise ForbiddenException(
+                    "Technicians can only create access requests for themselves."
+                )
+        elif not is_management(current_user):
+            raise ForbiddenException(
+                "Only technicians, NOC, managers, or admins can create access requests."
+            )
+        elif technician_id is None:
+            raise BadRequestException("technician_id is required")
 
-        statement = select(Technician).where(
-            Technician.user_id == current_user.user_id,
-            Technician.deleted_at.is_(None),  # type: ignore
-        )
-        technician = session.exec(statement).first()
-        if not technician:
-            raise NotFoundException("Technician not found")
-
-        # Handle Site
         statement = select(Site).where(
             Site.id == data.site_id,
             Site.deleted_at.is_(None),  # type: ignore
@@ -82,9 +84,17 @@ class _AccessRequestService:
         if not site:
             raise NotFoundException("Site not found")
 
+        statement = select(Technician).where(
+            Technician.id == technician_id,
+            Technician.deleted_at.is_(None),  # type: ignore
+        )
+        technician = session.exec(statement).first()
+        if not technician:
+            raise NotFoundException("Technician not found")
+
         ar = AccessRequest(
-            **data.model_dump(),
-            technician_id=technician.id,
+            **data.model_dump(exclude={"technician_id"}),
+            technician_id=technician_id,
             site=site,
             technician=technician,
         )
@@ -114,7 +124,9 @@ class _AccessRequestService:
         ]
 
         try:
-            session.add_all([ar, *notifications])
+            session.add(ar)
+            for notification in notifications:
+                session.add(notification)
             session.commit()
             session.refresh(ar)
             return self.access_request_to_response(ar)

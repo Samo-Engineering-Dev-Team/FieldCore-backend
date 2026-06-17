@@ -38,6 +38,7 @@ from app.models import (
 from app.models.auth import TokenData
 from app.services.authorization import assert_technician_self_or_roles, is_management
 from app.services.notification import NotificationTemplates
+from app.utils.enums import UserRole
 from app.utils.funcs import utcnow
 
 
