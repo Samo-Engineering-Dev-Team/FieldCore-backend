@@ -98,3 +98,11 @@ class SiteResponse(BaseDB, BaseSite):
     num_tasks: int = Field(default=0, description="Number of tasks", ge=0)
     num_incidents: int = Field(default=0, description="Number of incidents", ge=0)
     num_reports: int = Field(default=0, description="Number of reports", ge=0)
+
+
+class SiteSearchResult(SiteResponse):
+    match_score: float = Field(
+        default=0,
+        ge=0,
+        description="Fuzzy match score returned by PostgreSQL trigram similarity",
+    )

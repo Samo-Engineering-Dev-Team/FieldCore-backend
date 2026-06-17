@@ -1,6 +1,4 @@
 import pytest
-import os
-import json
 
 from app.core.settings import app_settings
 from app.services.presence import PresenceService

@@ -50,3 +50,13 @@ class ClientResponse(BaseDB, BaseClient):
     """Schema for client response."""
 
     pass
+
+
+class ClientSearchResult(ClientResponse):
+    """Client fuzzy search result."""
+
+    match_score: float = Field(
+        default=0,
+        ge=0,
+        description="Fuzzy match score returned by PostgreSQL trigram similarity",
+    )

@@ -2,11 +2,17 @@ from typing import Annotated, List
 from uuid import UUID, uuid4
 
 from fastapi import Depends
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
 from app.exceptions.http import ConflictException, NotFoundException
-from app.models import Client, ClientCreate, ClientResponse, ClientUpdate
+from app.models import (
+    Client,
+    ClientCreate,
+    ClientResponse,
+    ClientSearchResult,
+    ClientUpdate,
+)
 
 
 class ClientService:
@@ -77,6 +83,45 @@ class ClientService:
 
         clients = session.exec(query).all()
         return [ClientResponse.model_validate(c) for c in clients]
+
+    def search_clients(
+        self,
+        query: str,
+        session: Session,
+        active_only: bool = True,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> List[ClientSearchResult]:
+        """Find clients by typo-tolerant name matching."""
+        search_text = query.strip()
+        if not search_text:
+            return []
+
+        like_query = f"%{search_text}%"
+        score = func.similarity(Client.name, search_text).label("match_score")
+        statement = (
+            select(Client, score)
+            .where(
+                or_(
+                    Client.name.ilike(like_query),
+                    Client.name.bool_op("%")(search_text),
+                )
+            )
+            .order_by(score.desc(), Client.name)
+            .offset(offset)
+            .limit(limit)
+        )
+        if active_only:
+            statement = statement.where(Client.is_active.is_(True))
+
+        rows = session.exec(statement).all()
+        return [
+            ClientSearchResult(
+                **ClientResponse.model_validate(client).model_dump(),
+                match_score=float(score_value or 0),
+            )
+            for client, score_value in rows
+        ]
 
     def read_client(self, client_id: UUID, session: Session) -> ClientResponse:
         """Read a single client by ID."""

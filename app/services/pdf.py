@@ -5,7 +5,7 @@ import socket
 from urllib.parse import urlparse, unquote
 from io import BytesIO
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -34,6 +34,9 @@ from app.core.settings import app_settings
 from app.models import Report
 from app.utils.enums import ReportType
 from app.utils.funcs import utcnow
+
+if TYPE_CHECKING:
+    from app.models import IncidentReport
 
 # Imported lazily inside generate_incident_report_pdf to avoid circular import at module load
 # from app.models import IncidentReport

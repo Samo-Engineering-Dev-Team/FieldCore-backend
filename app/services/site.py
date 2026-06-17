@@ -3,11 +3,19 @@ from fastapi import Depends
 from typing import List, Annotated, Tuple
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from geoalchemy2.functions import ST_DWithin, ST_Distance, ST_SetSRID, ST_MakePoint
 
 from app.utils.enums import Region
-from app.models import Site, SiteCreate, SiteUpdate, SiteResponse, Task, Incident
+from app.models import (
+    Site,
+    SiteCreate,
+    SiteUpdate,
+    SiteResponse,
+    SiteSearchResult,
+    Task,
+    Incident,
+)
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -87,6 +95,29 @@ class _SiteService:
             for site in sites
         ]
 
+    def _build_site_search_results(
+        self,
+        rows: list[tuple[Site, float]],
+        session: Session,
+    ) -> List[SiteSearchResult]:
+        if not rows:
+            return []
+
+        sites = [site for site, _score in rows]
+        site_ids = [site.id for site in sites]
+        task_counts, incident_counts = self._get_related_counts(session, site_ids)
+        return [
+            SiteSearchResult(
+                **self.site_to_response(
+                    site,
+                    num_tasks=task_counts.get(site.id, 0),
+                    num_incidents=incident_counts.get(site.id, 0),
+                ).model_dump(),
+                match_score=float(score or 0),
+            )
+            for site, score in rows
+        ]
+
     def create_site(self, data: SiteCreate, session: Session) -> SiteResponse:
         # Extract lat/lon before creating site
         site_data = data.model_dump(exclude={"latitude", "longitude"})
@@ -128,6 +159,47 @@ class _SiteService:
         statement = statement.offset(offset).limit(limit)
         sites = session.exec(statement).all()
         return self._build_site_responses(sites, session)
+
+    def search_sites(
+        self,
+        query: str,
+        session: Session,
+        region: Region | None = None,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> List[SiteSearchResult]:
+        search_text = query.strip()
+        if not search_text:
+            return []
+
+        like_query = f"%{search_text}%"
+        address = func.coalesce(Site.address, "")
+        score = func.greatest(
+            func.similarity(Site.name, search_text),
+            func.similarity(address, search_text),
+        ).label("match_score")
+
+        statement = (
+            select(Site, score)
+            .where(Site.deleted_at.is_(None))  # type: ignore
+            .where(
+                or_(
+                    Site.name.ilike(like_query),
+                    Site.name.bool_op("%")(search_text),
+                    address.ilike(like_query),
+                    address.bool_op("%")(search_text),
+                )
+            )
+            .order_by(score.desc(), Site.name)
+            .offset(offset)
+            .limit(limit)
+        )
+
+        if region is not None:
+            statement = statement.where(Site.region == region)
+
+        rows = session.exec(statement).all()
+        return self._build_site_search_results(rows, session)
 
     def update_site(
         self, site_id: UUID, data: SiteUpdate, session: Session
