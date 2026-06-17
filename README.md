@@ -55,6 +55,8 @@ uv run uvicorn app.main:app --reload
 - API root/docs redirect: `http://localhost:8000/`
 - OpenAPI docs: `http://localhost:8000/docs`
 - OpenAPI JSON: `http://localhost:8000/openapi.json`
+- Fuzzy site search: `GET /api/v1/sites/search?q=secom`
+- Fuzzy client search: `GET /api/v1/clients/search?q=secom`
 
 ## Testing
 Run the backend test suite:

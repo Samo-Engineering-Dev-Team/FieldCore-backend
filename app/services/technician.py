@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.models import (
+    Notification,
     Site,
     Technician,
     TechnicianDataIssue,
@@ -24,16 +25,6 @@ from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
     NotFoundException,
-)
-from app.models import (
-    Notification,
-    Site,
-    Technician,
-    TechnicianCreate,
-    TechnicianLocationUpdate,
-    TechnicianResponse,
-    TechnicianUpdate,
-    User,
 )
 from app.models.auth import TokenData
 from app.services.authorization import assert_technician_self_or_roles, is_management

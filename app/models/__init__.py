@@ -30,7 +30,7 @@ from .technician import (
     TechnicianResponse,
     TechnicianLocationUpdate,
 )
-from .site import Site, SiteCreate, SiteUpdate, SiteResponse
+from .site import Site, SiteCreate, SiteUpdate, SiteResponse, SiteSearchResult
 from .task import Task, TaskCreate, TaskUpdate, TaskResponse
 from .incident import Incident, IncidentCreate, IncidentUpdate, IncidentResponse
 from .access_request import (
@@ -59,7 +59,7 @@ from .routine_inspection import (
     RoutineInspectionUpdate,
     RoutineInspectionResponse,
 )
-from .client import Client, ClientCreate, ClientUpdate, ClientResponse
+from .client import Client, ClientCreate, ClientUpdate, ClientResponse, ClientSearchResult
 from .incident_report import (
     IncidentReport,
     IncidentReportCreate,
@@ -145,6 +145,7 @@ __all__ = [
     "SiteCreate",
     "SiteUpdate",
     "SiteResponse",
+    "SiteSearchResult",
     "Task",
     "TaskCreate",
     "TaskUpdate",
@@ -180,6 +181,7 @@ __all__ = [
     "ClientCreate",
     "ClientUpdate",
     "ClientResponse",
+    "ClientSearchResult",
     "IncidentReport",
     "IncidentReportCreate",
     "IncidentReportUpdate",

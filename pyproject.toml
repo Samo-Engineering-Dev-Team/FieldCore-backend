@@ -28,6 +28,7 @@ dependencies = [
     "webauthn>=2.7.1",
     "apscheduler>=3.10,<4",
     "celery[redis]>=5.3,<6",
+    "psutil>=6.0.0",
 ]
 
 [dependency-groups]
