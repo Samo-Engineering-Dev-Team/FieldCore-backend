@@ -1,10 +1,23 @@
+import re
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from uuid import uuid4, UUID
 from datetime import datetime
 
 from app.utils.enums import UserRole
+
+# Password policy (M6). No upper cap below 128 — Argon2 handles long inputs, and
+# capping low blocks strong passphrases.
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_MAX_LENGTH = 128
+
+
+def validate_password_strength(value: str) -> str:
+    """Require at least one letter and one digit."""
+    if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
+        raise ValueError("Password must contain at least one letter and one digit")
+    return value
 
 
 class Token(BaseModel):
@@ -101,51 +114,57 @@ class PasswordChange(BaseModel):
         examples=["OldPassword123"],
     )
     new_password: str = Field(
-        min_length=8,
-        max_length=16,
-        description="The new password (8-16 characters)",
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+        description="The new password (min 12 chars, must include a letter and a digit)",
         examples=["NewPassword456"],
     )
     confirm_password: str = Field(
-        min_length=8,
-        max_length=16,
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
         description="Confirm the new password",
         examples=["NewPassword456"],
     )
+
+    _strength = field_validator("new_password")(validate_password_strength)
 
 
 class AdminPasswordReset(BaseModel):
     """Schema for admin-initiated password reset."""
 
     new_password: str = Field(
-        min_length=8,
-        max_length=16,
-        description="The replacement password (8-16 characters)",
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+        description="The replacement password (min 12 chars, must include a letter and a digit)",
         examples=["ResetPassword456"],
     )
     confirm_password: str = Field(
-        min_length=8,
-        max_length=16,
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
         description="Confirm the replacement password",
         examples=["ResetPassword456"],
     )
+
+    _strength = field_validator("new_password")(validate_password_strength)
 
 
 class PasswordResetCompletion(BaseModel):
     """Schema for user-completed password reset after temporary login."""
 
     new_password: str = Field(
-        min_length=8,
-        max_length=16,
-        description="The user's final replacement password (8-16 characters)",
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
+        description="The user's final replacement password (min 12 chars, must include a letter and a digit)",
         examples=["FinalPassword456"],
     )
     confirm_password: str = Field(
-        min_length=8,
-        max_length=16,
+        min_length=PASSWORD_MIN_LENGTH,
+        max_length=PASSWORD_MAX_LENGTH,
         description="Confirm the user's final replacement password",
         examples=["FinalPassword456"],
     )
+
+    _strength = field_validator("new_password")(validate_password_strength)
 
 
 class PasskeyCeremonyStart(BaseModel):

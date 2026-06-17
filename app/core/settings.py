@@ -1,9 +1,13 @@
-from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic import Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class AppSettings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    # Deployment environment: "development" | "staging" | "production".
+    # Controls how strict startup validation is (see _validate_required).
+    ENVIRONMENT: str = Field(default="development")
 
     # Database
     DB_HOST: str = ""
@@ -27,6 +31,44 @@ class AppSettings(BaseSettings):
     PASSKEY_RP_ID: str = Field(default="")
     PASSKEY_ALLOWED_ORIGINS: str = Field(default="")
     PASSKEY_CEREMONY_TIMEOUT_MS: int = Field(default=120000, ge=30000, le=600000)
+
+    # Background scheduler (SLA breach + weekly task checkers)
+    SCHEDULER_ENABLED: bool = Field(
+        default=True,
+        description="Run the in-process APScheduler for SLA/weekly checks",
+    )
+    SLA_CHECK_INTERVAL_MINUTES: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="How often (minutes) to scan incidents for SLA breaches",
+    )
+    WEEKLY_CHECK_HOUR_UTC: int = Field(
+        default=6,
+        ge=0,
+        le=23,
+        description="Hour (UTC) to run the daily weekly-task checker (self-skips except Wed/Fri)",
+    )
+
+    # Celery (durable task queue for notifications/email/webhooks).
+    # When no broker is configured, tasks run eagerly (inline) so local/dev/tests
+    # work without a worker; production should set CELERY_BROKER_URL.
+    CELERY_BROKER_URL: str | None = Field(
+        default=None,
+        description="Celery broker URL, e.g. redis://host:6379/0",
+    )
+    CELERY_RESULT_BACKEND: str | None = Field(
+        default=None,
+        description="Optional Celery result backend URL",
+    )
+    CELERY_TASK_ALWAYS_EAGER: bool = Field(
+        default=False,
+        description="Force tasks to run inline (auto-enabled when no broker is set)",
+    )
+
+    @property
+    def celery_eager(self) -> bool:
+        return self.CELERY_TASK_ALWAYS_EAGER or not self.CELERY_BROKER_URL
 
     # Presence backend (db | redis). If 'redis' and REDIS_URL is set, presence uses Redis for heartbeats.
     PRESENCE_BACKEND: str = Field(
@@ -98,11 +140,17 @@ class AppSettings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        """Parse allowed origins from comma-separated string."""
+        """Parse allowed origins from a comma-separated string.
+
+        Strips surrounding whitespace and accidental quotes. Returns an empty
+        list when unset — never a wildcard. A wildcard combined with
+        ``allow_credentials=True`` would let any site make credentialed
+        cross-origin requests, so we fail closed instead (see C2).
+        """
         return [
-            origin.strip().strip("\"'")
+            origin.strip().strip("\"'").rstrip("/")
             for origin in self.ALLOWED_ORIGINS.split(",")
-            if origin.strip().strip("\"'")
+            if origin.strip().strip("\"'").rstrip("/")
         ]
 
     @property
@@ -115,8 +163,42 @@ class AppSettings(BaseSettings):
             f"{self.DB_NAME}"
         )
 
-    class Config:
-        env_file = ".env"
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() == "production"
+
+    @model_validator(mode="after")
+    def _validate_required(self) -> "AppSettings":
+        """Fail fast on missing required config instead of starting broken (H6).
+
+        Database connection settings are always required. In production we also
+        require file-storage credentials and an explicit CORS allow-list, so a
+        misconfigured prod deploy refuses to boot rather than silently running
+        with no storage or a wide-open CORS policy.
+        """
+        missing: list[str] = []
+
+        for name in ("DB_HOST", "DB_USER", "DB_PASSWORD", "DB_NAME"):
+            if not str(getattr(self, name)).strip():
+                missing.append(name)
+
+        if self.is_production:
+            if not self.SUPABASE_URL.strip() or not self.SUPABASE_SERVICE_KEY.strip():
+                missing.append("SUPABASE_URL/SUPABASE_SERVICE_KEY")
+            if not self.allowed_origins:
+                missing.append("ALLOWED_ORIGINS")
+
+        if missing:
+            raise ValueError(
+                "Missing required settings: "
+                + ", ".join(missing)
+                + f" (ENVIRONMENT={self.ENVIRONMENT}). Set them in the environment "
+                "or .env before starting."
+            )
+
+        return self
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 app_settings = AppSettings()

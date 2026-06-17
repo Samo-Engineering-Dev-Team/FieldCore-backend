@@ -75,33 +75,33 @@ class Database:
 
         inspector = inspect(cls.connection)
 
-        user_columns = (
-            {column["name"] for column in inspector.get_columns("users")}
-            if inspector.has_table("users")
-            else set()
-        )
-        missing_user_columns = {
+        if not inspector.has_table("users"):
+            return
+
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        required_columns = {
             "must_change_password",
             "credentials_updated_at",
-        } - user_columns
-
-        technician_indexes = (
-            {index["name"] for index in inspector.get_indexes("technicians")}
-            if inspector.has_table("technicians")
-            else set()
-        )
-        needs_technician_unique_index_fix = (
-            "technicians_phone_key" in technician_indexes
-            or "technicians_id_no_key" in technician_indexes
-            or "uq_active_technicians_phone" not in technician_indexes
-            or "uq_active_technicians_id_no" not in technician_indexes
-        )
-
-        if not missing_user_columns and not needs_technician_unique_index_fix:
+            "sessions_revoked_at",
+        }
+        if required_columns.issubset(user_columns):
             return
 
         with cls.connection.begin() as connection:
-            if "must_change_password" in missing_user_columns:
+            if "sessions_revoked_at" not in user_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE users
+                        ADD COLUMN sessions_revoked_at TIMESTAMPTZ
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added users.sessions_revoked_at column"
+                )
+
+            if "must_change_password" not in user_columns:
                 connection.execute(
                     text(
                         """

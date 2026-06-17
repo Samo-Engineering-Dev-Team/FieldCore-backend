@@ -25,9 +25,19 @@ from app.exceptions.http import (
     InternalServerErrorException,
     NotFoundException,
 )
+from app.models import (
+    Notification,
+    Site,
+    Technician,
+    TechnicianCreate,
+    TechnicianLocationUpdate,
+    TechnicianResponse,
+    TechnicianUpdate,
+    User,
+)
 from app.models.auth import TokenData
 from app.services.authorization import assert_technician_self_or_roles, is_management
-from app.utils.enums import UserRole
+from app.services.notification import NotificationTemplates
 from app.utils.funcs import utcnow
 
 
@@ -508,11 +518,6 @@ class _TechnicianService:
         session: Session,
     ) -> dict:
         """Escalate a technician issue to management."""
-        from app.services.notification import (
-            _NotificationService,
-            NotificationTemplates,
-        )
-
         # Get technician details
         statement = select(Technician).where(
             Technician.id == technician_id, Technician.deleted_at.is_(None)
@@ -532,7 +537,6 @@ class _TechnicianService:
         notifications_created = []
 
         # Create notifications for all management users
-        notification_service = _NotificationService()
         template = NotificationTemplates.technician_escalation(
             technician_name=f"{technician.user.name} {technician.user.surname}",
             priority=priority,
@@ -540,15 +544,19 @@ class _TechnicianService:
         )
         for manager in management_users:
             try:
-                created = notification_service.create_notification_from_template(
+                notification = Notification(
                     user_id=manager.id,
-                    template=template,
-                    session=session,
+                    title=template.title,
+                    message=template.message,
+                    priority=template.priority,
                 )
-                if created:
-                    notifications_created.append(created.id)
+                session.add(notification)
+                session.commit()
+                session.refresh(notification)
+                notifications_created.append(notification.id)
             except Exception as e:
                 # Log error but continue with other notifications
+                session.rollback()
                 LOG.warning(
                     "Failed to create notification for {}: {}", manager.email, e
                 )
