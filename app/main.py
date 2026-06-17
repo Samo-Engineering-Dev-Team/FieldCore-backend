@@ -15,6 +15,7 @@ from app.api import router
 from app.core import app_settings
 from app.core.debug_middleware import DebugMiddleware
 from app.core.rate_limiter import limiter
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import Database
 
 # from app.graphql.schema import schema
@@ -105,6 +106,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(DebugMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 

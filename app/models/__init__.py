@@ -23,6 +23,8 @@ from .user import (
 )
 from .technician import (
     TechnicianCreate,
+    TechnicianDataIssue,
+    TechnicianDataIssuesResponse,
     Technician,
     TechnicianUpdate,
     TechnicianResponse,
@@ -134,6 +136,8 @@ __all__ = [
     "UserResponse",
     "Technician",
     "TechnicianCreate",
+    "TechnicianDataIssue",
+    "TechnicianDataIssuesResponse",
     "TechnicianUpdate",
     "TechnicianResponse",
     "TechnicianLocationUpdate",

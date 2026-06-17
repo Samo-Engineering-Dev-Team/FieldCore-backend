@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.exceptions.http import (
+    BadRequestException,
     ConflictException,
     ForbiddenException,
     InternalServerErrorException,
@@ -61,17 +62,21 @@ class _AccessRequestService:
         session: Session,
         current_user: TokenData,
     ) -> AccessRequestResponse:
+        technician_id = data.technician_id
         if current_user.role == UserRole.TECHNICIAN:
             technician_id = get_technician_id_for_user(current_user.user_id, session)
-            if data.technician_id != technician_id:
+            if data.technician_id is not None and data.technician_id != technician_id:
                 raise ForbiddenException(
                     "Technicians can only create access requests for themselves."
                 )
-            data = data.model_copy(update={"technician_id": technician_id})
         elif not is_management(current_user):
             raise ForbiddenException(
                 "Only technicians, NOC, managers, or admins can create access requests."
             )
+        elif technician_id is None:
+            raise BadRequestException("technician_id is required")
+
+        data = data.model_copy(update={"technician_id": technician_id})
 
         # Handle site
         statement = select(Site).where(

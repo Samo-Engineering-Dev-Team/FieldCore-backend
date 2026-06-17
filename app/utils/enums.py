@@ -5,7 +5,8 @@ class UserRole(StrEnum):
     """"""
 
     ADMIN = "admin"
-    SUPER_ADMIN = "super_admin"
+    # Legacy alias kept so existing SUPER_ADMIN database labels deserialize as admin.
+    SUPER_ADMIN = "admin"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"

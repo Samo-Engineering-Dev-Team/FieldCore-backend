@@ -49,7 +49,8 @@ class AccessRequest(BaseDB, BaseAccessRequest, table=True):
         self.touch()
 
 
-class AccessRequestCreate(BaseAccessRequest): ...
+class AccessRequestCreate(BaseAccessRequest):
+    technician_id: UUID | None = Field(default=None)
 
 
 class AccessRequestUpdate(SQLModel):

@@ -8,6 +8,23 @@ from sqlalchemy import text
 from app.database import Database
 
 
+def _pagination_params(
+    filters: Dict[str, Any], *, default_limit: int = 100, max_limit: int = 500
+) -> tuple[int, int]:
+    """Return bounded pagination values safe for SQL bind parameters."""
+    try:
+        limit = int(filters.get("limit", default_limit))
+    except (TypeError, ValueError):
+        limit = default_limit
+
+    try:
+        offset = int(filters.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    return max(1, min(limit, max_limit)), max(0, offset)
+
+
 class ManagementDashboardService:
     @staticmethod
     def get_executive_sla_overview() -> Dict[str, Any]:
@@ -62,9 +79,10 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        offset = filters.get("offset", 0)
-        query += f" ORDER BY sla_percentage_used DESC LIMIT {limit} OFFSET {offset}"
+        limit, offset = _pagination_params(filters)
+        query += " ORDER BY sla_percentage_used DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = limit
+        params["offset"] = offset
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -109,9 +127,10 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        offset = filters.get("offset", 0)
-        query += f" ORDER BY sla_percentage_used DESC LIMIT {limit} OFFSET {offset}"
+        limit, offset = _pagination_params(filters)
+        query += " ORDER BY sla_percentage_used DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = limit
+        params["offset"] = offset
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -147,9 +166,13 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        offset = filters.get("offset", 0)
-        query += f" ORDER BY risk_level DESC, sla_compliance_percentage ASC LIMIT {limit} OFFSET {offset}"
+        limit, offset = _pagination_params(filters)
+        query += (
+            " ORDER BY risk_level DESC, sla_compliance_percentage ASC "
+            "LIMIT :limit OFFSET :offset"
+        )
+        params["limit"] = limit
+        params["offset"] = offset
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -182,9 +205,13 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        offset = filters.get("offset", 0)
-        query += f" ORDER BY workload_level DESC, performance_level ASC LIMIT {limit} OFFSET {offset}"
+        limit, offset = _pagination_params(filters)
+        query += (
+            " ORDER BY workload_level DESC, performance_level ASC "
+            "LIMIT :limit OFFSET :offset"
+        )
+        params["limit"] = limit
+        params["offset"] = offset
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -220,9 +247,10 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        offset = filters.get("offset", 0)
-        query += f" ORDER BY sla_percentage_used DESC LIMIT {limit} OFFSET {offset}"
+        limit, offset = _pagination_params(filters)
+        query += " ORDER BY sla_percentage_used DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = limit
+        params["offset"] = offset
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -268,8 +296,9 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        query += f" ORDER BY date DESC LIMIT {limit}"
+        limit, _ = _pagination_params(filters)
+        query += " ORDER BY date DESC LIMIT :limit"
+        params["limit"] = limit
 
         with Database.session() as session:
             result = session.execute(text(query), params)
@@ -303,11 +332,10 @@ class ManagementDashboardService:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
 
-        limit = filters.get("limit", 100)
-        offset = filters.get("offset", 0)
-        query += (
-            f" ORDER BY alert_level DESC, created_at DESC LIMIT {limit} OFFSET {offset}"
-        )
+        limit, offset = _pagination_params(filters)
+        query += " ORDER BY alert_level DESC, created_at DESC LIMIT :limit OFFSET :offset"
+        params["limit"] = limit
+        params["offset"] = offset
 
         with Database.session() as session:
             result = session.execute(text(query), params)

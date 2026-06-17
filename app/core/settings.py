@@ -100,10 +100,10 @@ class AppSettings(BaseSettings):
     def allowed_origins(self) -> list[str]:
         """Parse allowed origins from comma-separated string."""
         return [
-            origin.strip()
+            origin.strip().strip("\"'")
             for origin in self.ALLOWED_ORIGINS.split(",")
-            if origin.strip()
-        ] or ["*"]
+            if origin.strip().strip("\"'")
+        ]
 
     @property
     def database_url(self) -> str:

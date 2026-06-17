@@ -31,9 +31,8 @@ class BaseTechnician(SQLModel, ABC):
         max_length=13,
         min_length=10,
         description="Phone number",
-        unique=True,
     )
-    id_no: str = Field(nullable=False, unique=True, description="ID/Passport number")
+    id_no: str = Field(nullable=False, description="ID/Passport number")
     user_id: UUID = Field(nullable=False, foreign_key="users.id")
 
 
@@ -155,3 +154,23 @@ class TechnicianResponse(BaseDB, BaseTechnician):
     distance_km: float | None = Field(
         default=None, description="Distance to target in km (for dispatch queries)"
     )
+
+
+class TechnicianDataIssue(SQLModel):
+    reason: str
+    user_id: UUID | None = None
+    technician_id: UUID | None = None
+    name: str = ""
+    surname: str = ""
+    email: str = ""
+    status: str | None = None
+
+
+class TechnicianDataIssuesResponse(SQLModel):
+    technician_users_without_profiles: List[TechnicianDataIssue] = Field(
+        default_factory=list
+    )
+    profiles_without_active_technician_users: List[TechnicianDataIssue] = Field(
+        default_factory=list
+    )
+    total: int = 0

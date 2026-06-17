@@ -1,0 +1,11 @@
+.env
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+node_modules
+ruvector.db
+agentdb.rvf
+agentdb.rvf.lock
+tests
+bruno

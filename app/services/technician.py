@@ -5,34 +5,29 @@ from uuid import UUID
 from fastapi import Depends
 from geoalchemy2.functions import ST_Distance, ST_DWithin, ST_MakePoint, ST_SetSRID
 from loguru import logger as LOG
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.models import (
-    Technician,
-    TechnicianCreate,
-    TechnicianUpdate,
-    TechnicianResponse,
-    TechnicianLocationUpdate,
-    User,
     Site,
+    Technician,
+    TechnicianDataIssue,
+    TechnicianDataIssuesResponse,
+    TechnicianCreate,
+    TechnicianLocationUpdate,
+    TechnicianResponse,
+    TechnicianUpdate,
+    User,
 )
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
     NotFoundException,
 )
-from app.models import (
-    Site,
-    Technician,
-    TechnicianCreate,
-    TechnicianLocationUpdate,
-    TechnicianResponse,
-    TechnicianUpdate,
-    User,
-)
 from app.models.auth import TokenData
 from app.services.authorization import assert_technician_self_or_roles, is_management
+from app.utils.enums import UserRole
 from app.utils.funcs import utcnow
 
 
@@ -72,9 +67,16 @@ class _TechnicianService:
         if not user:
             raise NotFoundException("user not found, cannot create technician.")
 
+        restored = self._restore_deleted_technician_if_available(
+            data, user, session
+        )
+        if restored:
+            return restored
+
         # Extract home location before creating
         tech_data = data.model_dump(exclude={"home_latitude", "home_longitude"})
         technician: Technician = Technician(**tech_data, user=user)
+        user.activate()
 
         # Set home base if provided
         if data.home_latitude is not None and data.home_longitude is not None:
@@ -92,6 +94,80 @@ class _TechnicianService:
             session.rollback()
             raise InternalServerErrorException(
                 f"Unexpected error creating technician: {e}"
+            )
+
+    def _restore_deleted_technician_if_available(
+        self,
+        data: TechnicianCreate,
+        user: User,
+        session: Session,
+    ) -> TechnicianResponse | None:
+        statement = (
+            select(Technician)
+            .join(User)
+            .where(
+                Technician.deleted_at.is_not(None),  # type: ignore
+                or_(
+                    Technician.user_id == user.id,
+                    User.deleted_at.is_not(None),  # type: ignore
+                ),
+                or_(
+                    Technician.user_id == user.id,
+                    Technician.phone == data.phone,
+                    Technician.id_no == data.id_no,
+                ),
+            )
+        )
+        candidates = session.exec(statement).all()
+        if not candidates:
+            return None
+
+        normalized_user_email = user.email.lower()
+        normalized_user_name = user.name.strip().lower()
+        normalized_user_surname = user.surname.strip().lower()
+
+        def score(candidate: Technician) -> int:
+            candidate_user = candidate.user
+            candidate_score = 0
+            if candidate.user_id == user.id:
+                candidate_score += 16
+            if candidate_user.email.lower() == normalized_user_email:
+                candidate_score += 8
+            if candidate_user.name.strip().lower() == normalized_user_name:
+                candidate_score += 4
+            if candidate_user.surname.strip().lower() == normalized_user_surname:
+                candidate_score += 2
+            if candidate.id_no == data.id_no:
+                candidate_score += 2
+            if candidate.phone == data.phone:
+                candidate_score += 1
+            return candidate_score
+
+        technician = max(candidates, key=score)
+        technician.user_id = user.id
+        technician.user = user
+        technician.phone = data.phone
+        technician.id_no = data.id_no
+        technician.deleted_at = None
+        technician.is_available = True
+        user.activate()
+
+        if data.home_latitude is not None and data.home_longitude is not None:
+            technician.set_home_base(data.home_latitude, data.home_longitude)
+        else:
+            technician.touch()
+
+        try:
+            session.commit()
+            session.refresh(technician)
+            return self.technician_to_response(technician)
+        except IntegrityError as e:
+            session.rollback()
+            raise ConflictException(f"Error restoring technician: {e.orig}")
+        except Exception as e:
+            session.rollback()
+            raise InternalServerErrorException(
+                f"Unexpected error restoring technician: {e}"
             )
 
     def read_technician(
@@ -117,7 +193,14 @@ class _TechnicianService:
         offset: int = 0,
         limit: int = 100,
     ) -> List[TechnicianResponse]:
-        statement = select(Technician).where(Technician.deleted_at.is_(None))  # type: ignore
+        statement = (
+            select(Technician)
+            .join(User)
+            .where(
+                Technician.deleted_at.is_(None),  # type: ignore
+                User.deleted_at.is_(None),  # type: ignore
+            )
+        )
         statement = statement.offset(offset).limit(limit)
         technicians = session.exec(statement).all()
         return [self.technician_to_response(technician) for technician in technicians]
@@ -173,6 +256,8 @@ class _TechnicianService:
     def delete_technician(self, technician_id: UUID, session: Session) -> None:
         technician = self._get_technician(technician_id, session)
         technician.soft_delete()
+        if technician.user:
+            technician.user.disable()
         session.commit()
 
     def read_me(self, user_id: UUID, session: Session) -> TechnicianResponse:
@@ -185,6 +270,69 @@ class _TechnicianService:
         if not technician:
             raise NotFoundException("technician profile not found for current user")
         return self.technician_to_response(technician)
+
+    def read_data_issues(self, session: Session) -> TechnicianDataIssuesResponse:
+        users_without_profiles = session.exec(
+            select(User).where(
+                User.role == UserRole.TECHNICIAN,
+                User.deleted_at.is_(None),  # type: ignore
+                ~User.id.in_(
+                    select(Technician.user_id).where(
+                        Technician.deleted_at.is_(None)  # type: ignore
+                    )
+                ),
+            )
+        ).all()
+
+        profiles_without_valid_users = session.exec(
+            select(Technician)
+            .join(User)
+            .where(
+                Technician.deleted_at.is_(None),  # type: ignore
+                or_(
+                    User.deleted_at.is_not(None),  # type: ignore
+                    User.role != UserRole.TECHNICIAN,
+                ),
+            )
+        ).all()
+
+        technician_user_issues = [
+            TechnicianDataIssue(
+                reason="Technician user has no active technician profile",
+                user_id=user.id,
+                name=user.name,
+                surname=user.surname,
+                email=user.email,
+                status=str(user.status),
+            )
+            for user in users_without_profiles
+        ]
+
+        profile_issues = []
+        for technician in profiles_without_valid_users:
+            user = technician.user
+            reason = (
+                "Technician profile is linked to a deleted user"
+                if user.deleted_at is not None
+                else f"Technician profile is linked to a {user.role} user"
+            )
+            profile_issues.append(
+                TechnicianDataIssue(
+                    reason=reason,
+                    user_id=user.id,
+                    technician_id=technician.id,
+                    name=user.name,
+                    surname=user.surname,
+                    email=user.email,
+                    status=str(user.status),
+                )
+            )
+
+        return TechnicianDataIssuesResponse(
+            technician_users_without_profiles=technician_user_issues,
+            profiles_without_active_technician_users=profile_issues,
+            total=len(technician_user_issues) + len(profile_issues),
+        )
 
     def _get_technician(self, technician_id: UUID, session: Session) -> Technician:
         statement = (

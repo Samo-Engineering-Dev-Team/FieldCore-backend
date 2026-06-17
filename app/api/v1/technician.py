@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.models import (
     TechnicianCreate,
+    TechnicianDataIssuesResponse,
     TechnicianUpdate,
     TechnicianResponse,
     TechnicianLocationUpdate,
@@ -166,6 +167,21 @@ def get_stale_locations(
 
 
 # ==================== STANDARD CRUD ====================
+
+
+@router.get(
+    "/data-issues", response_model=TechnicianDataIssuesResponse, status_code=200
+)
+def read_technician_data_issues(
+    service: TechnicianService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> TechnicianDataIssuesResponse:
+    """Find technician/user lifecycle issues that can break technician login flows."""
+    require_management(
+        current_user, "Only NOC, managers, or admins can view technician data issues."
+    )
+    return service.read_data_issues(session)
 
 
 @router.get("/me", response_model=TechnicianResponse, status_code=200)

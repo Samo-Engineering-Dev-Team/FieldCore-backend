@@ -75,18 +75,33 @@ class Database:
 
         inspector = inspect(cls.connection)
 
-        if not inspector.has_table("users"):
-            return
+        user_columns = (
+            {column["name"] for column in inspector.get_columns("users")}
+            if inspector.has_table("users")
+            else set()
+        )
+        missing_user_columns = {
+            "must_change_password",
+            "credentials_updated_at",
+        } - user_columns
 
-        user_columns = {column["name"] for column in inspector.get_columns("users")}
-        if (
-            "must_change_password" in user_columns
-            and "credentials_updated_at" in user_columns
-        ):
+        technician_indexes = (
+            {index["name"] for index in inspector.get_indexes("technicians")}
+            if inspector.has_table("technicians")
+            else set()
+        )
+        needs_technician_unique_index_fix = (
+            "technicians_phone_key" in technician_indexes
+            or "technicians_id_no_key" in technician_indexes
+            or "uq_active_technicians_phone" not in technician_indexes
+            or "uq_active_technicians_id_no" not in technician_indexes
+        )
+
+        if not missing_user_columns and not needs_technician_unique_index_fix:
             return
 
         with cls.connection.begin() as connection:
-            if "must_change_password" not in user_columns:
+            if "must_change_password" in missing_user_columns:
                 connection.execute(
                     text(
                         """
@@ -99,7 +114,7 @@ class Database:
                     "Applied schema compatibility fix: added users.must_change_password column"
                 )
 
-            if "credentials_updated_at" not in user_columns:
+            if "credentials_updated_at" in missing_user_columns:
                 connection.execute(
                     text(
                         """
@@ -135,6 +150,45 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added users.credentials_updated_at column"
+                )
+
+            if needs_technician_unique_index_fix:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE technicians
+                        DROP CONSTRAINT IF EXISTS technicians_phone_key
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE technicians
+                        DROP CONSTRAINT IF EXISTS technicians_id_no_key
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_active_technicians_phone
+                        ON technicians (phone)
+                        WHERE deleted_at IS NULL
+                        """
+                    )
+                )
+                connection.execute(
+                    text(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS uq_active_technicians_id_no
+                        ON technicians (id_no)
+                        WHERE deleted_at IS NULL
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: technician phone/id_no uniqueness is active-row scoped"
                 )
 
     @classmethod
