@@ -74,6 +74,31 @@ def test_read_report_rejects_technician_viewing_another_technician_report() -> N
         service.read_report(other_report.id, session, current_user)
 
 
+def test_partner_can_read_any_report() -> None:
+    service = _ReportService()
+    session = MagicMock()
+    current_user = _make_user(UserRole.PARTNER)
+    report = SimpleNamespace(id=uuid4(), technician_id=uuid4())
+    response = SimpleNamespace(id=report.id)
+
+    service._get_report = MagicMock(return_value=report)  # type: ignore[method-assign]
+    service.report_to_response = MagicMock(return_value=response)  # type: ignore[method-assign]
+
+    assert service.read_report(report.id, session, current_user) is response
+
+
+def test_partner_can_list_reports_without_technician_scope() -> None:
+    service = _ReportService()
+    session = CapturingSession()
+    current_user = _make_user(UserRole.PARTNER)
+
+    service._get_technician_by_user = MagicMock()  # type: ignore[method-assign]
+
+    service.read_reports(session=session, current_user=current_user)
+
+    service._get_technician_by_user.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("method_name", "args", "message"),
     [
@@ -126,5 +151,46 @@ def test_create_report_rejects_technician_creating_for_another_technician() -> N
 
     with pytest.raises(ForbiddenException, match="create reports for themselves"):
         service.create_report(payload, session, current_user)
+
+    session.add.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("method_name", "args", "message"),
+    [
+        ("create_report", tuple(), "create reports"),
+        ("update_report", (ReportUpdate(),), "update reports"),
+        ("delete_report", tuple(), "delete reports"),
+        ("start_report", tuple(), "start reports"),
+        ("complete_report", tuple(), "complete reports"),
+    ],
+)
+def test_partner_cannot_mutate_reports(
+    method_name: str,
+    args: tuple[object, ...],
+    message: str,
+) -> None:
+    service = _ReportService()
+    session = MagicMock()
+    current_user = _make_user(UserRole.PARTNER)
+    report_id = uuid4()
+    method = getattr(service, method_name)
+
+    if method_name == "create_report":
+        payload = ReportCreate(
+            report_type=ReportType.DIESEL,
+            data={"summary": "test"},
+            attachments=None,
+            service_provider="Samo",
+            seacom_ref="SEA-001",
+            technician_id=uuid4(),
+            task_id=uuid4(),
+        )
+        call_args = (payload, session, current_user)
+    else:
+        call_args = (report_id, *args, session, current_user)
+
+    with pytest.raises(ForbiddenException, match=message):
+        method(*call_args)
 
     session.add.assert_not_called()

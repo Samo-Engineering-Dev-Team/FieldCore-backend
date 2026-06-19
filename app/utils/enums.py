@@ -11,6 +11,7 @@ class UserRole(StrEnum):
     TECHNICIAN = "technician"
     NOC = "noc"
     SHEQ = "sheq"
+    PARTNER = "partner"
 
 
 class LinkTarget(StrEnum):
