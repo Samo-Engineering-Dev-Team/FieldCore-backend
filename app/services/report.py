@@ -25,6 +25,7 @@ from app.exceptions.http import (
     ForbiddenException,
 )
 from app.services.pdf import get_pdf_service
+from app.services.authorization import require_report_read, require_report_write
 from app.services.report_support import (
     create_noc_notifications,
     normalize_attachment_item,
@@ -98,6 +99,11 @@ class _ReportService:
         session: Session,
         action: str,
     ) -> None:
+        require_report_read(
+            current_user,
+            f"You do not have permission to {action} reports.",
+        )
+
         if current_user.role != UserRole.TECHNICIAN:
             return
 
@@ -111,6 +117,11 @@ class _ReportService:
         session: Session,
         current_user: TokenData,
     ) -> ReportResponse:
+        require_report_write(
+            current_user,
+            "You do not have permission to create reports.",
+        )
+
         if current_user.role == UserRole.TECHNICIAN:
             technician = self._get_technician_by_user(current_user.user_id, session)
             if data.technician_id != technician.id:
@@ -182,6 +193,11 @@ class _ReportService:
         offset: int = 0,
         limit: int = 100,
     ) -> List[ReportResponse]:
+        require_report_read(
+            current_user,
+            "You do not have permission to view reports.",
+        )
+
         statement = (
             select(Report)
             .options(
@@ -224,6 +240,11 @@ class _ReportService:
 
         for attempt in range(max_lock_retries + 1):
             try:
+                require_report_write(
+                    current_user,
+                    "You do not have permission to update reports.",
+                )
+
                 # Step 1: Fetch the report
                 report = self._get_report(report_id, session)
                 self._assert_can_access_report(report, current_user, session, "update")
@@ -370,6 +391,11 @@ class _ReportService:
         session: Session,
         current_user: TokenData,
     ) -> None:
+        require_report_write(
+            current_user,
+            "You do not have permission to delete reports.",
+        )
+
         report = self._get_report(report_id, session)
         self._assert_can_access_report(report, current_user, session, "delete")
         report.soft_delete()
@@ -382,6 +408,11 @@ class _ReportService:
         current_user: TokenData,
     ) -> ReportResponse:
         """"""
+        require_report_write(
+            current_user,
+            "You do not have permission to start reports.",
+        )
+
         report = self._get_report(report_id, session)
         self._assert_can_access_report(report, current_user, session, "start")
         report.start()
@@ -403,6 +434,11 @@ class _ReportService:
         current_user: TokenData,
     ) -> ReportResponse:
         """"""
+        require_report_write(
+            current_user,
+            "You do not have permission to complete reports.",
+        )
+
         report = self._get_report(report_id, session)
         self._assert_can_access_report(report, current_user, session, "complete")
         report.complete()
