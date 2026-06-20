@@ -48,3 +48,14 @@ def test_export_report_pdf_returns_pdf_for_manager() -> None:
     assert response.media_type == "application/pdf"
     assert response.headers["Content-Length"] == str(len(response.body))
     assert response.headers["Content-Disposition"] == f"attachment; filename=report_{report_id}.pdf"
+
+
+def test_export_report_pdf_returns_pdf_for_partner() -> None:
+    report_id = uuid4()
+    service = StubReportService()
+
+    response = export_report_pdf(report_id, service, object(), make_user(UserRole.PARTNER))
+
+    assert service.called is True
+    assert response.body == b"%PDF-1.4 test"
+    assert response.media_type == "application/pdf"
