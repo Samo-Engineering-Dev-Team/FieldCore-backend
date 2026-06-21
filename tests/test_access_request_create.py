@@ -3,10 +3,10 @@ from uuid import uuid4
 import pytest
 
 from app.exceptions.http import BadRequestException
-from app.models import AccessRequestCreate, Site, Technician, User
+from app.models import AccessRequestCreate
 from app.models.auth import TokenData
 from app.services.access_request import _AccessRequestService
-from app.utils.enums import Region, UserRole
+from app.utils.enums import UserRole
 from app.utils.funcs import utcnow
 
 
@@ -66,56 +66,22 @@ def make_payload(site_id) -> AccessRequestCreate:
     )
 
 
-def test_technician_can_create_access_request_without_payload_technician_id(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_access_request_creation_is_deprecated() -> None:
     service = _AccessRequestService()
     site_id = uuid4()
-    user_id = uuid4()
-    technician_id = uuid4()
 
-    user = User(
-        id=user_id,
-        name="Tech",
-        surname="User",
-        email="tech@example.com",
-        role=UserRole.TECHNICIAN,
-        password_hash="hash",
-    )
-    technician = Technician(
-        id=technician_id,
-        phone="0123456789",
-        id_no="12345",
-        user_id=user_id,
-    )
-    technician.user = user
-    site = Site(id=site_id, name="Test Site", region=Region.GAUTENG)
-    session = SequencedSession(
-        QueryResult(first=site),
-        QueryResult(first=technician),
-        QueryResult(all=[]),
-    )
-
-    monkeypatch.setattr(
-        "app.services.access_request.get_technician_id_for_user",
-        lambda user_id, session: technician_id,
-    )
-
-    response = service.create_access_request(
-        make_payload(site_id),
-        session,
-        make_user(UserRole.TECHNICIAN, user_id=user_id),
-    )
-
-    assert session.added[0].technician_id == technician_id
-    assert response.technician_name == "Tech User"
-    assert response.site_name == "Test Site"
+    with pytest.raises(BadRequestException, match="Access requests are deprecated"):
+        service.create_access_request(
+            make_payload(site_id),
+            SequencedSession(),
+            make_user(UserRole.TECHNICIAN),
+        )
 
 
 def test_management_create_access_request_requires_technician_id() -> None:
     service = _AccessRequestService()
 
-    with pytest.raises(BadRequestException, match="technician_id is required"):
+    with pytest.raises(BadRequestException, match="Access requests are deprecated"):
         service.create_access_request(
             make_payload(uuid4()),
             SequencedSession(),

@@ -20,6 +20,7 @@ from .base import BaseDB
 class BaseRoutePatrol(SQLModel):
     technician_id: UUID = Field(foreign_key="technicians.id", nullable=False)
     site_id: UUID | None = Field(default=None, foreign_key="sites.id")
+    report_id: UUID | None = Field(default=None, foreign_key="reports.id")
     route_segment: str = Field(max_length=200, nullable=False)
     patrol_date: datetime = Field(sa_type=DateTime(timezone=True), nullable=False)  # type: ignore
     weather_conditions: str | None = Field(default=None, max_length=100)

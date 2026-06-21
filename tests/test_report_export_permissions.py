@@ -4,7 +4,6 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.report import export_report_pdf
-from app.exceptions.http import ForbiddenException
 from app.models.auth import TokenData
 from app.utils.enums import UserRole
 
@@ -12,9 +11,11 @@ from app.utils.enums import UserRole
 class StubReportService:
     def __init__(self) -> None:
         self.called = False
+        self.current_user = None
 
-    def export_report_pdf(self, report_id, session):
+    def export_report_pdf(self, report_id, session, current_user):
         self.called = True
+        self.current_user = current_user
         return BytesIO(b"%PDF-1.4 test"), f"report_{report_id}.pdf"
 
 
@@ -28,13 +29,16 @@ def make_user(role: UserRole) -> TokenData:
     )
 
 
-def test_export_report_pdf_rejects_technician_with_forbidden() -> None:
+def test_export_report_pdf_allows_technician_through_service_ownership_check() -> None:
+    report_id = uuid4()
     service = StubReportService()
+    user = make_user(UserRole.TECHNICIAN)
 
-    with pytest.raises(ForbiddenException):
-        export_report_pdf(uuid4(), service, object(), make_user(UserRole.TECHNICIAN))
+    response = export_report_pdf(report_id, service, object(), user)
 
-    assert service.called is False
+    assert service.called is True
+    assert service.current_user is user
+    assert response.body == b"%PDF-1.4 test"
 
 
 def test_export_report_pdf_returns_pdf_for_manager() -> None:

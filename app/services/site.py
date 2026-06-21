@@ -39,6 +39,7 @@ class _SiteService:
             deleted_at=site.deleted_at,
             name=site.name,
             region=site.region,
+            site_type=site.site_type,
             address=site.address,
             latitude=coords[0] if coords else None,
             longitude=coords[1] if coords else None,

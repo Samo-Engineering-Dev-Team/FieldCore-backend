@@ -21,6 +21,7 @@ from .system_settings import router as system_settings_router
 from .incident_report import router as incident_report_router
 from .maintenance_schedule import router as maintenance_schedule_router
 from .route_patrol import router as route_patrol_router
+from .field_work import router as field_work_router
 from .form_template import router as form_template_router
 from .form_submission import router as form_submission_router
 from app.services.auth import get_current_user
@@ -59,6 +60,7 @@ router.include_router(
     maintenance_schedule_router, dependencies=[Depends(get_current_user)]
 )
 router.include_router(route_patrol_router, dependencies=[Depends(get_current_user)])
+router.include_router(field_work_router, dependencies=[Depends(get_current_user)])
 router.include_router(form_template_router, dependencies=[Depends(get_current_user)])
 router.include_router(form_submission_router, dependencies=[Depends(get_current_user)])
 if _allow_dev:

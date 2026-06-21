@@ -45,6 +45,30 @@ class MaintenanceSchedule(BaseDB, BaseMaintenanceSchedule, table=True):
     __tablename__ = "maintenance_schedules"  # type: ignore
 
 
+class BaseMaintenanceScheduleCoverage(SQLModel):
+    schedule_id: UUID = Field(foreign_key="maintenance_schedules.id", nullable=False)
+    week_start_at: datetime = Field(sa_type=DateTime(timezone=True), nullable=False)  # type: ignore
+    week_end_at: datetime = Field(sa_type=DateTime(timezone=True), nullable=False)  # type: ignore
+    original_technician_id: UUID | None = Field(
+        default=None, foreign_key="technicians.id"
+    )
+    assigned_technician_id: UUID = Field(foreign_key="technicians.id", nullable=False)
+    assigned_by_user_id: UUID = Field(foreign_key="users.id", nullable=False)
+    reason: str | None = Field(default=None, max_length=2000)
+    cancelled_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )  # type: ignore
+    completed_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )  # type: ignore
+
+
+class MaintenanceScheduleCoverage(
+    BaseDB, BaseMaintenanceScheduleCoverage, table=True
+):
+    __tablename__ = "maintenance_schedule_coverages"  # type: ignore
+
+
 class MaintenanceScheduleCreate(BaseMaintenanceSchedule): ...
 
 
@@ -64,3 +88,25 @@ class MaintenanceScheduleResponse(BaseDB, BaseMaintenanceSchedule):
     technician_fullname: str = Field(default="")
     is_overdue: bool = Field(default=False)
     completed_this_week: bool = Field(default=False)
+    effective_technician_id: UUID | None = Field(default=None)
+    effective_technician_fullname: str = Field(default="")
+    original_technician_id: UUID | None = Field(default=None)
+    original_technician_fullname: str = Field(default="")
+    coverage_id: UUID | None = Field(default=None)
+    coverage_reason: str | None = Field(default=None)
+    coverage_week_start_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )  # type: ignore
+    coverage_completed_at: datetime | None = Field(
+        default=None, sa_type=DateTime(timezone=True)
+    )  # type: ignore
+
+
+class MaintenanceScheduleCoverageCreate(SQLModel):
+    assigned_technician_id: UUID
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class MaintenanceScheduleCoverageResponse(BaseDB, BaseMaintenanceScheduleCoverage):
+    assigned_technician_fullname: str = Field(default="")
+    original_technician_fullname: str = Field(default="")

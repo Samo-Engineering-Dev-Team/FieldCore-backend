@@ -22,6 +22,7 @@ REPORT_EXPORT_ROLES = (
     UserRole.ADMIN,
     UserRole.MANAGER,
     UserRole.NOC,
+    UserRole.TECHNICIAN,
     UserRole.PARTNER,
 )
 REPORT_WRITE_ROLES = (

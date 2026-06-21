@@ -58,6 +58,13 @@ class Region(StrEnum):
     NORTH_WEST = "north-west"
 
 
+class SiteType(StrEnum):
+    TASK_SITE = "task_site"
+    ROUTINE_DRIVE = "routine_drive"
+    REPEATER = "repeater"
+    POP = "pop"
+
+
 class TaskStatus(StrEnum):
     PENDING = "pending"
     STARTED = "started"
