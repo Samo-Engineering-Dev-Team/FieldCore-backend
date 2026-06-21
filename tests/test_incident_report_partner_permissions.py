@@ -77,7 +77,7 @@ def test_partner_can_export_incident_report_pdf(monkeypatch: pytest.MonkeyPatch)
     [
         ("create_incident_report", tuple(), "create incident reports"),
         ("update_incident_report", (IncidentReportUpdate(),), "update incident reports"),
-        ("upload_report_photo", (b"image", "photo.jpg", "image/jpeg"), "upload photos"),
+        ("upload_report_photo", (b"image", "photo.jpg", "image/jpeg", None), "upload photos"),
         ("delete_incident_report", tuple(), "Only admins"),
     ],
 )

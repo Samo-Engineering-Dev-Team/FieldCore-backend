@@ -7,6 +7,8 @@ from typing import List
 from uuid import UUID
 
 from app.models.maintenance_schedule import (
+    MaintenanceScheduleCoverageCreate,
+    MaintenanceScheduleCoverageResponse,
     MaintenanceScheduleCreate,
     MaintenanceScheduleUpdate,
     MaintenanceScheduleResponse,
@@ -85,6 +87,34 @@ def delete_schedule(
     current_user: CurrentUser,
 ) -> None:
     service.delete(schedule_id, session)
+
+
+@router.post(
+    "/{schedule_id}/coverages",
+    response_model=MaintenanceScheduleCoverageResponse,
+    status_code=201,
+)
+def create_schedule_coverage(
+    schedule_id: UUID,
+    payload: MaintenanceScheduleCoverageCreate,
+    service: MaintenanceScheduleService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> MaintenanceScheduleCoverageResponse:
+    """Reassign this schedule occurrence for the current ISO week."""
+    return service.create_coverage(schedule_id, payload, session, current_user)
+
+
+@router.delete("/{schedule_id}/coverages/{coverage_id}", status_code=204)
+def cancel_schedule_coverage(
+    schedule_id: UUID,
+    coverage_id: UUID,
+    service: MaintenanceScheduleService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> None:
+    """Cancel an active weekly schedule reassignment."""
+    service.cancel_coverage(schedule_id, coverage_id, session, current_user)
 
 
 @router.post("/check-weekly", status_code=200)

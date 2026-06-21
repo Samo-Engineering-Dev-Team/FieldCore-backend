@@ -20,6 +20,7 @@ from .maintenance_schedule import (
     get_maintenance_schedule_service,
 )
 from .route_patrol import RoutePatrolService, get_route_patrol_service
+from .field_work import FieldWorkService, get_field_work_service
 from .pdf import PDFService, get_pdf_service
 from .system_settings import SystemSettingsService, get_system_settings_service
 from .form_template import FormTemplateService, get_form_template_service
@@ -55,6 +56,8 @@ __all__ = [
     "get_maintenance_schedule_service",
     "RoutePatrolService",
     "get_route_patrol_service",
+    "FieldWorkService",
+    "get_field_work_service",
     "FormTemplateService",
     "get_form_template_service",
     "FormSubmissionService",

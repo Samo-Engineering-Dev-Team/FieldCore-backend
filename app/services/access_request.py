@@ -62,6 +62,10 @@ class _AccessRequestService:
         self, data: AccessRequestCreate, session: Session, current_user: TokenData
     ) -> AccessRequestResponse:
         """"""
+        raise BadRequestException(
+            "Access requests are deprecated. Technicians must request access directly from the client and submit field work reports in the app."
+        )
+
         technician_id = data.technician_id
         if current_user.role == UserRole.TECHNICIAN:
             technician_id = get_technician_id_for_user(current_user.user_id, session)
@@ -308,6 +312,10 @@ class _AccessRequestService:
         current_user: TokenData,
     ) -> AccessRequestResponse:
         """Approve an access request, create (or update) its work task, and notify the technician."""
+        raise BadRequestException(
+            "Access request approvals are deprecated. Technicians now request access directly from the client and submit field work reports in the app."
+        )
+
         from app.models import Task
 
         access_request = self._get_access_request(access_request_id, session)

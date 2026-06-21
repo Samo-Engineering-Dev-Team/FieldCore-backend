@@ -17,6 +17,8 @@ from app.models.route_patrol import (
 )
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.field_work import create_completed_field_report
+from app.utils.enums import ReportType
 
 
 def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
@@ -57,11 +59,44 @@ class _RoutePatrolService:
 
         patrol = RoutePatrol.model_validate(data)
         session.add(patrol)
+
+        if data.site_id:
+            from app.models import Site, Technician
+
+            technician = session.get(Technician, data.technician_id)
+            site = session.get(Site, data.site_id)
+            if technician and site:
+                photos = data.photos if isinstance(data.photos, dict) else {}
+                seacom_ref = str(photos.get("noc_ticket") or "N/A").strip() or "N/A"
+                report_data = {
+                    "source": "route_patrol",
+                    "route_segment": data.route_segment,
+                    "patrol_date": data.patrol_date.isoformat(),
+                    "weather_conditions": data.weather_conditions,
+                    "anomalies_found": data.anomalies_found,
+                    "anomaly_details": data.anomaly_details,
+                    "photos": photos,
+                }
+                _, report = create_completed_field_report(
+                    session=session,
+                    technician=technician,
+                    site=site,
+                    report_type=ReportType.ROUTINE_DRIVE,
+                    seacom_ref=seacom_ref,
+                    performed_at=data.patrol_date,
+                    data=report_data,
+                    attachments={"files": photos.get("all_photos", [])}
+                    if isinstance(photos.get("all_photos"), list)
+                    else None,
+                )
+                patrol.report_id = report.id
+
         session.commit()
         session.refresh(patrol)
 
         # Auto-mark the technician's routine_drive maintenance schedule as done
-        self._mark_routine_drive_done(data.technician_id, session)
+        if not patrol.report_id:
+            self._mark_routine_drive_done(data.technician_id, session)
 
         return _enrich(patrol, session)
 
