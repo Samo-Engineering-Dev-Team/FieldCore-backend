@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import Annotated, List
+from typing import Annotated, Any, List
 from uuid import UUID
 
 from fastapi import Depends
@@ -348,6 +348,7 @@ class _IncidentReportService:
         file_content: bytes,
         filename: str,
         content_type: str,
+        metadata: dict[str, Any] | None,
         session: Session,
         current_user: TokenData,
     ) -> IncidentReportResponse:
@@ -383,6 +384,25 @@ class _IncidentReportService:
             content_type=content_type,
             size=len(file_content),
         )
+        if metadata:
+            photo_entry.update(
+                {
+                    key: value
+                    for key, value in metadata.items()
+                    if key
+                    in {
+                        "lat",
+                        "lon",
+                        "latitude",
+                        "longitude",
+                        "altitude",
+                        "speed",
+                        "address",
+                        "captured_at",
+                        "index_number",
+                    }
+                }
+            )
 
         current_attachments: dict = report.attachments or {}
         photos: list = list(current_attachments.get("photos", []))
