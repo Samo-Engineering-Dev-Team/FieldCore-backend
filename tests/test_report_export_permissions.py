@@ -1,8 +1,6 @@
 from io import BytesIO
 from uuid import uuid4
 
-import pytest
-
 from app.api.v1.report import export_report_pdf
 from app.models.auth import TokenData
 from app.utils.enums import UserRole
