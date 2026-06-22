@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from typing import Annotated
 
+from app.core import clear_session_cookies, set_performance_hint_cookies, set_session_cookies
 from app.models import (
     LoginForm,
     PasskeyAuthenticationVerification,
@@ -11,6 +12,7 @@ from app.models import (
     PasskeyRegistrationVerification,
     PasswordChange,
     PasswordResetCompletion,
+    PerformanceHintCookies,
     Token,
     TokenData,
 )
@@ -26,6 +28,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @limiter.limit("5/minute")
 def login(
     request: Request,
+    response: Response,
     service: AuthService,
     session: SessionDep,
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -35,12 +38,14 @@ def login(
         "X-Forwarded-For", request.client.host if request.client else None
     )
     ua = request.headers.get("User-Agent")
-    return service.authenticate(
+    token = service.authenticate(
         LoginForm(email=form.username, password=form.password),
         session,
         ip_address=ip,
         user_agent=ua,
     )
+    set_session_cookies(response, token)
+    return token
 
 
 @router.post(
@@ -60,6 +65,7 @@ def start_passkey_login(
 @limiter.limit("10/minute")
 def verify_passkey_login(
     request: Request,
+    response: Response,
     payload: PasskeyAuthenticationVerification,
     service: AuthService,
     session: SessionDep,
@@ -69,12 +75,14 @@ def verify_passkey_login(
         "X-Forwarded-For", request.client.host if request.client else None
     )
     ua = request.headers.get("User-Agent")
-    return service.finish_passkey_authentication(
+    token = service.finish_passkey_authentication(
         payload,
         session,
         ip_address=ip,
         user_agent=ua,
     )
+    set_session_cookies(response, token)
+    return token
 
 
 @router.post("/change-password", status_code=200)
@@ -91,12 +99,15 @@ def change_password(
 @router.post("/complete-password-reset", response_model=Token, status_code=200)
 def complete_password_reset(
     payload: PasswordResetCompletion,
+    response: Response,
     current_user: CurrentUser,
     service: AuthService,
     session: SessionDep,
 ) -> Token:
     """Replace temporary password with a final password after admin reset."""
-    return service.complete_password_reset(current_user.user_id, payload, session)
+    token = service.complete_password_reset(current_user.user_id, payload, session)
+    set_session_cookies(response, token)
+    return token
 
 
 @router.get(
@@ -156,15 +167,37 @@ def delete_passkey(
 
 @router.post("/logout", status_code=200)
 def logout(
+    response: Response,
     current_user: CurrentUser,
     service: AuthService,
     session: SessionDep,
 ) -> dict:
     """Revoke all of the current user's tokens (global logout across devices)."""
-    return service.logout(current_user.user_id, session)
+    result = service.logout(current_user.user_id, session)
+    clear_session_cookies(response)
+    return result
 
 
 @router.get("/me", response_model=TokenData, status_code=200)
 def get_current_user(user: CurrentUser) -> TokenData:
     """"""
     return user
+
+
+@router.put("/performance-hints", status_code=200)
+def update_performance_hints(
+    payload: PerformanceHintCookies,
+    response: Response,
+    current_user: CurrentUser,
+) -> dict:
+    """Set tiny UI hint cookies so the frontend can restore common views quickly."""
+    set_performance_hint_cookies(
+        response,
+        {
+            "dashboard_view": payload.dashboard_view,
+            "dashboard_region": payload.dashboard_region,
+            "dashboard_date_range": payload.dashboard_date_range,
+            "table_density": payload.table_density,
+        },
+    )
+    return {"message": "Performance hints saved", "user_id": str(current_user.user_id)}

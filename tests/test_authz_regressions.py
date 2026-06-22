@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -6,7 +7,7 @@ import pytest
 
 from app.api.v1.user import read_user
 from app.exceptions.http import BadRequestException, ForbiddenException
-from app.models import Technician, TechnicianCreate, User
+from app.models import RoutePatrol, RoutePatrolUpdate, Technician, TechnicianCreate, User
 from app.models.auth import TokenData
 from app.services.access_request import _AccessRequestService
 from app.services.incident import _IncidentService
@@ -174,6 +175,51 @@ def test_route_patrol_list_scopes_technician_to_own_patrols(
     compiled = session.statement.compile()
 
     assert own_technician_id in compiled.params.values()
+
+
+def test_route_patrol_update_saves_core_fields_and_clears_optional_values() -> None:
+    service = _RoutePatrolService()
+    patrol = RoutePatrol(
+        technician_id=uuid4(),
+        site_id=uuid4(),
+        route_segment="Old Route",
+        patrol_date=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        weather_conditions="Cloudy",
+        anomaly_details="Old note",
+        photos={"old": True},
+    )
+    new_site_id = uuid4()
+    new_patrol_date = datetime(2026, 6, 22, tzinfo=timezone.utc)
+
+    session = MagicMock()
+
+    def get_model(model, pk):
+        if model is RoutePatrol:
+            return patrol
+        return None
+
+    session.get.side_effect = get_model
+
+    response = service.update(
+        patrol.id,
+        RoutePatrolUpdate(
+            site_id=new_site_id,
+            route_segment="New Route",
+            patrol_date=new_patrol_date,
+            weather_conditions=None,
+            anomaly_details=None,
+            photos=None,
+        ),
+        session,
+    )
+
+    assert response.site_id == new_site_id
+    assert response.route_segment == "New Route"
+    assert response.patrol_date == new_patrol_date
+    assert response.weather_conditions is None
+    assert response.anomaly_details is None
+    assert response.photos is None
+    session.commit.assert_called_once()
 
 
 def test_read_user_rejects_non_management_user_accessing_other_user() -> None:

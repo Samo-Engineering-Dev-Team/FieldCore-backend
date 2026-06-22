@@ -27,6 +27,16 @@ class AppSettings(BaseSettings):
     JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = ""
+    AUTH_COOKIE_NAME: str = Field(default="fieldcore_access_token")
+    REFRESH_COOKIE_NAME: str = Field(default="fieldcore_refresh_token")
+    AUTH_COOKIE_DOMAIN: str | None = Field(default=None)
+    AUTH_COOKIE_SECURE: bool = Field(
+        default=False,
+        description="Force auth/performance cookies to use Secure outside production",
+    )
+    AUTH_COOKIE_SAMESITE: str = Field(default="lax")
+    SESSION_SLIDING_REFRESH_MINUTES: int = Field(default=15, ge=1, le=120)
+    PERFORMANCE_COOKIE_MAX_AGE_DAYS: int = Field(default=30, ge=1, le=365)
     PASSKEY_RP_NAME: str = Field(default="FieldCore")
     PASSKEY_RP_ID: str = Field(default="")
     PASSKEY_ALLOWED_ORIGINS: str = Field(default="")
@@ -137,6 +147,14 @@ class AppSettings(BaseSettings):
                 "Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
             )
         return v
+
+    @field_validator("AUTH_COOKIE_SAMESITE", mode="before")
+    @classmethod
+    def validate_auth_cookie_samesite(cls, v: str) -> str:
+        normalized = str(v or "").strip().lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("AUTH_COOKIE_SAMESITE must be one of: lax, strict, none")
+        return normalized
 
     @property
     def allowed_origins(self) -> list[str]:

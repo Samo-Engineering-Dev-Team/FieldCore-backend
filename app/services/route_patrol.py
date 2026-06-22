@@ -8,7 +8,7 @@ from typing import Annotated
 from fastapi import Depends
 from sqlmodel import Session, select
 
-from app.exceptions.http import ForbiddenException
+from app.exceptions.http import BadRequestException, ForbiddenException
 from app.models.route_patrol import (
     RoutePatrol,
     RoutePatrolCreate,
@@ -208,7 +208,11 @@ class _RoutePatrolService:
             from app.exceptions.http import NotFoundException
 
             raise NotFoundException("route patrol not found")
-        for k, v in data.model_dump(exclude_none=True).items():
+        non_nullable_fields = {"technician_id", "route_segment", "patrol_date"}
+        update_data = data.model_dump(exclude_unset=True)
+        for k, v in update_data.items():
+            if k in non_nullable_fields and v is None:
+                raise BadRequestException(f"{k} cannot be null")
             setattr(p, k, v)
         p.touch()
         session.commit()

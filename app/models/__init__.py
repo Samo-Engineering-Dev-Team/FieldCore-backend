@@ -11,6 +11,7 @@ from .auth import (
     PasskeyRegistrationVerification,
     PasskeyAuthenticationVerification,
     PasskeyMutationResponse,
+    PerformanceHintCookies,
 )
 from .passkey import PasskeyCredential, PasskeyChallenge
 from .user import (
@@ -130,6 +131,7 @@ __all__ = [
     "PasskeyRegistrationVerification",
     "PasskeyAuthenticationVerification",
     "PasskeyMutationResponse",
+    "PerformanceHintCookies",
     "PasskeyCredential",
     "PasskeyChallenge",
     "User",
