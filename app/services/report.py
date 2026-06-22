@@ -25,7 +25,11 @@ from app.exceptions.http import (
     ForbiddenException,
 )
 from app.services.pdf import get_pdf_service
-from app.services.authorization import require_report_read, require_report_write
+from app.services.authorization import (
+    require_report_export,
+    require_report_read,
+    require_report_write,
+)
 from app.services.maintenance_schedule import get_maintenance_schedule_service
 from app.services.report_support import (
     create_noc_notifications,
