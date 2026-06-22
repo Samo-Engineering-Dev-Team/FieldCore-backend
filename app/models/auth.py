@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from uuid import uuid4, UUID
@@ -205,3 +205,32 @@ class PasskeyMutationResponse(BaseModel):
     """"""
 
     message: str
+
+
+class PerformanceHintCookies(BaseModel):
+    """Small client-side hints that help the UI restore fast default state."""
+
+    dashboard_view: str | None = Field(default=None, max_length=40)
+    dashboard_region: str | None = Field(default=None, max_length=80)
+    dashboard_date_range: str | None = Field(default=None, max_length=40)
+    table_density: Literal["compact", "comfortable", "spacious"] | None = None
+
+    @field_validator(
+        "dashboard_view",
+        "dashboard_region",
+        "dashboard_date_range",
+        mode="before",
+    )
+    @classmethod
+    def clean_hint_value(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        cleaned = str(value).strip()
+        if not cleaned:
+            return None
+
+        if any(char in cleaned for char in (";", "\r", "\n")):
+            raise ValueError("Cookie hint values cannot contain control characters")
+
+        return cleaned

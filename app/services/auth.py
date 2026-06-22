@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import Depends, Request
+from fastapi import Cookie, Depends, Request, Response
 from fastapi.security import OAuth2PasswordBearer
 from loguru import logger as LOG
 from sqlmodel import Session, select, text
@@ -25,7 +25,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from app.core import SecurityUtils, app_settings
+from app.core import SecurityUtils, app_settings, set_auth_cookie
 from app.database import get_session
 from app.exceptions.http import (
     BadRequestException,
@@ -52,7 +52,7 @@ from app.models import (
 from app.utils.enums import PasskeyCeremonyType, UserRole
 from app.utils.funcs import utcnow
 
-oauth = OAuth2PasswordBearer("/api/v1/auth/login")
+oauth = OAuth2PasswordBearer("/api/v1/auth/login", auto_error=False)
 PASSKEY_ELIGIBLE_ROLES = {
     UserRole.SUPER_ADMIN,
     UserRole.ADMIN,
@@ -760,14 +760,9 @@ def get_auth_service() -> _AuthService:
     return _AuthService()
 
 
-def get_current_user(
-    token: str = Depends(oauth), session: Session = Depends(get_session)
-) -> TokenData:
-    """Decode access token, then validate it against live user credentials."""
-    current_user = SecurityUtils.decode_token(token, "access")
-
+def _load_active_user(user_id: UUID, session: Session) -> User:
     user = session.exec(
-        select(User).where(User.id == current_user.user_id, User.deleted_at.is_(None))  # type: ignore
+        select(User).where(User.id == user_id, User.deleted_at.is_(None))  # type: ignore
     ).first()
 
     if not user:
@@ -778,6 +773,10 @@ def get_current_user(
             "This account has been deactivated. Please contact your admin."
         )
 
+    return user
+
+
+def _ensure_token_not_revoked(current_user: TokenData, user: User) -> None:
     if (
         current_user.iat is not None
         and user.credentials_updated_at is not None
@@ -792,16 +791,84 @@ def get_current_user(
     ):
         raise UnauthorizedException("Session ended. Please log in again.")
 
+
+def _token_response_from_user(user: User, token_data: TokenData) -> TokenData:
     return TokenData(
         user_id=user.id,
         role=user.role,
         name=user.name,
         surname=user.surname,
         must_change_password=user.must_change_password,
-        exp=current_user.exp,
-        token_type=current_user.token_type,
-        iat=current_user.iat,
+        exp=token_data.exp,
+        token_type=token_data.token_type,
+        iat=token_data.iat,
     )
+
+
+def _should_refresh_access_cookie(current_user: TokenData) -> bool:
+    if current_user.exp is None:
+        return False
+
+    refresh_at = utcnow() + timedelta(
+        minutes=app_settings.SESSION_SLIDING_REFRESH_MINUTES
+    )
+    return current_user.exp <= refresh_at
+
+
+def _refresh_access_cookie(response: Response, user: User) -> TokenData:
+    token = SecurityUtils.create_token(
+        user.id,
+        user.role,
+        user.name,
+        user.surname,
+        user.must_change_password,
+    )
+    set_auth_cookie(response, token)
+    response.headers["X-FieldCore-Session-Refreshed"] = "true"
+    return SecurityUtils.verify_access_token(token.access_token)
+
+
+def get_current_user(
+    response: Response,
+    token: str | None = Depends(oauth),
+    session: Session = Depends(get_session),
+    cookie_token: str | None = Cookie(
+        default=None, alias=app_settings.AUTH_COOKIE_NAME
+    ),
+    refresh_cookie: str | None = Cookie(
+        default=None, alias=app_settings.REFRESH_COOKIE_NAME
+    ),
+) -> TokenData:
+    """Decode access token, then renew active cookie sessions when needed."""
+    token_value = token or cookie_token
+    access_error: UnauthorizedException | None = None
+
+    if token_value:
+        try:
+            current_user = SecurityUtils.decode_token(token_value, "access")
+        except UnauthorizedException as exc:
+            access_error = exc
+        else:
+            user = _load_active_user(current_user.user_id, session)
+            _ensure_token_not_revoked(current_user, user)
+
+            if _should_refresh_access_cookie(current_user):
+                current_user = _refresh_access_cookie(response, user)
+
+            return _token_response_from_user(user, current_user)
+
+    if not refresh_cookie:
+        if access_error is not None:
+            raise access_error
+        raise UnauthorizedException("Authentication required")
+
+    current_user = SecurityUtils.decode_token(refresh_cookie, "refresh")
+    user = _load_active_user(current_user.user_id, session)
+    _ensure_token_not_revoked(current_user, user)
+
+    current_user = _refresh_access_cookie(response, user)
+
+    return _token_response_from_user(user, current_user)
 
 
 def require_admin(current_user: TokenData = Depends(get_current_user)) -> TokenData:
