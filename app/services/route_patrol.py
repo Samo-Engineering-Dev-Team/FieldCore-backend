@@ -21,6 +21,48 @@ from app.services.field_work import create_completed_field_report
 from app.utils.enums import ReportType
 
 
+def _route_patrol_all_photos(photos: dict) -> list:
+    """Collect every photo uploaded for a route patrol submission."""
+    collected: list = []
+    seen: set[str] = set()
+
+    def add_many(items) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            source = ""
+            if isinstance(item, str):
+                source = item.strip()
+            elif isinstance(item, dict):
+                source = str(
+                    item.get("signed_url")
+                    or item.get("url")
+                    or item.get("public_url")
+                    or item.get("file_path")
+                    or item.get("path")
+                    or ""
+                ).strip()
+            if not source or source in seen:
+                continue
+            seen.add(source)
+            collected.append(item)
+
+    add_many(photos.get("trip_start_photos"))
+    add_many(photos.get("trip_end_photos"))
+    add_many(photos.get("all_photos"))
+
+    for group_key in (
+        "bridge_culvert_checks",
+        "activity_checks",
+        "manhole_inspections",
+    ):
+        for entry in photos.get(group_key) or []:
+            if isinstance(entry, dict):
+                add_many(entry.get("photos"))
+
+    return collected
+
+
 def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
     from app.models import Technician, Site
 
@@ -66,7 +108,9 @@ class _RoutePatrolService:
             technician = session.get(Technician, data.technician_id)
             site = session.get(Site, data.site_id)
             if technician and site:
-                photos = data.photos if isinstance(data.photos, dict) else {}
+                photos = dict(data.photos) if isinstance(data.photos, dict) else {}
+                all_photos = _route_patrol_all_photos(photos)
+                photos["all_photos"] = all_photos
                 seacom_ref = str(photos.get("noc_ticket") or "N/A").strip() or "N/A"
                 report_data = {
                     "source": "route_patrol",
@@ -85,9 +129,7 @@ class _RoutePatrolService:
                     seacom_ref=seacom_ref,
                     performed_at=data.patrol_date,
                     data=report_data,
-                    attachments={"files": photos.get("all_photos", [])}
-                    if isinstance(photos.get("all_photos"), list)
-                    else None,
+                    attachments={"files": all_photos} if all_photos else None,
                 )
                 patrol.report_id = report.id
 
