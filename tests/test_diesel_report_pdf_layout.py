@@ -125,6 +125,78 @@ def _sample_repeater_report():
     )
 
 
+def _sample_routine_drive_report():
+    return SimpleNamespace(
+        id=uuid4(),
+        report_type=ReportType.ROUTINE_DRIVE,
+        status=ReportStatus.COMPLETED,
+        service_provider="SEACOM",
+        seacom_ref="121212",
+        created_at=datetime(2026, 6, 22, 5, 52, 54, tzinfo=timezone.utc),
+        technician=SimpleNamespace(
+            user=SimpleNamespace(name="John", surname="Tech"),
+            phone="0661547228",
+        ),
+        task=SimpleNamespace(
+            seacom_ref="121212",
+            site_id="site-3",
+            site=SimpleNamespace(
+                id="site-3",
+                name="IS Bree",
+                region=SimpleNamespace(value="western-cape"),
+            ),
+        ),
+        data={
+            "source": "route_patrol",
+            "route_segment": "IS Bree",
+            "patrol_date": "2026-06-22T05:52:42Z",
+            "weather_conditions": "Clear",
+            "anomalies_found": False,
+            "anomaly_details": "",
+            "photos": {
+                "form_version": "2.0",
+                "noc_ticket": "121212",
+                "technician_name": "John Tech",
+                "trip_start_photos": [],
+                "trip_end_photos": [],
+                "bridge_culvert_checks": [],
+                "activity_checks": [],
+                "manhole_inspections": [
+                    {
+                        "id": "3e3902e-1c22-4f56-ad4b-d1b8a10d0893",
+                        "manhole_id": "MH-01",
+                        "coordinates_recorded": "-26.033451, 28.076345",
+                        "lid_locked": "Yes",
+                        "disturbance_erosion": "N/A",
+                        "manhole_exposed": "N/A",
+                        "lid_disturbed": "N/A",
+                        "water_ingress_rodents": "N/A",
+                        "chemical_threats": "N/A",
+                        "remarks": "Clean and locked.",
+                        "photos": [
+                            {
+                                "path": "reports/routine/photo_1.jpg",
+                                "original_name": "photo_1.jpg",
+                                "content_type": "image/jpeg",
+                            }
+                        ],
+                    }
+                ],
+                "final_notes": "Route clear.",
+            },
+        },
+        attachments={
+            "files": [
+                {
+                    "path": "reports/routine/photo_1.jpg",
+                    "original_name": "photo_1.jpg",
+                    "content_type": "image/jpeg",
+                }
+            ]
+        },
+    )
+
+
 def test_diesel_pdf_uses_new_field_layout_and_embeds_images() -> None:
     service = PDFService()
     report = _sample_diesel_report()
@@ -159,6 +231,43 @@ def test_diesel_pdf_uses_new_field_layout_and_embeds_images() -> None:
     assert "DIESEL FILLUP SUMMARY" not in extracted
     assert "FILLUP DETAILS" not in extracted
     assert "REPORT DETAILS" not in extracted
+    assert image_count >= 1
+
+
+def test_routine_drive_pdf_uses_presentable_patrol_layout() -> None:
+    service = PDFService()
+    report = _sample_routine_drive_report()
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+    )
+    fetched: list[str] = []
+
+    def fetch_image(url: str) -> BytesIO:
+        fetched.append(url)
+        return BytesIO(png_bytes)
+
+    service._fetch_image_bytes = fetch_image  # type: ignore[method-assign]
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+        image_count = sum(len(page.images) for page in pdf.pages)
+
+    assert "FIELD OPERATIONS REPORT" in extracted
+    assert "ROUTINE DRIVE REPORT" in extracted
+    assert "IS BREE" in extracted
+    assert "PATROL SUMMARY" in extracted
+    assert "MANHOLE INSPECTIONS" in extracted
+    assert "PHOTO EVIDENCE" in extracted
+    assert "ATTESTATION" in extracted
+    assert "ROUTE CLEAR." in extracted
+    assert "URL:" not in extracted
+    assert "CONTENT TYPE:" not in extracted
+    assert "ORIGINAL NAME:" not in extracted
+    assert "REPORT DETAILS" not in extracted
+    assert fetched == ["reports/routine/photo_1.jpg"]
     assert image_count >= 1
 
 
