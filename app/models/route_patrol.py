@@ -41,6 +41,11 @@ class RoutePatrolCreate(BaseRoutePatrol): ...
 
 
 class RoutePatrolUpdate(SQLModel):
+    technician_id: UUID | None = Field(default=None)
+    site_id: UUID | None = Field(default=None)
+    report_id: UUID | None = Field(default=None)
+    route_segment: str | None = Field(default=None, max_length=200)
+    patrol_date: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))  # type: ignore
     weather_conditions: str | None = Field(default=None, max_length=100)
     anomalies_found: bool | None = Field(default=None)
     anomaly_details: str | None = Field(default=None, max_length=4000)

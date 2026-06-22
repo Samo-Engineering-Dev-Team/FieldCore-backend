@@ -336,12 +336,16 @@ class HelpAlertRequest(BaseModel):
     message: str
 
 
-@router.post("/help-alert", status_code=204)
+class HelpAlertResponse(BaseModel):
+    sent_count: int
+
+
+@router.post("/help-alert", response_model=HelpAlertResponse)
 def send_help_alert(
     payload: HelpAlertRequest,
     session: SessionDep,
     current_user: CurrentUser,
-) -> None:
+) -> HelpAlertResponse:
     """
     Send an urgent help alert from a technician to all NOC operators and managers.
     Creates a dedicated alert notification entry for recipients.
@@ -369,7 +373,7 @@ def send_help_alert(
     ).all()
 
     notification_service = _NotificationService()
-    notification_service.create_notifications_from_template(
+    sent_count = notification_service.create_notifications_from_template(
         user_ids=(u.id for u in recipients),
         template=NotificationTemplates.technician_help_alert(
             technician_name=tech_name,
@@ -378,3 +382,4 @@ def send_help_alert(
         ),
         session=session,
     )
+    return HelpAlertResponse(sent_count=sent_count)

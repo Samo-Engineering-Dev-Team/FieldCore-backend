@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock
 
+from fastapi import Response
 import pytest
 
 from app.core import SecurityUtils
@@ -122,4 +123,4 @@ def test_reset_password_revokes_existing_access_token() -> None:
     session.exec.return_value.first.return_value = user
 
     with pytest.raises(UnauthorizedException, match="Session expired"):
-        get_current_user(token.access_token, session)
+        get_current_user(Response(), token=token.access_token, session=session)
