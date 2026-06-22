@@ -7,7 +7,6 @@ from app.models import ReportCreate, ReportUpdate, ReportResponse
 from app.services import ReportService, CurrentUser
 from app.database import SessionDep
 from app.utils.enums import ReportStatus, ReportType
-from app.services.authorization import require_report_export
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -115,14 +114,9 @@ def export_report_pdf(
 ) -> Response:
     """
     Export a completed report as a PDF document.
-    Only accessible to NOC, Manager, Admin, and Partner roles.
+    Only accessible to report owners and report-review roles.
     """
-    require_report_export(
-        current_user,
-        "You do not have permission to export reports.",
-    )
-
-    pdf_buffer, filename = service.export_report_pdf(report_id, session)
+    pdf_buffer, filename = service.export_report_pdf(report_id, session, current_user)
 
     # Get the PDF bytes from the buffer
     pdf_bytes = pdf_buffer.getvalue()

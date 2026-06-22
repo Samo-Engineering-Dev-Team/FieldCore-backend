@@ -1,7 +1,8 @@
-from typing import List
+import json
+from typing import Any, List
 from uuid import UUID
 
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.models.incident_report import (
@@ -101,14 +102,25 @@ def upload_report_photo(
     session: SessionDep,
     current_user: CurrentUser,
     file: UploadFile = File(...),
+    metadata: str | None = Form(default=None),
 ) -> IncidentReportResponse:
     """"""
     file_content = file.file.read()
+    parsed_metadata: dict[str, Any] | None = None
+    if metadata:
+        try:
+            decoded = json.loads(metadata)
+            if isinstance(decoded, dict):
+                parsed_metadata = decoded
+        except json.JSONDecodeError:
+            parsed_metadata = None
+
     return service.upload_report_photo(
         report_id=report_id,
         file_content=file_content,
         filename=file.filename or "photo.jpg",
         content_type=file.content_type or "image/jpeg",
+        metadata=parsed_metadata,
         session=session,
         current_user=current_user,
     )

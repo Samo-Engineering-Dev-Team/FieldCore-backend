@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from loguru import logger as LOG
 import time
 
-from app.utils.enums import ReportType, ReportStatus, UserRole
+from app.utils.enums import ReportType, ReportStatus, TaskType, UserRole
 from app.models import (
     Report,
     ReportCreate,
@@ -25,7 +25,12 @@ from app.exceptions.http import (
     ForbiddenException,
 )
 from app.services.pdf import get_pdf_service
-from app.services.authorization import require_report_read, require_report_write
+from app.services.authorization import (
+    require_report_export,
+    require_report_read,
+    require_report_write,
+)
+from app.services.maintenance_schedule import get_maintenance_schedule_service
 from app.services.report_support import (
     create_noc_notifications,
     normalize_attachment_item,
@@ -34,6 +39,12 @@ from app.services.report_support import (
 
 
 class _ReportService:
+    FIELD_REPORT_SCHEDULE_TYPES = {
+        ReportType.ROUTINE_DRIVE: "routine_drive",
+        ReportType.REPEATER: "repeater_site_visit",
+        ReportType.DIESEL: "generator_diesel_refill",
+    }
+
     @staticmethod
     def _is_lock_or_timeout_error(error: Exception) -> bool:
         error_text = str(error).lower()
@@ -442,6 +453,7 @@ class _ReportService:
         report = self._get_report(report_id, session)
         self._assert_can_access_report(report, current_user, session, "complete")
         report.complete()
+        self._complete_field_work_context(report, session)
         try:
             session.commit()
             session.refresh(report)
@@ -455,8 +467,34 @@ class _ReportService:
                 f"Unexpected error completing report: {e}"
             )
 
+    def _complete_field_work_context(self, report: Report, session: Session) -> None:
+        task = report.task
+        if not task or task.task_type != TaskType.ROUTINE_MAINTENANCE:
+            return
+
+        schedule_type = self.FIELD_REPORT_SCHEDULE_TYPES.get(report.report_type)
+        if not schedule_type:
+            return
+
+        if task.status != "completed":
+            task.complete()
+            session.add(task)
+
+        completed_at = report.updated_at or task.completed_at or task.end_time
+        if completed_at and task.site_id:
+            get_maintenance_schedule_service().mark_schedule_done_for_field_work(
+                session=session,
+                technician_id=report.technician_id,
+                site_id=task.site_id,
+                schedule_type=schedule_type,
+                completed_at=completed_at,
+            )
+
     def export_report_pdf(
-        self, report_id: UUID, session: Session
+        self,
+        report_id: UUID,
+        session: Session,
+        current_user: TokenData | None = None,
     ) -> tuple[BytesIO, str]:
         """
         Export a completed report as a PDF document.
@@ -473,6 +511,13 @@ class _ReportService:
             ForbiddenException: If report is not completed
         """
         report = self._get_report(report_id, session)
+
+        if current_user is not None:
+            require_report_export(
+                current_user,
+                "You do not have permission to export reports.",
+            )
+            self._assert_can_access_report(report, current_user, session, "export")
 
         if report.status != ReportStatus.COMPLETED:
             raise ForbiddenException("Only completed reports can be exported as PDF")

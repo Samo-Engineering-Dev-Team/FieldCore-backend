@@ -22,6 +22,7 @@ from app.services.authorization import (
     assert_technician_self_or_roles,
     require_management,
 )
+from app.services.maintenance_schedule import get_maintenance_schedule_service
 
 
 class TechnicianSitesPayload(BaseModel):
@@ -299,6 +300,7 @@ def get_technician_assigned_sites(
                 deleted_at=site.deleted_at,
                 name=site.name,
                 region=site.region,
+                site_type=site.site_type,
                 address=site.address,
                 latitude=coords[0] if coords else None,
                 longitude=coords[1] if coords else None,
@@ -334,6 +336,9 @@ def set_technician_assigned_sites(
     for site_id in payload.site_ids:
         session.add(TechnicianSite(technician_id=technician_id, site_id=site_id))
     session.commit()
+    get_maintenance_schedule_service().ensure_weekly_due_diligence_schedules(
+        session, technician_id
+    )
 
 
 @router.delete("/{technician_id}", status_code=204)

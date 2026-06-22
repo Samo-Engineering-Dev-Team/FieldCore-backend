@@ -40,6 +40,7 @@ from .access_request import (
     AccessRequestResponse,
 )
 from .report import Report, ReportCreate, ReportUpdate, ReportResponse
+from .field_work import FieldWorkCreate, FieldWorkResponse
 from .notification import Notification, NotificationCreate, NotificationResponse
 from .routine_check import (
     RoutineCheck,
@@ -69,6 +70,9 @@ from .incident_report import (
 from .fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from .maintenance_schedule import (
     MaintenanceSchedule,
+    MaintenanceScheduleCoverage,
+    MaintenanceScheduleCoverageCreate,
+    MaintenanceScheduleCoverageResponse,
     MaintenanceScheduleCreate,
     MaintenanceScheduleUpdate,
     MaintenanceScheduleResponse,
@@ -162,6 +166,8 @@ __all__ = [
     "ReportCreate",
     "ReportResponse",
     "ReportUpdate",
+    "FieldWorkCreate",
+    "FieldWorkResponse",
     "Notification",
     "NotificationCreate",
     "NotificationResponse",
@@ -190,6 +196,9 @@ __all__ = [
     "FaultUpdateCreate",
     "FaultUpdateResponse",
     "MaintenanceSchedule",
+    "MaintenanceScheduleCoverage",
+    "MaintenanceScheduleCoverageCreate",
+    "MaintenanceScheduleCoverageResponse",
     "MaintenanceScheduleCreate",
     "MaintenanceScheduleUpdate",
     "MaintenanceScheduleResponse",

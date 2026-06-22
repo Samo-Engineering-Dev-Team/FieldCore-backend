@@ -113,6 +113,24 @@ class Database:
         )
         missing_task_columns = {"report_type"} - task_columns if has_tasks else set()
 
+        has_route_patrols = inspector.has_table("route_patrols")
+        route_patrol_columns = (
+            {column["name"] for column in inspector.get_columns("route_patrols")}
+            if has_route_patrols
+            else set()
+        )
+        missing_route_patrol_columns = (
+            {"report_id"} - route_patrol_columns if has_route_patrols else set()
+        )
+
+        has_sites = inspector.has_table("sites")
+        site_columns = (
+            {column["name"] for column in inspector.get_columns("sites")}
+            if has_sites
+            else set()
+        )
+        missing_site_columns = {"site_type"} - site_columns if has_sites else set()
+
         has_technicians = inspector.has_table("technicians")
         technician_indexes = (
             {index["name"] for index in inspector.get_indexes("technicians")}
@@ -130,6 +148,8 @@ class Database:
             not missing_user_columns
             and not missing_access_request_columns
             and not missing_task_columns
+            and not missing_route_patrol_columns
+            and not missing_site_columns
             and not needs_technician_unique_index_fix
         ):
             return
@@ -223,6 +243,32 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added tasks.report_type column"
+                )
+
+            if "report_id" in missing_route_patrol_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE route_patrols
+                        ADD COLUMN report_id UUID REFERENCES reports(id)
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added route_patrols.report_id column"
+                )
+
+            if "site_type" in missing_site_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE sites
+                        ADD COLUMN site_type VARCHAR NOT NULL DEFAULT 'task_site'
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added sites.site_type column"
                 )
 
             if needs_technician_unique_index_fix:

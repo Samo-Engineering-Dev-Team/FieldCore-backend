@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 
 from app.models import Notification, User
 from app.models.maintenance_schedule import MaintenanceSchedule
+from app.services.maintenance_schedule import get_maintenance_schedule_service
 from app.models.technician import Technician
 from app.utils.enums import NotificationPriority, UserRole
 from app.utils.funcs import utcnow
@@ -54,6 +55,8 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
 
     is_friday = weekday == 4
     week_start, week_end = _week_bounds()
+    schedule_service = get_maintenance_schedule_service()
+    schedule_service.ensure_weekly_due_diligence_schedules(session)
 
     # Fetch NOC + Manager user IDs for notifications
     noc_user_ids: list = [
@@ -72,20 +75,22 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
         ).all()
     ]
 
-    # Load all active weekly schedules grouped by technician
+    # Load all active weekly schedules grouped by effective technician for this week.
     weekly_schedules = session.exec(
         select(MaintenanceSchedule).where(
             MaintenanceSchedule.deleted_at.is_(None),
             MaintenanceSchedule.is_active == True,  # noqa: E712
             MaintenanceSchedule.frequency == "weekly",
-            MaintenanceSchedule.assigned_technician_id.is_not(None),
         )
     ).all()
 
     # Group by technician
     by_tech: dict[str, list[MaintenanceSchedule]] = {}
     for sched in weekly_schedules:
-        key = str(sched.assigned_technician_id)
+        owner_id = schedule_service.effective_schedule_owner_id(sched, session)
+        if owner_id is None:
+            continue
+        key = str(owner_id)
         by_tech.setdefault(key, []).append(sched)
 
     alerts_sent: list[dict] = []
@@ -116,6 +121,7 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             "routine_drive": "Routine Drive",
             "repeater_site_visit": "Repeater Site Visit",
             "generator_diesel_refill": "Generator Diesel Refill",
+            "pop_site": "POP Site",
         }
         overdue_labels = ", ".join(_SCHEDULE_LABELS.get(t, t) for t in overdue_types)
 

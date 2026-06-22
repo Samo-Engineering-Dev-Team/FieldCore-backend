@@ -17,6 +17,50 @@ from app.models.route_patrol import (
 )
 from app.models.auth import TokenData
 from app.services.authorization import get_technician_id_for_user, is_management
+from app.services.field_work import create_completed_field_report
+from app.utils.enums import ReportType
+
+
+def _route_patrol_all_photos(photos: dict) -> list:
+    """Collect every photo uploaded for a route patrol submission."""
+    collected: list = []
+    seen: set[str] = set()
+
+    def add_many(items) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            source = ""
+            if isinstance(item, str):
+                source = item.strip()
+            elif isinstance(item, dict):
+                source = str(
+                    item.get("signed_url")
+                    or item.get("url")
+                    or item.get("public_url")
+                    or item.get("file_path")
+                    or item.get("path")
+                    or ""
+                ).strip()
+            if not source or source in seen:
+                continue
+            seen.add(source)
+            collected.append(item)
+
+    add_many(photos.get("trip_start_photos"))
+    add_many(photos.get("trip_end_photos"))
+    add_many(photos.get("all_photos"))
+
+    for group_key in (
+        "bridge_culvert_checks",
+        "activity_checks",
+        "manhole_inspections",
+    ):
+        for entry in photos.get(group_key) or []:
+            if isinstance(entry, dict):
+                add_many(entry.get("photos"))
+
+    return collected
 
 
 def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
@@ -57,11 +101,44 @@ class _RoutePatrolService:
 
         patrol = RoutePatrol.model_validate(data)
         session.add(patrol)
+
+        if data.site_id:
+            from app.models import Site, Technician
+
+            technician = session.get(Technician, data.technician_id)
+            site = session.get(Site, data.site_id)
+            if technician and site:
+                photos = dict(data.photos) if isinstance(data.photos, dict) else {}
+                all_photos = _route_patrol_all_photos(photos)
+                photos["all_photos"] = all_photos
+                seacom_ref = str(photos.get("noc_ticket") or "N/A").strip() or "N/A"
+                report_data = {
+                    "source": "route_patrol",
+                    "route_segment": data.route_segment,
+                    "patrol_date": data.patrol_date.isoformat(),
+                    "weather_conditions": data.weather_conditions,
+                    "anomalies_found": data.anomalies_found,
+                    "anomaly_details": data.anomaly_details,
+                    "photos": photos,
+                }
+                _, report = create_completed_field_report(
+                    session=session,
+                    technician=technician,
+                    site=site,
+                    report_type=ReportType.ROUTINE_DRIVE,
+                    seacom_ref=seacom_ref,
+                    performed_at=data.patrol_date,
+                    data=report_data,
+                    attachments={"files": all_photos} if all_photos else None,
+                )
+                patrol.report_id = report.id
+
         session.commit()
         session.refresh(patrol)
 
         # Auto-mark the technician's routine_drive maintenance schedule as done
-        self._mark_routine_drive_done(data.technician_id, session)
+        if not patrol.report_id:
+            self._mark_routine_drive_done(data.technician_id, session)
 
         return _enrich(patrol, session)
 
