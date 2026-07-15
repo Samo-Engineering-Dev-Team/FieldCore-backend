@@ -6,7 +6,7 @@ class UserRole(StrEnum):
 
     ADMIN = "admin"
     # Legacy alias kept so existing SUPER_ADMIN database labels deserialize as admin.
-    SUPER_ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"
@@ -23,6 +23,7 @@ class LinkTarget(StrEnum):
     (TASK -> task_id, INCIDENT -> incident_id). Adding a new target means adding
     a new FK column + a migration.
     """
+
     NONE = "none"
     TASK = "task"
     INCIDENT = "incident"
@@ -126,6 +127,7 @@ class FieldType(StrEnum):
     type = add an enum value here + register a validator there; no table
     or column changes are required.
     """
+
     STRING = "string"
     NUMBER = "number"
     BOOLEAN = "boolean"
