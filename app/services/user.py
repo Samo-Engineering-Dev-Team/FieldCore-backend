@@ -5,7 +5,14 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 
 from app.utils.enums import UserRole
-from app.models import User, UserCreate, UserUpdate, UserResponse, AdminPasswordReset
+from app.models import (
+    Technician,
+    User,
+    UserCreate,
+    UserUpdate,
+    UserResponse,
+    AdminPasswordReset,
+)
 from app.exceptions.http import (
     BadRequestException,
     ConflictException,
@@ -22,10 +29,16 @@ class _UserService:
         return UserResponse(**user.model_dump(exclude={"password_hash"}))
 
     def create_user(self, data: UserCreate, session: Session) -> UserResponse:
+        status = (
+            UserStatus.DISABLED
+            if data.role == UserRole.TECHNICIAN
+            else UserStatus.ACTIVE
+        )
         user = User(
             **data.model_dump(exclude={"password"}),
             password_hash=SecurityUtils.hash_password(data.password),
             must_change_password=True,
+            status=status,
         )
         try:
             session.add(user)
@@ -90,12 +103,22 @@ class _UserService:
 
     def delete_user(self, user_id: UUID, session: Session) -> None:
         user = self._get_user(user_id, session)
+        if user.role == UserRole.TECHNICIAN:
+            technician = self._get_active_technician_for_user(user.id, session)
+            if technician:
+                technician.soft_delete()
         user.soft_delete()
         session.commit()
 
     def activate_user(self, user_id: UUID, session: Session) -> UserResponse:
         """"""
         user = self._get_user(user_id, session)
+        if user.role == UserRole.TECHNICIAN and not self._has_active_technician_profile(
+            user.id, session
+        ):
+            raise BadRequestException(
+                "Cannot activate a technician user without an active technician profile."
+            )
         user.activate()
         session.commit()
         session.refresh(user)
@@ -114,7 +137,14 @@ class _UserService:
     ) -> UserResponse:
         """"""
         user = self._get_user(user_id, session)
+        old_role = user.role
         user.role = role
+        if (
+            role == UserRole.TECHNICIAN
+            and old_role != UserRole.TECHNICIAN
+            and not self._has_active_technician_profile(user.id, session)
+        ):
+            user.disable()
         session.commit()
         session.refresh(user)
         return self.user_to_response(user)
@@ -156,6 +186,19 @@ class _UserService:
         if not user:
             raise NotFoundException("user not found")
         return user
+
+    def _get_active_technician_for_user(
+        self, user_id: UUID, session: Session
+    ) -> Technician | None:
+        return session.exec(
+            select(Technician).where(
+                Technician.user_id == user_id,
+                Technician.deleted_at.is_(None),  # type: ignore
+            )
+        ).first()
+
+    def _has_active_technician_profile(self, user_id: UUID, session: Session) -> bool:
+        return self._get_active_technician_for_user(user_id, session) is not None
 
 
 def get_user_service() -> _UserService:

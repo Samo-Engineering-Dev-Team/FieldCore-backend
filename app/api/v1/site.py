@@ -2,7 +2,7 @@ from fastapi import APIRouter, Query
 from typing import List
 from uuid import UUID
 
-from app.models import SiteCreate, SiteUpdate, SiteResponse
+from app.models import SiteCreate, SiteUpdate, SiteResponse, SiteSearchResult
 from app.services import SiteService
 from app.database import SessionDep
 from app.utils.enums import Region
@@ -28,6 +28,19 @@ def read_sites(
 ) -> List[SiteResponse]:
     """"""
     return service.read_sites(session, region, offset, limit)
+
+
+@router.get("/search", response_model=List[SiteSearchResult], status_code=200)
+def search_sites(
+    service: SiteService,
+    session: SessionDep,
+    q: str = Query(..., min_length=2, max_length=100),
+    region: Region | None = Query(None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+) -> List[SiteSearchResult]:
+    """"""
+    return service.search_sites(q, session, region, offset, limit)
 
 
 @router.get("/{site_id}", response_model=SiteResponse, status_code=200)

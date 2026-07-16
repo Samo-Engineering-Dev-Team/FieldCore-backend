@@ -5,11 +5,13 @@ class UserRole(StrEnum):
     """"""
 
     ADMIN = "admin"
-    SUPER_ADMIN = "super_admin"
+    # Legacy alias kept so existing SUPER_ADMIN database labels deserialize as admin.
+    SUPER_ADMIN = "admin"
     MANAGER = "manager"
     TECHNICIAN = "technician"
     NOC = "noc"
     SHEQ = "sheq"
+    PARTNER = "partner"
 
 
 class LinkTarget(StrEnum):
@@ -54,6 +56,13 @@ class Region(StrEnum):
     WESTERN_CAPE = "western-cape"
     FREE_STATE = "free-state"
     NORTH_WEST = "north-west"
+
+
+class SiteType(StrEnum):
+    TASK_SITE = "task_site"
+    ROUTINE_DRIVE = "routine_drive"
+    REPEATER = "repeater"
+    POP = "pop"
 
 
 class TaskStatus(StrEnum):

@@ -11,6 +11,7 @@ from .auth import (
     PasskeyRegistrationVerification,
     PasskeyAuthenticationVerification,
     PasskeyMutationResponse,
+    PerformanceHintCookies,
 )
 from .passkey import PasskeyCredential, PasskeyChallenge
 from .user import (
@@ -23,12 +24,14 @@ from .user import (
 )
 from .technician import (
     TechnicianCreate,
+    TechnicianDataIssue,
+    TechnicianDataIssuesResponse,
     Technician,
     TechnicianUpdate,
     TechnicianResponse,
     TechnicianLocationUpdate,
 )
-from .site import Site, SiteCreate, SiteUpdate, SiteResponse
+from .site import Site, SiteCreate, SiteUpdate, SiteResponse, SiteSearchResult
 from .task import Task, TaskCreate, TaskUpdate, TaskResponse
 from .incident import Incident, IncidentCreate, IncidentUpdate, IncidentResponse
 from .access_request import (
@@ -38,6 +41,7 @@ from .access_request import (
     AccessRequestResponse,
 )
 from .report import Report, ReportCreate, ReportUpdate, ReportResponse
+from .field_work import FieldWorkCreate, FieldWorkResponse
 from .notification import Notification, NotificationCreate, NotificationResponse
 from .routine_check import (
     RoutineCheck,
@@ -57,7 +61,7 @@ from .routine_inspection import (
     RoutineInspectionUpdate,
     RoutineInspectionResponse,
 )
-from .client import Client, ClientCreate, ClientUpdate, ClientResponse
+from .client import Client, ClientCreate, ClientUpdate, ClientResponse, ClientSearchResult
 from .incident_report import (
     IncidentReport,
     IncidentReportCreate,
@@ -67,6 +71,9 @@ from .incident_report import (
 from .fault_update import FaultUpdate, FaultUpdateCreate, FaultUpdateResponse
 from .maintenance_schedule import (
     MaintenanceSchedule,
+    MaintenanceScheduleCoverage,
+    MaintenanceScheduleCoverageCreate,
+    MaintenanceScheduleCoverageResponse,
     MaintenanceScheduleCreate,
     MaintenanceScheduleUpdate,
     MaintenanceScheduleResponse,
@@ -124,6 +131,7 @@ __all__ = [
     "PasskeyRegistrationVerification",
     "PasskeyAuthenticationVerification",
     "PasskeyMutationResponse",
+    "PerformanceHintCookies",
     "PasskeyCredential",
     "PasskeyChallenge",
     "User",
@@ -134,6 +142,8 @@ __all__ = [
     "UserResponse",
     "Technician",
     "TechnicianCreate",
+    "TechnicianDataIssue",
+    "TechnicianDataIssuesResponse",
     "TechnicianUpdate",
     "TechnicianResponse",
     "TechnicianLocationUpdate",
@@ -141,6 +151,7 @@ __all__ = [
     "SiteCreate",
     "SiteUpdate",
     "SiteResponse",
+    "SiteSearchResult",
     "Task",
     "TaskCreate",
     "TaskUpdate",
@@ -157,6 +168,8 @@ __all__ = [
     "ReportCreate",
     "ReportResponse",
     "ReportUpdate",
+    "FieldWorkCreate",
+    "FieldWorkResponse",
     "Notification",
     "NotificationCreate",
     "NotificationResponse",
@@ -176,6 +189,7 @@ __all__ = [
     "ClientCreate",
     "ClientUpdate",
     "ClientResponse",
+    "ClientSearchResult",
     "IncidentReport",
     "IncidentReportCreate",
     "IncidentReportUpdate",
@@ -184,6 +198,9 @@ __all__ = [
     "FaultUpdateCreate",
     "FaultUpdateResponse",
     "MaintenanceSchedule",
+    "MaintenanceScheduleCoverage",
+    "MaintenanceScheduleCoverageCreate",
+    "MaintenanceScheduleCoverageResponse",
     "MaintenanceScheduleCreate",
     "MaintenanceScheduleUpdate",
     "MaintenanceScheduleResponse",

@@ -4,7 +4,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 
 from app.database import SessionDep
-from app.models import ClientCreate, ClientResponse, ClientUpdate
+from app.models import (
+    ClientCreate,
+    ClientResponse,
+    ClientSearchResult,
+    ClientUpdate,
+)
 from app.services.auth import CurrentUser, require_admin
 from app.services.authorization import require_management
 from app.services.client import ClientServiceDep
@@ -37,6 +42,21 @@ def read_clients(
     """Get all clients."""
     require_management(current_user, "Only NOC, managers, or admins can view clients.")
     return service.read_clients(session, active_only, offset, limit)
+
+
+@router.get("/search", response_model=List[ClientSearchResult], status_code=200)
+def search_clients(
+    service: ClientServiceDep,
+    session: SessionDep,
+    current_user: CurrentUser,
+    q: str = Query(..., min_length=2, max_length=100),
+    active_only: bool = Query(default=True, description="Only return active clients"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+) -> List[ClientSearchResult]:
+    """Search clients by typo-tolerant name matching."""
+    require_management(current_user, "Only NOC, managers, or admins can view clients.")
+    return service.search_clients(q, session, active_only, offset, limit)
 
 
 @router.get(

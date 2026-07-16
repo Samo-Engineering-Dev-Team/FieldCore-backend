@@ -1,11 +1,12 @@
 from sqlmodel import SQLModel, Field, Relationship, Column
 from typing import TYPE_CHECKING, List, Any, Tuple
 from geoalchemy2 import Geometry
+from sqlalchemy import Enum as SAEnum
 from shapely import wkb
 from shapely.geometry import Point
 
 from .base import BaseDB
-from app.utils.enums import Region
+from app.utils.enums import Region, SiteType
 
 if TYPE_CHECKING:
     from .task import Task
@@ -17,6 +18,18 @@ if TYPE_CHECKING:
 class BaseSite(SQLModel):
     name: str = Field(description="Site name", nullable=False, max_length=100)
     region: Region = Field(description="Geographic region", nullable=False)
+    site_type: SiteType = Field(
+        default=SiteType.TASK_SITE,
+        sa_column=Column(
+            SAEnum(
+                SiteType,
+                values_callable=lambda enum: [item.value for item in enum],
+                native_enum=False,
+            ),
+            nullable=False,
+            server_default=SiteType.TASK_SITE.value,
+        ),
+    )
     address: str | None = Field(
         default=None, max_length=500, description="Physical street address"
     )
@@ -77,6 +90,7 @@ class SiteCreate(BaseSite):
 class SiteUpdate(SQLModel):
     name: str | None = Field(default=None, description="Site name", max_length=100)
     region: Region | None = Field(default=None, description="Geographic region")
+    site_type: SiteType | None = Field(default=None)
     address: str | None = Field(
         default=None, max_length=500, description="Physical street address"
     )
@@ -98,3 +112,11 @@ class SiteResponse(BaseDB, BaseSite):
     num_tasks: int = Field(default=0, description="Number of tasks", ge=0)
     num_incidents: int = Field(default=0, description="Number of incidents", ge=0)
     num_reports: int = Field(default=0, description="Number of reports", ge=0)
+
+
+class SiteSearchResult(SiteResponse):
+    match_score: float = Field(
+        default=0,
+        ge=0,
+        description="Fuzzy match score returned by PostgreSQL trigram similarity",
+    )

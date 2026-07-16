@@ -8,7 +8,6 @@ from app.exceptions.http import (
     FormValidationException,
     ForbiddenException,
     BadRequestException,
-    NotFoundException,
 )
 from app.models import (
     FormTemplate,

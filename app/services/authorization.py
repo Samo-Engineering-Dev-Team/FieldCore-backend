@@ -9,6 +9,29 @@ from app.utils.enums import UserRole
 
 MANAGEMENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.NOC)
 ADMIN_MANAGER_ROLES = (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER)
+REPORT_READ_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.NOC,
+    UserRole.TECHNICIAN,
+    UserRole.PARTNER,
+)
+REPORT_EXPORT_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.NOC,
+    UserRole.TECHNICIAN,
+    UserRole.PARTNER,
+)
+REPORT_WRITE_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.NOC,
+    UserRole.TECHNICIAN,
+)
 
 
 def is_management(current_user: TokenData) -> bool:
@@ -34,6 +57,18 @@ def require_management(current_user: TokenData, message: str) -> None:
 
 def require_admin_or_manager(current_user: TokenData, message: str) -> None:
     require_roles(current_user, ADMIN_MANAGER_ROLES, message)
+
+
+def require_report_read(current_user: TokenData, message: str) -> None:
+    require_roles(current_user, REPORT_READ_ROLES, message)
+
+
+def require_report_export(current_user: TokenData, message: str) -> None:
+    require_roles(current_user, REPORT_EXPORT_ROLES, message)
+
+
+def require_report_write(current_user: TokenData, message: str) -> None:
+    require_roles(current_user, REPORT_WRITE_ROLES, message)
 
 
 def get_technician_by_user(user_id: UUID, session: Session) -> Technician:

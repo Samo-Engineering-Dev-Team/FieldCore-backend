@@ -104,7 +104,6 @@ def set_user_role(
     current_user: CurrentUser,
 ) -> UserResponse:
     """"""
-
     if current_user.role not in [
         UserRole.SUPER_ADMIN,
         UserRole.ADMIN,
@@ -113,16 +112,6 @@ def set_user_role(
         raise UnauthorizedException(
             "You do not have permission to perform this action."
         )
-
-    if current_user.role not in [
-        UserRole.SUPER_ADMIN,
-        UserRole.ADMIN,
-        UserRole.MANAGER,
-    ]:
-        raise UnauthorizedException(
-            "You do not have permission to perform this action."
-        )
-
     return service.set_user_role(user_id, payload.new_role, session)
 
 

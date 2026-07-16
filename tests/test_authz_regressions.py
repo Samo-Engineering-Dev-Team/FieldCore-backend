@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -5,14 +6,17 @@ from uuid import uuid4
 import pytest
 
 from app.api.v1.user import read_user
-from app.exceptions.http import ForbiddenException
+from app.exceptions.http import BadRequestException, ForbiddenException
+from app.models import RoutePatrol, RoutePatrolUpdate, Technician, TechnicianCreate, User
 from app.models.auth import TokenData
 from app.services.access_request import _AccessRequestService
 from app.services.incident import _IncidentService
 from app.services.route_patrol import _RoutePatrolService
 from app.services.task import _TaskService
 from app.services.technician import _TechnicianService
-from app.utils.enums import UserRole
+from app.services.user import _UserService
+from app.utils.enums import UserRole, UserStatus
+from app.utils.funcs import utcnow
 
 
 class CapturingSession:
@@ -28,6 +32,40 @@ class CapturingSession:
 
     def first(self):
         return None
+
+
+class QueryResult:
+    def __init__(self, *, first=None, all=None) -> None:
+        self._first = first
+        self._all = [] if all is None else all
+
+    def first(self):
+        return self._first
+
+    def all(self):
+        return self._all
+
+
+class SequencedSession:
+    def __init__(self, *results: QueryResult) -> None:
+        self.results = list(results)
+        self.commits = 0
+        self.rolled_back = False
+
+    def exec(self, statement):
+        return self.results.pop(0)
+
+    def add(self, item) -> None:
+        self.added = item
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def refresh(self, item) -> None:
+        return None
+
+    def rollback(self) -> None:
+        self.rolled_back = True
 
 
 def make_user(role: UserRole, *, user_id=None) -> TokenData:
@@ -139,6 +177,51 @@ def test_route_patrol_list_scopes_technician_to_own_patrols(
     assert own_technician_id in compiled.params.values()
 
 
+def test_route_patrol_update_saves_core_fields_and_clears_optional_values() -> None:
+    service = _RoutePatrolService()
+    patrol = RoutePatrol(
+        technician_id=uuid4(),
+        site_id=uuid4(),
+        route_segment="Old Route",
+        patrol_date=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        weather_conditions="Cloudy",
+        anomaly_details="Old note",
+        photos={"old": True},
+    )
+    new_site_id = uuid4()
+    new_patrol_date = datetime(2026, 6, 22, tzinfo=timezone.utc)
+
+    session = MagicMock()
+
+    def get_model(model, pk):
+        if model is RoutePatrol:
+            return patrol
+        return None
+
+    session.get.side_effect = get_model
+
+    response = service.update(
+        patrol.id,
+        RoutePatrolUpdate(
+            site_id=new_site_id,
+            route_segment="New Route",
+            patrol_date=new_patrol_date,
+            weather_conditions=None,
+            anomaly_details=None,
+            photos=None,
+        ),
+        session,
+    )
+
+    assert response.site_id == new_site_id
+    assert response.route_segment == "New Route"
+    assert response.patrol_date == new_patrol_date
+    assert response.weather_conditions is None
+    assert response.anomaly_details is None
+    assert response.photos is None
+    session.commit.assert_called_once()
+
+
 def test_read_user_rejects_non_management_user_accessing_other_user() -> None:
     current_user = make_user(UserRole.TECHNICIAN)
     service = MagicMock()
@@ -161,3 +244,172 @@ def test_technician_read_rejects_other_technician(monkeypatch: pytest.MonkeyPatc
 
     with pytest.raises(ForbiddenException, match="view this technician"):
         service.read_technician(uuid4(), session, current_user)
+
+
+def test_technician_list_excludes_profiles_for_deleted_users() -> None:
+    service = _TechnicianService()
+    session = CapturingSession()
+
+    service.read_technicians(session=session)
+
+    compiled_sql = str(session.statement.compile())
+
+    assert "JOIN users" in compiled_sql
+    assert "users.deleted_at IS NULL" in compiled_sql
+
+
+def test_create_technician_restores_deleted_matching_profile() -> None:
+    service = _TechnicianService()
+    active_user = User(
+        id=uuid4(),
+        name="Ishmael",
+        surname="Mamuela",
+        email="ishmael@samotelecoms.co.za",
+        role=UserRole.TECHNICIAN,
+        password_hash="hash",
+    )
+    old_user = User(
+        id=uuid4(),
+        name="Ishmael",
+        surname="Maumela",
+        email="ishmael@samotelecoms.co.za",
+        role=UserRole.TECHNICIAN,
+        password_hash="hash",
+        deleted_at=utcnow(),
+    )
+    deleted_technician = Technician(
+        id=uuid4(),
+        phone="073 210 0882",
+        id_no="9710025648085",
+        user_id=old_user.id,
+        deleted_at=utcnow(),
+    )
+    deleted_technician.user = old_user
+    session = SequencedSession(
+        QueryResult(first=active_user),
+        QueryResult(all=[deleted_technician]),
+    )
+
+    response = service.create_technician(
+        TechnicianCreate(
+            user_id=active_user.id,
+            phone="073 210 0882",
+            id_no="9710025648085",
+        ),
+        session,
+    )
+
+    assert deleted_technician.user_id == active_user.id
+    assert deleted_technician.deleted_at is None
+    assert deleted_technician.is_available is True
+    assert response.user_id == active_user.id
+    assert active_user.status == UserStatus.ACTIVE
+
+
+def test_create_technician_user_starts_disabled_until_profile_exists() -> None:
+    from app.models import UserCreate
+
+    service = _UserService()
+    session = MagicMock()
+
+    response = service.create_user(
+        UserCreate(
+            name="New",
+            surname="Tech",
+            email="newtech@example.com",
+            role=UserRole.TECHNICIAN,
+            password="Password123!",
+        ),
+        session,
+    )
+
+    created_user = session.add.call_args.args[0]
+
+    assert created_user.status == UserStatus.DISABLED
+    assert response.status == UserStatus.DISABLED
+
+
+def test_activate_technician_user_requires_active_profile() -> None:
+    service = _UserService()
+    user = User(
+        id=uuid4(),
+        name="No",
+        surname="Profile",
+        email="noprofile@example.com",
+        role=UserRole.TECHNICIAN,
+        password_hash="hash",
+        status=UserStatus.DISABLED,
+    )
+    session = SequencedSession(QueryResult(first=user), QueryResult(first=None))
+
+    with pytest.raises(BadRequestException, match="active technician profile"):
+        service.activate_user(user.id, session)
+
+
+def test_delete_technician_disables_linked_user() -> None:
+    service = _TechnicianService()
+    user = User(
+        id=uuid4(),
+        name="Delete",
+        surname="Tech",
+        email="deletetech@example.com",
+        role=UserRole.TECHNICIAN,
+        password_hash="hash",
+    )
+    technician = Technician(
+        id=uuid4(),
+        phone="0123456789",
+        id_no="1234567890",
+        user_id=user.id,
+    )
+    technician.user = user
+    service._get_technician = MagicMock(return_value=technician)  # type: ignore[method-assign]
+    session = MagicMock()
+
+    service.delete_technician(technician.id, session)
+
+    assert technician.deleted_at is not None
+    assert user.status == UserStatus.DISABLED
+    session.commit.assert_called_once()
+
+
+def test_technician_data_issues_reports_unlinked_users_and_invalid_profiles() -> None:
+    service = _TechnicianService()
+    unlinked_user = User(
+        id=uuid4(),
+        name="Missing",
+        surname="Profile",
+        email="missing@example.com",
+        role=UserRole.TECHNICIAN,
+        password_hash="hash",
+        status=UserStatus.DISABLED,
+    )
+    deleted_user = User(
+        id=uuid4(),
+        name="Deleted",
+        surname="User",
+        email="deleted@example.com",
+        role=UserRole.TECHNICIAN,
+        password_hash="hash",
+        deleted_at=utcnow(),
+    )
+    invalid_profile = Technician(
+        id=uuid4(),
+        phone="0987654321",
+        id_no="9876543210",
+        user_id=deleted_user.id,
+    )
+    invalid_profile.user = deleted_user
+    session = SequencedSession(
+        QueryResult(all=[unlinked_user]),
+        QueryResult(all=[invalid_profile]),
+    )
+
+    issues = service.read_data_issues(session)
+
+    assert issues.total == 2
+    assert issues.technician_users_without_profiles[0].user_id == unlinked_user.id
+    assert (
+        issues.profiles_without_active_technician_users[0].technician_id
+        == invalid_profile.id
+    )

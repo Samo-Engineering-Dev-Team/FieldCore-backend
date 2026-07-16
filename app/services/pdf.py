@@ -5,7 +5,7 @@ import socket
 from urllib.parse import urlparse, unquote
 from io import BytesIO
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -34,6 +34,9 @@ from app.core.settings import app_settings
 from app.models import Report
 from app.utils.enums import ReportType
 from app.utils.funcs import utcnow
+
+if TYPE_CHECKING:
+    from app.models import IncidentReport
 
 # Imported lazily inside generate_incident_report_pdf to avoid circular import at module load
 # from app.models import IncidentReport
@@ -479,7 +482,11 @@ class PDFService:
         gap_mm: float = 4,
         fallback_color: str = "#1f2a44",
     ) -> Table:
-        """Build a shared Field Core mark + lockup row for report layouts."""
+        """Build a shared Field Core logo row for report layouts.
+
+        Field report pages previously rendered the shield mark and full lockup
+        together, which looked like two company logos. Keep a single lockup.
+        """
         fallback_s = ParagraphStyle(
             "BrandLogoFallback",
             parent=self.styles["Normal"],
@@ -489,23 +496,18 @@ class PDFService:
             alignment=TA_CENTER,
         )
 
-        mark_logo = self._load_fieldcore_mark(
-            max_width_mm=mark_width_mm,
-            max_height_mm=mark_height_mm,
-        )
         lockup_logo = self._load_fieldcore_lockup(
-            max_width_mm=lockup_width_mm,
+            max_width_mm=mark_width_mm + gap_mm + lockup_width_mm,
             max_height_mm=lockup_height_mm,
         )
 
         logos = Table(
             [
                 [
-                    mark_logo or Paragraph("<b>FC</b>", fallback_s),
                     lockup_logo or Paragraph("<b>FIELD CORE</b>", fallback_s),
                 ]
             ],
-            colWidths=[mark_width_mm * mm, lockup_width_mm * mm],
+            colWidths=[(mark_width_mm + gap_mm + lockup_width_mm) * mm],
         )
         logos.setStyle(
             TableStyle(
@@ -516,7 +518,6 @@ class PDFService:
                     ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                     ("TOPPADDING", (0, 0), (-1, -1), 0),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING", (0, 0), (0, 0), gap_mm * mm),
                 ]
             )
         )
@@ -968,6 +969,10 @@ class PDFService:
                     self._render_repeater_body(report, story, primary_hex, accent_hex)
                 elif report.report_type == ReportType.DIESEL:
                     self._render_diesel_body(report, story, primary_hex, accent_hex)
+                elif report.report_type == ReportType.ROUTINE_DRIVE:
+                    self._render_route_patrol_body(
+                        report, story, primary_hex, accent_hex
+                    )
                 else:
                     story.extend(
                         self._repeater_section_header(
@@ -977,7 +982,7 @@ class PDFService:
                     story.extend(self._render_report_data(report.data))
 
             # Attachments Section
-            if report.attachments:
+            if report.attachments and report.report_type != ReportType.ROUTINE_DRIVE:
                 if report.report_type == ReportType.DIESEL:
                     self._render_diesel_attachments(
                         report, story, primary_hex, accent_hex
@@ -1190,6 +1195,10 @@ class PDFService:
                     self._render_repeater_body(report, story, primary_hex, accent_hex)
                 elif report.report_type == ReportType.DIESEL:
                     self._render_diesel_body(report, story, primary_hex, accent_hex)
+                elif report.report_type == ReportType.ROUTINE_DRIVE:
+                    self._render_route_patrol_body(
+                        report, story, primary_hex, accent_hex
+                    )
                 else:
                     story.extend(
                         self._repeater_section_header(
@@ -1198,7 +1207,7 @@ class PDFService:
                     )
                     story.extend(self._render_report_data(report.data))
 
-            if report.attachments:
+            if report.attachments and report.report_type != ReportType.ROUTINE_DRIVE:
                 if report.report_type == ReportType.DIESEL:
                     self._render_diesel_attachments(
                         report, story, primary_hex, accent_hex
@@ -4606,6 +4615,331 @@ class PDFService:
         except (TypeError, ValueError):
             return "N/A"
         return f"{liters:.2f}"
+
+    def _text_value(self, value: Any, default: str = "N/A") -> str:
+        """Return a display-safe string for report values."""
+        if value is None:
+            return default
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+        text = str(value).strip()
+        return text or default
+
+    def _route_photo_groups(self, data: dict[str, Any]) -> dict[str, list[Any]]:
+        photos = data.get("photos") if isinstance(data.get("photos"), dict) else {}
+        groups: dict[str, list[Any]] = {}
+
+        def add(label: str, value: Any) -> None:
+            if isinstance(value, list) and value:
+                groups[label] = value
+
+        add("Trip Start Photos", photos.get("trip_start_photos"))
+        add("Trip End Photos", photos.get("trip_end_photos"))
+        add("All Route Photos", photos.get("all_photos"))
+
+        for item in photos.get("bridge_culvert_checks") or []:
+            if isinstance(item, dict):
+                title = self._text_value(item.get("location"), "Bridge / Culvert")
+                add(f"Bridge / Culvert - {title}", item.get("photos"))
+
+        for item in photos.get("activity_checks") or []:
+            if isinstance(item, dict):
+                title = self._text_value(item.get("location"), "Activity Check")
+                add(f"Activity Check - {title}", item.get("photos"))
+
+        for item in photos.get("manhole_inspections") or []:
+            if isinstance(item, dict):
+                title = self._text_value(item.get("manhole_id"), "Manhole")
+                add(f"Manhole - {title}", item.get("photos"))
+
+        return groups
+
+    def _render_route_patrol_body(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Render Routine Drive / route patrol data as a report, not raw JSON."""
+        data = report.data if isinstance(report.data, dict) else {}
+        photos = data.get("photos") if isinstance(data.get("photos"), dict) else {}
+
+        body_style = ParagraphStyle(
+            "RouteBody",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#344054"),
+            leading=12,
+        )
+        label_style = ParagraphStyle(
+            "RouteLabel",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#667085"),
+            leading=10,
+        )
+        value_style = ParagraphStyle(
+            "RouteValue",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#101828"),
+            leading=12,
+        )
+        table_header_style = ParagraphStyle(
+            "RouteTableHeader",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica-Bold",
+            textColor=colors.white,
+            leading=10,
+        )
+        table_cell_style = ParagraphStyle(
+            "RouteTableCell",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#344054"),
+            leading=10,
+        )
+
+        bridge_checks = [
+            item
+            for item in photos.get("bridge_culvert_checks") or []
+            if isinstance(item, dict)
+        ]
+        activity_checks = [
+            item
+            for item in photos.get("activity_checks") or []
+            if isinstance(item, dict)
+        ]
+        manhole_checks = [
+            item
+            for item in photos.get("manhole_inspections") or []
+            if isinstance(item, dict)
+        ]
+        photo_groups = self._route_photo_groups(data)
+        unique_photo_sources = {
+            source
+            for group in photo_groups.values()
+            for photo in group
+            if (source := self._get_media_source(photo))
+        }
+        final_notes = self._text_value(
+            photos.get("final_notes") or data.get("final_notes")
+        )
+        anomaly_details = self._text_value(data.get("anomaly_details"), "")
+
+        story.extend(
+            self._repeater_section_header("Patrol Summary", primary_hex, accent_hex)
+        )
+        story.extend(
+            self._build_field_overview_cards(
+                [
+                    ("Photos", str(len(unique_photo_sources))),
+                    ("Manholes", str(len(manhole_checks))),
+                    ("Bridge / Culvert", str(len(bridge_checks))),
+                    ("Activity Checks", str(len(activity_checks))),
+                ],
+                accent_hex=accent_hex,
+            )
+        )
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Route Segment", self._text_value(data.get("route_segment"))),
+                    ("Patrol Date", self._text_value(data.get("patrol_date"))),
+                    (
+                        "NOC Ticket",
+                        self._text_value(
+                            photos.get("noc_ticket")
+                            or getattr(report, "seacom_ref", None)
+                        ),
+                    ),
+                    ("Technician", self._text_value(photos.get("technician_name"))),
+                    ("Weather", self._text_value(data.get("weather_conditions"))),
+                    ("Anomalies Found", self._text_value(data.get("anomalies_found"))),
+                    ("Final Notes", final_notes),
+                ]
+            )
+        )
+        story.append(Spacer(1, 5 * mm))
+
+        if anomaly_details:
+            story.extend(
+                self._repeater_section_header(
+                    "Anomaly Summary", primary_hex, accent_hex
+                )
+            )
+            story.append(Paragraph(escape(anomaly_details), body_style))
+            story.append(Spacer(1, 5 * mm))
+
+        def render_count_section(
+            title: str,
+            rows: list[dict[str, Any]],
+            headers: list[str],
+            row_builder,
+            empty_message: str,
+            widths: list[float],
+        ) -> None:
+            story.extend(self._repeater_section_header(title, primary_hex, accent_hex))
+            if not rows:
+                story.append(Paragraph(escape(empty_message), body_style))
+                story.append(Spacer(1, 5 * mm))
+                return
+
+            table_data = [
+                [Paragraph(escape(header), table_header_style) for header in headers]
+            ]
+            for row in rows:
+                table_data.append(
+                    [
+                        Paragraph(escape(self._text_value(value)), table_cell_style)
+                        for value in row_builder(row)
+                    ]
+                )
+
+            table = Table(
+                table_data,
+                colWidths=[width * mm for width in widths],
+                repeatRows=1,
+            )
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(primary_hex)),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d0d5dd")),
+                        (
+                            "ROWBACKGROUNDS",
+                            (0, 1),
+                            (-1, -1),
+                            [colors.HexColor("#ffffff"), colors.HexColor("#f8fafc")],
+                        ),
+                    ]
+                )
+            )
+            story.append(table)
+            story.append(Spacer(1, 6 * mm))
+
+        render_count_section(
+            "Bridge / Culvert Checks",
+            bridge_checks,
+            ["Location", "Ground Movement", "Flood Damage", "Risk", "Mitigation"],
+            lambda row: [
+                row.get("location"),
+                row.get("ground_movement"),
+                row.get("flood_damage"),
+                row.get("risk_to_network"),
+                row.get("mitigation"),
+            ],
+            "No bridge or culvert checks were recorded.",
+            [42, 30, 28, 25, 45],
+        )
+        render_count_section(
+            "Third-Party Activity Checks",
+            activity_checks,
+            ["Location", "Coordinates", "Risk", "Mitigation"],
+            lambda row: [
+                row.get("location"),
+                row.get("coordinates"),
+                row.get("risk_to_network"),
+                row.get("mitigation"),
+            ],
+            "No third-party activity checks were recorded.",
+            [44, 42, 28, 56],
+        )
+        render_count_section(
+            "Manhole Inspections",
+            manhole_checks,
+            ["Manhole", "Recorded Coordinates", "Lid Locked", "Risk Notes", "Remarks"],
+            lambda row: [
+                row.get("manhole_id"),
+                row.get("coordinates_recorded") or row.get("coordinates_on_file"),
+                row.get("lid_locked"),
+                " | ".join(
+                    str(row.get(key) or "")
+                    for key in (
+                        "disturbance_erosion",
+                        "manhole_exposed",
+                        "lid_disturbed",
+                        "water_ingress_rodents",
+                        "chemical_threats",
+                    )
+                    if row.get(key) and str(row.get(key)).strip() != "N/A"
+                )
+                or "N/A",
+                row.get("remarks"),
+            ],
+            "No manhole inspections were recorded.",
+            [30, 42, 24, 42, 32],
+        )
+
+        if photo_groups:
+            story.extend(
+                self._repeater_section_header("Photo Evidence", primary_hex, accent_hex)
+            )
+            rendered_urls: set[str] = set()
+            for title, group in photo_groups.items():
+                unique_group: list[Any] = []
+                for photo in group:
+                    source = self._get_media_source(photo)
+                    if not source or source in rendered_urls:
+                        continue
+                    rendered_urls.add(source)
+                    unique_group.append(photo)
+                if not unique_group:
+                    continue
+
+                story.append(Paragraph(escape(title), value_style))
+                self._render_photo_grid(unique_group, story, cols=3)
+                story.append(Spacer(1, 3 * mm))
+
+        story.extend(self._repeater_section_header("Attestation", primary_hex, accent_hex))
+        story.append(
+            Table(
+                [
+                    [
+                        Paragraph("Prepared By", label_style),
+                        Paragraph("Date Prepared", label_style),
+                        Paragraph("SEACOM Attestation", label_style),
+                    ],
+                    [
+                        Paragraph(
+                            escape(self._text_value(photos.get("technician_name"))),
+                            value_style,
+                        ),
+                        Paragraph(escape(self._format_datetime(report.created_at)), value_style),
+                        Paragraph("Pending / N/A", value_style),
+                    ],
+                ],
+                colWidths=[56 * mm, 56 * mm, 58 * mm],
+                style=TableStyle(
+                    [
+                        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d0d5dd")),
+                        (
+                            "INNERGRID",
+                            (0, 0),
+                            (-1, -1),
+                            0.4,
+                            colors.HexColor("#d0d5dd"),
+                        ),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f2f4f7")),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                        ("TOPPADDING", (0, 0), (-1, -1), 7),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                    ]
+                ),
+            )
+        )
 
     def _render_diesel_body(
         self,

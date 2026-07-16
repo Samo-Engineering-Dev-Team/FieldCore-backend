@@ -1,5 +1,5 @@
 from io import BytesIO
-from typing import Annotated, List
+from typing import Annotated, Any, List
 from uuid import UUID
 
 from fastapi import Depends
@@ -23,6 +23,11 @@ from app.models.incident_report import (
 from app.models.auth import TokenData
 from app.utils.enums import IncidentStatus, UserRole
 from app.utils.funcs import utcnow
+from app.services.authorization import (
+    require_report_export,
+    require_report_read,
+    require_report_write,
+)
 from app.services.report_support import (
     append_attachment_entry,
     build_storage_attachment,
@@ -122,6 +127,11 @@ class _IncidentReportService:
         session: Session,
         current_user: TokenData,
     ) -> IncidentReportResponse:
+        require_report_write(
+            current_user,
+            "You do not have permission to create incident reports.",
+        )
+
         incident = self._get_incident(data.incident_id, session)
 
         # Rule 1: Incident must be in-progress or resolved
@@ -222,6 +232,11 @@ class _IncidentReportService:
         offset: int = 0,
         limit: int = 100,
     ) -> List[IncidentReportResponse]:
+        require_report_read(
+            current_user,
+            "You do not have permission to view incident reports.",
+        )
+
         statement = select(IncidentReport).where(IncidentReport.deleted_at.is_(None))  # type: ignore
 
         # Technicians can only see their own reports
@@ -248,6 +263,11 @@ class _IncidentReportService:
         session: Session,
         current_user: TokenData,
     ) -> IncidentReportResponse | None:
+        require_report_read(
+            current_user,
+            "You do not have permission to view incident reports.",
+        )
+
         statement = select(IncidentReport).where(
             IncidentReport.incident_id == incident_id,
             IncidentReport.deleted_at.is_(None),  # type: ignore
@@ -265,6 +285,11 @@ class _IncidentReportService:
         session: Session,
         current_user: TokenData,
     ) -> IncidentReportResponse:
+        require_report_write(
+            current_user,
+            "You do not have permission to update incident reports.",
+        )
+
         report = self._get_report(report_id, session)
 
         # NOC cannot edit
@@ -323,9 +348,15 @@ class _IncidentReportService:
         file_content: bytes,
         filename: str,
         content_type: str,
+        metadata: dict[str, Any] | None,
         session: Session,
         current_user: TokenData,
     ) -> IncidentReportResponse:
+        require_report_write(
+            current_user,
+            "You do not have permission to upload photos to incident reports.",
+        )
+
         report = self._get_report(report_id, session)
 
         if current_user.role == UserRole.NOC:
@@ -353,6 +384,25 @@ class _IncidentReportService:
             content_type=content_type,
             size=len(file_content),
         )
+        if metadata:
+            photo_entry.update(
+                {
+                    key: value
+                    for key, value in metadata.items()
+                    if key
+                    in {
+                        "lat",
+                        "lon",
+                        "latitude",
+                        "longitude",
+                        "altitude",
+                        "speed",
+                        "address",
+                        "captured_at",
+                        "index_number",
+                    }
+                }
+            )
 
         current_attachments: dict = report.attachments or {}
         photos: list = list(current_attachments.get("photos", []))
@@ -379,6 +429,11 @@ class _IncidentReportService:
         session: Session,
         current_user: TokenData,
     ) -> tuple[BytesIO, str]:
+        require_report_export(
+            current_user,
+            "You do not have permission to export incident reports.",
+        )
+
         report = self._get_report(report_id, session)
 
         # Technicians may only export their own report
@@ -409,6 +464,11 @@ class _IncidentReportService:
         current_user: TokenData,
         session: Session,
     ) -> None:
+        require_report_read(
+            current_user,
+            "You do not have permission to view incident reports.",
+        )
+
         if current_user.role == UserRole.TECHNICIAN:
             tech = self._get_technician_by_user(current_user.user_id, session)
             if report.technician_id != tech.id:

@@ -24,7 +24,7 @@ import sys
 # Add parent directory to path so we can import app modules.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlmodel import Session, select
+from sqlmodel import select
 
 from app.core import app_settings
 from app.database import Database
