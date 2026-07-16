@@ -1,9 +1,11 @@
 import re
 import uuid
-
-import httpx
 from typing import Any
+
 from fastapi import HTTPException, status
+from storage3 import create_client
+from storage3._async.file_api import AsyncBucketProxy
+from storage3._sync.file_api import SyncBucketProxy
 
 from app.core.settings import app_settings
 
@@ -18,18 +20,26 @@ class FileService:
 
     @property
     def _headers(self) -> dict[str, str]:
-        """Get headers for Supabase API requests."""
+        """Headers for Supabase Storage requests (service role bypasses RLS)."""
         return {
             "Authorization": f"Bearer {self.service_key}",
             "apikey": self.service_key,
         }
 
-    def _get_storage_url(self, path: str = "") -> str:
-        """Build Supabase Storage URL."""
-        base = f"{self.supabase_url}/storage/v1"
-        if path:
-            return f"{base}/{path}"
-        return base
+    def _storage_base_url(self) -> str:
+        return f"{self.supabase_url}/storage/v1"
+
+    def _async_bucket(self) -> AsyncBucketProxy:
+        client = create_client(
+            self._storage_base_url(), self._headers, is_async=True
+        )
+        return client.from_(self.bucket)
+
+    def _sync_bucket(self) -> SyncBucketProxy:
+        client = create_client(
+            self._storage_base_url(), self._headers, is_async=False
+        )
+        return client.from_(self.bucket)
 
     def _require_storage_config(self) -> None:
         if not self.supabase_url or not self.service_key:
@@ -47,6 +57,21 @@ class FileService:
         unique_name = f"{uuid.uuid4()}.{file_ext}" if file_ext else str(uuid.uuid4())
         return f"{folder}/{unique_name}"
 
+    def _public_url(self, file_path: str) -> str:
+        return (
+            f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        )
+
+    def _normalize_signed_url(self, signed: str | None) -> str:
+        if not signed:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Signed URL response missing URL.",
+            )
+        if signed.startswith("http"):
+            return signed
+        return f"{self._storage_base_url()}{signed}"
+
     async def upload_file(
         self,
         file_content: bytes,
@@ -54,43 +79,20 @@ class FileService:
         content_type: str,
         folder: str = "incidents",
     ) -> dict[str, Any]:
-        """
-        Upload a file to Supabase Storage.
-
-        Args:
-            file_content: The file bytes to upload
-            filename: Original filename
-            content_type: MIME type of the file
-            folder: Folder path in the bucket
-
-        Returns:
-            dict with file_path and public_url
-        """
+        """Upload a file to Supabase Storage (async)."""
         self._require_storage_config()
         file_path = self._build_file_path(filename, folder)
 
-        upload_url = self._get_storage_url(f"object/{self.bucket}/{file_path}")
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                upload_url,
-                headers={
-                    **self._headers,
-                    "Content-Type": content_type,
-                },
-                content=file_content,
+        try:
+            await self._async_bucket().upload(
+                file_path, file_content, {"content-type": content_type}
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload file: {exc}",
             )
 
-            if response.status_code not in (200, 201):
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to upload file: {response.text}",
-                )
-
-        # Generate access URLs
-        public_url: str = (
-            f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
-        )
         signed_url: str | None = None
         try:
             signed_url = await self.get_signed_url(file_path, expires_in=86400)
@@ -98,6 +100,7 @@ class FileService:
             # Bucket may be public or signed URL endpoint may be disabled; keep upload successful.
             signed_url = None
 
+        public_url = self._public_url(file_path)
         return {
             "file_path": file_path,
             "public_url": public_url,
@@ -106,6 +109,46 @@ class FileService:
             "original_name": filename,
             "content_type": content_type,
             "size": len(file_content),
+        }
+
+    async def create_signed_upload_url(
+        self,
+        filename: str,
+        folder: str = "incidents",
+    ) -> dict[str, Any]:
+        """
+        Mint a short-lived signed upload URL so the client can PUT bytes
+        directly to Supabase Storage (bypassing the serverless body cap).
+
+        The object path is chosen server-side (uuid + sanitized extension),
+        so the client can never inject a path or overwrite an arbitrary object.
+
+        Returns:
+            dict with path, token, predicted public_url, and bucket
+        """
+        self._require_storage_config()
+        file_path = self._build_file_path(filename, folder)
+
+        try:
+            result = await self._async_bucket().create_signed_upload_url(file_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to create signed upload URL: {exc}",
+            )
+
+        token = result.get("token")
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Signed upload URL response missing token.",
+            )
+
+        return {
+            "path": file_path,
+            "token": token,
+            "public_url": self._public_url(file_path),
+            "bucket": self.bucket,
         }
 
     def upload_file_sync(
@@ -120,33 +163,24 @@ class FileService:
         """
         self._require_storage_config()
         file_path = self._build_file_path(filename, folder)
-        upload_url = self._get_storage_url(f"object/{self.bucket}/{file_path}")
 
-        with httpx.Client() as client:
-            response = client.post(
-                upload_url,
-                headers={
-                    **self._headers,
-                    "Content-Type": content_type,
-                },
-                content=file_content,
+        try:
+            self._sync_bucket().upload(
+                file_path, file_content, {"content-type": content_type}
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload file: {exc}",
             )
 
-            if response.status_code not in (200, 201):
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to upload file: {response.text}",
-                )
-
-        public_url: str = (
-            f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
-        )
         signed_url: str | None = None
         try:
             signed_url = self.get_signed_url_sync(file_path, expires_in=86400)
         except Exception:
             signed_url = None
 
+        public_url = self._public_url(file_path)
         return {
             "file_path": file_path,
             "public_url": public_url,
@@ -158,96 +192,46 @@ class FileService:
         }
 
     async def delete_file(self, file_path: str) -> bool:
-        """
-        Delete a file from Supabase Storage.
-
-        Args:
-            file_path: Path to the file in the bucket
-
-        Returns:
-            True if deleted successfully
-        """
+        """Delete a file from Supabase Storage. Returns True if deleted."""
         if not self.supabase_url or not self.service_key:
             return False
 
-        delete_url = self._get_storage_url(f"object/{self.bucket}/{file_path}")
-
-        async with httpx.AsyncClient() as client:
-            response = await client.delete(
-                delete_url,
-                headers=self._headers,
-            )
-
-            return response.status_code in (200, 204)
+        try:
+            await self._async_bucket().remove([file_path])
+            return True
+        except Exception:
+            return False
 
     def get_public_url(self, file_path: str) -> str:
-        """
-        Get the public URL for a file.
-
-        Args:
-            file_path: Path to the file in the bucket
-
-        Returns:
-            Public URL string
-        """
-        return f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
+        """Get the public URL for a file."""
+        return self._public_url(file_path)
 
     async def get_signed_url(self, file_path: str, expires_in: int = 3600) -> str:
-        """
-        Get a signed URL for private file access.
-
-        Args:
-            file_path: Path to the file in the bucket
-            expires_in: Seconds until URL expires (default 1 hour)
-
-        Returns:
-            Signed URL string
-        """
-        if not self.supabase_url or not self.service_key:
+        """Get a signed URL for private file access (async)."""
+        self._require_storage_config()
+        try:
+            result = await self._async_bucket().create_signed_url(
+                file_path, expires_in
+            )
+        except Exception as exc:
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="File storage not configured.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate signed URL: {exc}",
             )
-
-        sign_url = self._get_storage_url(f"object/sign/{self.bucket}/{file_path}")
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                sign_url,
-                headers=self._headers,
-                json={"expiresIn": expires_in},
-            )
-
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to generate signed URL: {response.text}",
-                )
-
-            data = response.json()
-            return f"{self.supabase_url}/storage/v1{data['signedURL']}"
+        return self._normalize_signed_url(
+            result.get("signedURL") or result.get("signedUrl")
+        )
 
     def get_signed_url_sync(self, file_path: str, expires_in: int = 3600) -> str:
         """Synchronous variant for signed URL generation."""
-        if not self.supabase_url or not self.service_key:
+        self._require_storage_config()
+        try:
+            result = self._sync_bucket().create_signed_url(file_path, expires_in)
+        except Exception as exc:
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="File storage not configured.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate signed URL: {exc}",
             )
-
-        sign_url = self._get_storage_url(f"object/sign/{self.bucket}/{file_path}")
-        with httpx.Client() as client:
-            response = client.post(
-                sign_url,
-                headers=self._headers,
-                json={"expiresIn": expires_in},
-            )
-
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Failed to generate signed URL: {response.text}",
-                )
-
-            data = response.json()
-            return f"{self.supabase_url}/storage/v1{data['signedURL']}"
+        return self._normalize_signed_url(
+            result.get("signedURL") or result.get("signedUrl")
+        )
