@@ -410,7 +410,24 @@ class _ReportService:
         report = self._get_report(report_id, session)
         self._assert_can_access_report(report, current_user, session, "delete")
         report.soft_delete()
+        self._delete_self_started_field_work_task(report)
         session.commit()
+
+    def _delete_self_started_field_work_task(self, report: Report) -> None:
+        task = report.task
+        if not task:
+            return
+
+        if report.status == ReportStatus.COMPLETED:
+            return
+
+        is_self_started_field_work = (
+            task.task_type == TaskType.ROUTINE_MAINTENANCE
+            and task.assigned_by_name == "Technician self-started"
+            and task.technician_id == report.technician_id
+        )
+        if is_self_started_field_work:
+            task.soft_delete()
 
     def start_report(
         self,
