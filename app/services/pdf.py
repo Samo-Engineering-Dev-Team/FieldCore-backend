@@ -1,5 +1,8 @@
 import urllib.request
+import urllib.error
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import ipaddress
 import socket
 from urllib.parse import urlparse, unquote
@@ -28,6 +31,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.graphics.shapes import Circle, Drawing, String
 from reportlab.graphics.charts.barcharts import VerticalBarChart, HorizontalBarChart
 from xml.sax.saxutils import escape
+from PIL import Image as PILImage, ImageOps
 
 from loguru import logger as LOG
 from app.core.settings import app_settings
@@ -57,6 +61,14 @@ _FIELDCORE_CONFIDENTIAL = "CONFIDENTIAL - FOR FIELD CORE INTERNAL USE ONLY"
 _FIELDCORE_MARK_ASSET = "fieldcore-logo-mark.png"
 _FIELDCORE_LOCKUP_ASSET = "fieldcore-logo-lockup.png"
 
+# ── Image fetch tuning (report photo evidence) ────────────────────────────────
+_IMAGE_FETCH_TIMEOUT = 10  # seconds per attempt
+_IMAGE_FETCH_RETRIES = 2  # attempts before giving up on a photo
+_IMAGE_MAX_BYTES = 25 * 1024 * 1024  # 25 MB hard cap per image
+_IMAGE_FETCH_WORKERS = 6  # concurrent photo downloads per grid
+_IMAGE_MAX_DIM = 1600  # longest side (px) an embedded photo is downscaled to
+_IMAGE_JPEG_QUALITY = 85  # re-encode quality for downscaled photos
+
 
 class PDFService:
     """Service for generating PDF documents from reports."""
@@ -68,6 +80,16 @@ class PDFService:
         self.supabase_url = (app_settings.SUPABASE_URL or "").rstrip("/")
         self.supabase_service_key = app_settings.SUPABASE_SERVICE_KEY or ""
         self.supabase_bucket = app_settings.SUPABASE_STORAGE_BUCKET or "attachments"
+        self._extra_image_hosts = {
+            host.strip().lower()
+            for host in (app_settings.PDF_IMAGE_ALLOWED_HOSTS or "").split(",")
+            if host.strip()
+        }
+        # Per-PDF cache of downscaled image bytes, keyed by storage path (query
+        # stripped) so signed-URL variants of the same file collapse to one
+        # download+decode. A fresh PDFService is built per request, so this never
+        # leaks across reports.
+        self._image_cache: dict[str, bytes | None] = {}
         backend_root = Path(__file__).resolve().parents[2]
         workspace_root = backend_root.parent
         self.cover_search_paths = [
@@ -1337,17 +1359,124 @@ class PDFService:
         auth_url = f"{self.supabase_url}/storage/v1/object/authenticated/{self.supabase_bucket}/{file_path.lstrip('/')}"
         if not self._is_safe_remote_url(auth_url):
             return None
-        try:
-            req = urllib.request.Request(
-                auth_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0",
-                    "Authorization": f"Bearer {self.supabase_service_key}",
-                    "apikey": self.supabase_service_key,
-                },
+        return self._http_get_image(
+            auth_url,
+            {
+                "User-Agent": "Mozilla/5.0",
+                "Authorization": f"Bearer {self.supabase_service_key}",
+                "apikey": self.supabase_service_key,
+            },
+        )
+
+    def _validate_image_bytes(
+        self, data: bytes, expected_len: int | None
+    ) -> BytesIO | None:
+        """Validate, orient, and downscale a photo before it reaches ReportLab.
+
+        Two jobs in one PIL pass:
+
+        1. Reject truncated/corrupt payloads (a short transfer vs Content-Length,
+           or bytes PIL cannot decode) so a half-rendered image is never embedded.
+        2. Downscale to at most ``_IMAGE_MAX_DIM`` on the longest side and re-encode
+           as JPEG. ReportLab embeds the *source* pixels at full resolution — a 12 MP
+           phone photo shown in a 55 mm cell still costs ~35 MB of decoded RAM and
+           bloats the PDF. Downscaling here bounds both memory and file size; the
+           JPEG ``draft`` hint lets the decoder scale down *while* decoding so a
+           large source is never fully expanded in memory. EXIF orientation is
+           baked in so rotated phone photos render upright.
+
+        Returns a small JPEG buffer, or None on failure (caller retries / shows a
+        placeholder).
+        """
+        if not data:
+            return None
+        if expected_len is not None and len(data) < expected_len:
+            LOG.debug(
+                "pdf_image_truncated got={} expected={}", len(data), expected_len
             )
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                return BytesIO(resp.read())
+            return None
+        try:
+            with PILImage.open(BytesIO(data)) as im:
+                # draft() only affects JPEG, but that's the phone-photo case — it
+                # asks the decoder for a pre-scaled image, avoiding a full decode.
+                im.draft("RGB", (_IMAGE_MAX_DIM, _IMAGE_MAX_DIM))
+                im = ImageOps.exif_transpose(im)  # honour camera rotation
+                if im.mode != "RGB":
+                    im = im.convert("RGB")
+                im.thumbnail(
+                    (_IMAGE_MAX_DIM, _IMAGE_MAX_DIM), PILImage.Resampling.LANCZOS
+                )
+                out = BytesIO()
+                im.save(out, format="JPEG", quality=_IMAGE_JPEG_QUALITY, optimize=True)
+            out.seek(0)
+            return out
+        except Exception as exc:
+            LOG.debug("pdf_image_decode_failed err={}", repr(exc))
+            return None
+
+    def _http_get_image(self, url: str, headers: dict) -> BytesIO | None:
+        """Fetch an image with retries, a size cap, and integrity validation."""
+        last_err: str | None = None
+        for attempt in range(1, _IMAGE_FETCH_RETRIES + 1):
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=_IMAGE_FETCH_TIMEOUT) as resp:
+                    cl = resp.headers.get("Content-Length")
+                    expected = int(cl) if cl and cl.isdigit() else None
+                    if expected is not None and expected > _IMAGE_MAX_BYTES:
+                        LOG.debug(
+                            "pdf_image_too_large url={} size={}", url[:120], expected
+                        )
+                        return None
+                    # Read one byte past the cap so we can detect an overflow.
+                    data = resp.read(_IMAGE_MAX_BYTES + 1)
+                if len(data) > _IMAGE_MAX_BYTES:
+                    LOG.debug("pdf_image_exceeds_cap url={}", url[:120])
+                    return None
+                buf = self._validate_image_bytes(data, expected)
+                if buf is not None:
+                    return buf
+                last_err = "validation_failed"
+            except urllib.error.HTTPError as exc:
+                # 4xx is permanent (missing/forbidden) — retrying just wastes time.
+                last_err = f"HTTP {exc.code}"
+                if 400 <= exc.code < 500:
+                    LOG.debug(
+                        "pdf_image_http_permanent url={} status={}", url[:120], exc.code
+                    )
+                    return None
+            except Exception as exc:
+                last_err = repr(exc)
+            LOG.debug(
+                "pdf_image_fetch_attempt_failed attempt={}/{} url={} err={}",
+                attempt,
+                _IMAGE_FETCH_RETRIES,
+                url[:120],
+                last_err,
+            )
+        return None
+
+    def _fit_photo_image(
+        self, buf: BytesIO, box_w: float, box_h: float
+    ) -> Image | None:
+        """Build a ReportLab Image scaled to fit box_w x box_h, preserving aspect.
+
+        box_w/box_h are in points (mm values are already multiplied by `mm`).
+        Portrait or off-ratio photos are letterboxed within the cell rather than
+        stretched into a fixed landscape frame — the whole photo stays visible
+        and undistorted.
+        """
+        try:
+            buf.seek(0)
+            reader = ImageReader(buf)
+            iw, ih = reader.getSize()
+            if not iw or not ih:
+                return None
+            scale = min(box_w / iw, box_h / ih)
+            buf.seek(0)
+            img = Image(buf, width=iw * scale, height=ih * scale)
+            img.hAlign = "CENTER"
+            return img
         except Exception:
             return None
 
@@ -1372,7 +1501,9 @@ class PDFService:
 
         if self.supabase_url:
             allowed_host = urlparse(self.supabase_url).hostname
-            if allowed_host and host.lower() != allowed_host.lower():
+            allowed = {allowed_host.lower()} if allowed_host else set()
+            allowed |= self._extra_image_hosts
+            if allowed and host.lower() not in allowed:
                 return False
 
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -1407,14 +1538,9 @@ class PDFService:
         # 1) Direct URL fetch first (works for signed/public links and standard
         #    URLs) — only if the URL passes the SSRF allowlist/IP check.
         if self._is_safe_remote_url(url):
-            try:
-                req = urllib.request.Request(
-                    url, headers={"User-Agent": "Mozilla/5.0"}
-                )
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    return BytesIO(resp.read())
-            except Exception:
-                pass
+            buf = self._http_get_image(url, {"User-Agent": "Mozilla/5.0"})
+            if buf is not None:
+                return buf
 
         # 2) Supabase private bucket fallback using service key.
         file_path = self._extract_supabase_file_path(url)
@@ -1425,6 +1551,100 @@ class PDFService:
 
         LOG.debug("pdf_image_fetch_failed source={}", url[:200])
         return None
+
+    def _image_cache_key(self, url: str) -> str:
+        """Stable per-file key: prefer the Supabase storage path, else the URL
+        without its query string, so signed-URL variants of one file share a key.
+        """
+        file_path = self._extract_supabase_file_path(url)
+        if file_path:
+            return f"sb:{file_path}"
+        try:
+            parsed = urlparse(url)
+            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        except Exception:
+            return url
+
+    def _fetch_one_for_cache(self, key: str, url: str) -> bytes | None:
+        """Fetch+downscale a single distinct file, logging size and elapsed."""
+        started = time.monotonic()
+        buf = self._fetch_image_bytes(url)
+        elapsed = time.monotonic() - started
+        data = buf.getvalue() if buf is not None else None
+        if data is not None:
+            LOG.info(
+                "pdf_photo_ok {:.0f}KB {:.1f}s key={}", len(data) / 1024, elapsed, key
+            )
+        else:
+            LOG.warning("pdf_photo_failed {:.1f}s url={}", elapsed, url[:80])
+        return data
+
+    def _fetch_images_parallel(self, urls: list[str]) -> list[BytesIO | None]:
+        """Fetch photos concurrently, de-duplicated and cached, preserving order.
+
+        The same underlying file often appears many times (signed URLs differ only
+        by their token), and a report can render several photo grids. We collapse
+        every occurrence to one download+decode via a per-PDF cache, so RAM and
+        time scale with the number of *distinct* files, not raw occurrences.
+        Each caller still gets its own BytesIO (ReportLab consumes the buffer, so
+        occurrences must not share one). Progress is logged at INFO.
+        """
+        if not urls:
+            return []
+        total = len(urls)
+        keys = [self._image_cache_key(u) for u in urls]
+
+        # Distinct files not already cached, first URL seen per key.
+        to_fetch: dict[str, str] = {}
+        for url, key in zip(urls, keys):
+            if key not in self._image_cache and key not in to_fetch:
+                to_fetch[key] = url
+
+        cached_hits = sum(1 for k in keys if k in self._image_cache)
+        LOG.info(
+            "pdf_photos_fetch_start occurrences={} distinct_new={} already_cached={} dup_in_batch={}",
+            total,
+            len(to_fetch),
+            cached_hits,
+            total - cached_hits - len(to_fetch),
+        )
+        started = time.monotonic()
+
+        if to_fetch:
+            workers = min(_IMAGE_FETCH_WORKERS, len(to_fetch))
+            done = 0
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                future_to_key = {
+                    pool.submit(self._fetch_one_for_cache, key, url): key
+                    for key, url in to_fetch.items()
+                }
+                for future in as_completed(future_to_key):
+                    key = future_to_key[future]
+                    self._image_cache[key] = future.result()
+                    done += 1
+                    LOG.info(
+                        "pdf_photos_progress {}/{} distinct complete",
+                        done,
+                        len(to_fetch),
+                    )
+
+        # Hand back a fresh buffer per occurrence (never a shared BytesIO).
+        results: list[BytesIO | None] = []
+        for key in keys:
+            data = self._image_cache.get(key)
+            results.append(BytesIO(data) if data else None)
+
+        elapsed = time.monotonic() - started
+        ok = sum(1 for r in results if r is not None)
+        LOG.info(
+            "pdf_photos_fetch_done ok={} failed={} occurrences={} distinct_new={} elapsed={:.1f}s",
+            ok,
+            total - ok,
+            total,
+            len(to_fetch),
+            elapsed,
+        )
+        return results
 
     def _build_narrative_section(
         self,
@@ -2433,14 +2653,20 @@ class PDFService:
         except Exception:
             pass
 
-        photo_buffers: list[tuple[str, BytesIO]] = []
-        for photo in photos_raw:
-            url = photo.get("url") or photo.get("public_url")
-            if not url:
-                continue
-            buf = self._fetch_image_bytes(url)
-            if buf:
-                photo_buffers.append((photo.get("original_name") or "Photo", buf))
+        # Keep failed fetches too — they render as a visible placeholder so a
+        # missing photo never silently disappears and the count stays honest.
+        photo_items = [
+            (
+                photo.get("original_name") or "Photo",
+                photo.get("url") or photo.get("public_url"),
+            )
+            for photo in photos_raw
+        ]
+        photo_items = [(name, url) for name, url in photo_items if url]
+        photo_bufs = self._fetch_images_parallel([url for _n, url in photo_items])
+        photo_buffers: list[tuple[str, BytesIO | None]] = [
+            (name, buf) for (name, _u), buf in zip(photo_items, photo_bufs)
+        ]
 
         if photo_buffers:
             # Photo section heading — same bordered-box style as narrative sections
@@ -2510,15 +2736,13 @@ class PDFService:
                 img_row: list = []
                 cap_row: list = []
                 for name, buf in row_items:
-                    try:
-                        buf.seek(0)
-                        img = Image(buf, width=PHOTO_W, height=PHOTO_H)
-                        img.hAlign = "CENTER"
+                    img = self._fit_photo_image(buf, PHOTO_W, PHOTO_H) if buf else None
+                    if img is not None:
                         img_row.append(img)
                         cap_row.append(Paragraph(escape(name[:35]), caption_s))
-                    except Exception:
+                    else:
                         img_row.append(Paragraph("<i>(unavailable)</i>", caption_s))
-                        cap_row.append(Paragraph("", caption_s))
+                        cap_row.append(Paragraph(escape(name[:35]), caption_s))
 
                 while len(img_row) < COLS:
                     img_row.append(Spacer(PHOTO_W, PHOTO_H))
@@ -2552,8 +2776,6 @@ class PDFService:
                         ]
                     )
                 )
-                story.append(img_table)
-
                 cap_table = Table([cap_row], colWidths=col_widths)
                 cap_table.setStyle(
                     TableStyle(
@@ -2564,7 +2786,8 @@ class PDFService:
                         ]
                     )
                 )
-                story.append(cap_table)
+                # Keep each image row with its captions across page breaks.
+                story.append(KeepTogether([img_table, cap_table]))
 
             story.append(Spacer(1, 4 * mm))
 
@@ -3308,14 +3531,19 @@ class PDFService:
         except Exception:
             pass
 
-        photo_buffers: list[tuple[str, BytesIO]] = []
-        for photo in photos_raw:
-            url = photo.get("url") or photo.get("public_url")
-            if not url:
-                continue
-            buf = self._fetch_image_bytes(url)
-            if buf:
-                photo_buffers.append((photo.get("original_name") or "Photo", buf))
+        # Keep failed fetches so they render as a placeholder, not a silent gap.
+        photo_items = [
+            (
+                photo.get("original_name") or "Photo",
+                photo.get("url") or photo.get("public_url"),
+            )
+            for photo in photos_raw
+        ]
+        photo_items = [(name, url) for name, url in photo_items if url]
+        photo_bufs = self._fetch_images_parallel([url for _n, url in photo_items])
+        photo_buffers: list[tuple[str, BytesIO | None]] = [
+            (name, buf) for (name, _u), buf in zip(photo_items, photo_bufs)
+        ]
 
         if photo_buffers:
             photo_label_s = ParagraphStyle(
@@ -3364,17 +3592,15 @@ class PDFService:
                 img_row: list = []
                 cap_row: list = []
                 for name, buf in row_items:
-                    try:
-                        buf.seek(0)
-                        img = Image(buf, width=photo_w, height=photo_h)
-                        img.hAlign = "CENTER"
+                    img = self._fit_photo_image(buf, photo_w, photo_h) if buf else None
+                    if img is not None:
                         img_row.append(img)
                         cap_row.append(Paragraph(escape(name[:35]), photo_caption_s))
-                    except Exception:
+                    else:
                         img_row.append(
                             Paragraph("<i>(unavailable)</i>", photo_caption_s)
                         )
-                        cap_row.append(Paragraph("", photo_caption_s))
+                        cap_row.append(Paragraph(escape(name[:35]), photo_caption_s))
 
                 while len(img_row) < cols:
                     img_row.append(Spacer(photo_w, photo_h))
@@ -3402,8 +3628,6 @@ class PDFService:
                         ]
                     )
                 )
-                story.append(img_table)
-
                 cap_table = Table([cap_row], colWidths=col_widths)
                 cap_table.setStyle(
                     TableStyle(
@@ -3414,7 +3638,8 @@ class PDFService:
                         ]
                     )
                 )
-                story.append(cap_table)
+                # Keep each image row with its captions across page breaks.
+                story.append(KeepTogether([img_table, cap_table]))
 
             story.append(Spacer(1, 3 * mm))
 
@@ -4365,14 +4590,16 @@ class PDFService:
         PHOTO_W = (170 * mm - (cols - 1) * 4 * mm) / cols
         PHOTO_H = PHOTO_W * 0.68
 
-        photo_buffers: list[tuple[str, BytesIO | None]] = []
+        items = []
         for photo in photos:
             url = self._get_media_source(photo)
             if not url:
                 continue
-            name = self._get_media_name(photo)
-            buf = self._fetch_image_bytes(url) if url else None
-            photo_buffers.append((name, buf))
+            items.append((self._get_media_name(photo), url))
+        bufs = self._fetch_images_parallel([u for _n, u in items])
+        photo_buffers: list[tuple[str, BytesIO | None]] = [
+            (name, buf) for (name, _u), buf in zip(items, bufs)
+        ]
 
         col_widths = [PHOTO_W + 2 * mm] * cols
         for chunk in [
@@ -4381,14 +4608,9 @@ class PDFService:
             img_row: list = []
             cap_row: list = []
             for name, buf in chunk:
-                if buf:
-                    try:
-                        buf.seek(0)
-                        img = Image(buf, width=PHOTO_W, height=PHOTO_H)
-                        img.hAlign = "CENTER"
-                        img_row.append(img)
-                    except Exception:
-                        img_row.append(Paragraph("<i>(unavailable)</i>", caption_style))
+                img = self._fit_photo_image(buf, PHOTO_W, PHOTO_H) if buf else None
+                if img is not None:
+                    img_row.append(img)
                 else:
                     img_row.append(Paragraph("<i>(unavailable)</i>", caption_style))
                 cap_row.append(Paragraph((name or "")[:35], caption_style))
@@ -4418,8 +4640,6 @@ class PDFService:
                     ]
                 )
             )
-            story.append(img_tbl)
-
             cap_tbl = Table([cap_row], colWidths=col_widths)
             cap_tbl.setStyle(
                 TableStyle(
@@ -4430,7 +4650,8 @@ class PDFService:
                     ]
                 )
             )
-            story.append(cap_tbl)
+            # Keep each image row with its captions so they never split pages.
+            story.append(KeepTogether([img_tbl, cap_tbl]))
 
     def _build_field_kv_table(self, rows: list[tuple[str, str]]) -> Table:
         """Build a clean two-column key/value table."""

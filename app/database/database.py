@@ -131,6 +131,16 @@ class Database:
         )
         missing_site_columns = {"site_type"} - site_columns if has_sites else set()
 
+        has_webhooks = inspector.has_table("webhooks")
+        webhook_columns = (
+            {column["name"] for column in inspector.get_columns("webhooks")}
+            if has_webhooks
+            else set()
+        )
+        missing_webhook_columns = (
+            {"deleted_at"} - webhook_columns if has_webhooks else set()
+        )
+
         has_technicians = inspector.has_table("technicians")
         technician_indexes = (
             {index["name"] for index in inspector.get_indexes("technicians")}
@@ -150,6 +160,7 @@ class Database:
             and not missing_task_columns
             and not missing_route_patrol_columns
             and not missing_site_columns
+            and not missing_webhook_columns
             and not needs_technician_unique_index_fix
         ):
             return
@@ -269,6 +280,19 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added sites.site_type column"
+                )
+
+            if "deleted_at" in missing_webhook_columns:
+                connection.execute(
+                    text(
+                        """
+                        ALTER TABLE webhooks
+                        ADD COLUMN deleted_at TIMESTAMPTZ
+                        """
+                    )
+                )
+                LOG.warning(
+                    "Applied schema compatibility fix: added webhooks.deleted_at column"
                 )
 
             if needs_technician_unique_index_fix:
