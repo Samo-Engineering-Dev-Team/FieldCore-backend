@@ -5773,6 +5773,27 @@ class PDFService:
         _add_picture_group("Generator 2 - Oil Level", gen2_data.get("oilLevelImages"))
         _add_picture_group("Generator 2 - Fuel Level", gen2_data.get("fuelLevelImages"))
 
+        # The picture groups above are built from the report `data` fields, which
+        # store each photo as its public `url` string. Every uploaded photo is
+        # ALSO present in `attachments.files` (as a dict) with the same public
+        # `url` plus a separate `signed_url`. Re-adding those files here duplicated
+        # every photo in the PDF: the per-item dedup keys dicts on `signed_url`
+        # first, so it never matched the public-url string already in the group.
+        # Only surface attachment files whose image isn't already represented,
+        # matching across every URL variant a file can carry.
+        seen_photo_keys: set[str] = set()
+        for group in picture_groups.values():
+            for item in group.get("photos", []):
+                if isinstance(item, str):
+                    key = item.strip()
+                    if key:
+                        seen_photo_keys.add(key)
+                elif isinstance(item, dict):
+                    for field in ("signed_url", "url", "public_url", "file_path"):
+                        val = item.get(field)
+                        if val:
+                            seen_photo_keys.add(str(val).strip())
+
         attachments = report.attachments if isinstance(report.attachments, dict) else {}
         attachment_files = (
             attachments.get("files") if isinstance(attachments, dict) else []
@@ -5780,6 +5801,12 @@ class PDFService:
         if isinstance(attachment_files, list):
             for file_item in attachment_files:
                 if not isinstance(file_item, dict):
+                    continue
+                variants = [
+                    file_item.get(field)
+                    for field in ("url", "signed_url", "public_url", "file_path")
+                ]
+                if any(v and str(v).strip() in seen_photo_keys for v in variants):
                     continue
                 title = str(file_item.get("label") or "Additional Attachments")
                 _add_picture_group(title, [file_item])
