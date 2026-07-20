@@ -33,7 +33,11 @@
       "Bash(.venv/Scripts/python -c \":*)",
       "Bash(npx eslint src/ --ext .ts,.tsx --max-warnings 0)",
       "Bash(npx eslint src/ --ext .ts,.tsx)",
-      "Bash(grep -rln *)"
+      "Bash(grep -rln *)",
+      "Bash(bun add *)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }

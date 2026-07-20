@@ -14,5 +14,8 @@
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(p\\) for p in list\\(d.get\\(''paths'',{}\\).keys\\(\\)\\)[:30]]\")",
       "Bash(ls scripts/*.py)"
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
   }
 }
