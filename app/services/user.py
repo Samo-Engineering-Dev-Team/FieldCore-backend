@@ -1,26 +1,26 @@
+from typing import Annotated, List
 from uuid import UUID
-from fastapi import Depends
-from typing import List, Annotated
-from sqlmodel import Session, select
-from sqlalchemy.exc import IntegrityError
 
-from app.utils.enums import UserRole
-from app.models import (
-    Technician,
-    User,
-    UserCreate,
-    UserUpdate,
-    UserResponse,
-    AdminPasswordReset,
-)
+from fastapi import Depends
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, select
+
+from app.core import SecurityUtils
 from app.exceptions.http import (
     BadRequestException,
     ConflictException,
     InternalServerErrorException,
     NotFoundException,
 )
-from app.utils.enums import UserStatus
-from app.core import SecurityUtils
+from app.models import (
+    AdminPasswordReset,
+    Technician,
+    User,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
+from app.utils.enums import UserRole, UserStatus
 from app.utils.funcs import utcnow
 
 
@@ -29,16 +29,11 @@ class _UserService:
         return UserResponse(**user.model_dump(exclude={"password_hash"}))
 
     def create_user(self, data: UserCreate, session: Session) -> UserResponse:
-        status = (
-            UserStatus.DISABLED
-            if data.role == UserRole.TECHNICIAN
-            else UserStatus.ACTIVE
-        )
         user = User(
             **data.model_dump(exclude={"password"}),
             password_hash=SecurityUtils.hash_password(data.password),
             must_change_password=True,
-            status=status,
+            status=UserStatus.ACTIVE,
         )
         try:
             session.add(user)

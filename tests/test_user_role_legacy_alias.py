@@ -3,13 +3,13 @@ from app.models.user import User
 from app.utils.enums import UserRole
 
 
-def test_legacy_super_admin_db_role_maps_to_admin() -> None:
+def test_super_admin_db_role_maps_to_super_admin() -> None:
     role_type = User.__table__.c.role.type
 
-    assert role_type._object_value_for_elem("SUPER_ADMIN") is UserRole.ADMIN
+    assert role_type._object_value_for_elem("SUPER_ADMIN") is UserRole.SUPER_ADMIN
 
 
-def test_super_admin_alias_serializes_as_admin() -> None:
+def test_super_admin_serializes_as_super_admin() -> None:
     response = UserResponse.model_validate(
         {
             "id": "00000000-0000-0000-0000-000000000000",
@@ -25,4 +25,4 @@ def test_super_admin_alias_serializes_as_admin() -> None:
         }
     )
 
-    assert response.model_dump(mode="json")["role"] == "admin"
+    assert response.model_dump(mode="json")["role"] == "super_admin"
