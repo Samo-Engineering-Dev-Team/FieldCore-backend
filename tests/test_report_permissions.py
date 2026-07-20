@@ -8,7 +8,7 @@ from app.exceptions.http import ForbiddenException
 from app.models import ReportCreate, ReportUpdate
 from app.models.auth import TokenData
 from app.services.report import _ReportService
-from app.utils.enums import ReportType, UserRole
+from app.utils.enums import ReportStatus, ReportType, TaskType, UserRole
 
 
 class CapturingSession:
@@ -97,6 +97,46 @@ def test_partner_can_list_reports_without_technician_scope() -> None:
     service.read_reports(session=session, current_user=current_user)
 
     service._get_technician_by_user.assert_not_called()
+
+
+def test_delete_unfinished_self_started_field_report_deletes_linked_task() -> None:
+    service = _ReportService()
+    technician_id = uuid4()
+    task = SimpleNamespace(
+        task_type=TaskType.ROUTINE_MAINTENANCE,
+        assigned_by_name="Technician self-started",
+        technician_id=technician_id,
+        soft_delete=MagicMock(),
+    )
+    report = SimpleNamespace(
+        status=ReportStatus.STARTED,
+        task=task,
+        technician_id=technician_id,
+    )
+
+    service._delete_self_started_field_work_task(report)  # type: ignore[arg-type]
+
+    task.soft_delete.assert_called_once()
+
+
+def test_delete_unfinished_assigned_field_report_keeps_linked_task() -> None:
+    service = _ReportService()
+    technician_id = uuid4()
+    task = SimpleNamespace(
+        task_type=TaskType.ROUTINE_MAINTENANCE,
+        assigned_by_name="NOC User",
+        technician_id=technician_id,
+        soft_delete=MagicMock(),
+    )
+    report = SimpleNamespace(
+        status=ReportStatus.STARTED,
+        task=task,
+        technician_id=technician_id,
+    )
+
+    service._delete_self_started_field_work_task(report)  # type: ignore[arg-type]
+
+    task.soft_delete.assert_not_called()
 
 
 @pytest.mark.parametrize(

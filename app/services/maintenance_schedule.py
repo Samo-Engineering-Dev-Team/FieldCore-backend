@@ -7,6 +7,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from app.exceptions.http import ConflictException, NotFoundException
@@ -257,6 +258,20 @@ class _MaintenanceScheduleService:
         )
         if site_id:
             stmt = stmt.where(MaintenanceSchedule.site_id == site_id)
+        if technician_id:
+            coverage_schedule_ids = self._active_coverage_schedule_ids(
+                session, technician_id
+            )
+            owner_filter = MaintenanceSchedule.assigned_technician_id == technician_id
+            if coverage_schedule_ids:
+                stmt = stmt.where(
+                    or_(
+                        owner_filter,
+                        MaintenanceSchedule.id.in_(coverage_schedule_ids),  # type: ignore
+                    )
+                )
+            else:
+                stmt = stmt.where(owner_filter)
 
         schedules = [_enrich(s, session) for s in session.exec(stmt).all()]
         if technician_id:
@@ -280,6 +295,20 @@ class _MaintenanceScheduleService:
             MaintenanceSchedule.is_active == True,  # noqa: E712
             MaintenanceSchedule.next_due_at <= horizon,
         )
+        if technician_id:
+            coverage_schedule_ids = self._active_coverage_schedule_ids(
+                session, technician_id
+            )
+            owner_filter = MaintenanceSchedule.assigned_technician_id == technician_id
+            if coverage_schedule_ids:
+                stmt = stmt.where(
+                    or_(
+                        owner_filter,
+                        MaintenanceSchedule.id.in_(coverage_schedule_ids),  # type: ignore
+                    )
+                )
+            else:
+                stmt = stmt.where(owner_filter)
 
         schedules = [_enrich(s, session) for s in session.exec(stmt).all()]
         if technician_id:
@@ -289,6 +318,23 @@ class _MaintenanceScheduleService:
                 if schedule.effective_technician_id == technician_id
             ]
         return schedules
+
+    def _active_coverage_schedule_ids(
+        self, session: Session, technician_id: UUID
+    ) -> list[UUID]:
+        week_start, week_end = _week_bounds()
+        return list(
+            session.exec(
+                select(MaintenanceScheduleCoverage.schedule_id).where(
+                    MaintenanceScheduleCoverage.assigned_technician_id
+                    == technician_id,
+                    MaintenanceScheduleCoverage.week_start_at == week_start,
+                    MaintenanceScheduleCoverage.week_end_at == week_end,
+                    MaintenanceScheduleCoverage.cancelled_at.is_(None),  # type: ignore
+                    MaintenanceScheduleCoverage.deleted_at.is_(None),  # type: ignore
+                )
+            ).all()
+        )
 
     def get(self, schedule_id: UUID, session: Session) -> MaintenanceScheduleResponse:
         schedule = session.get(MaintenanceSchedule, schedule_id)

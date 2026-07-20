@@ -20,6 +20,10 @@ class AppSettings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_SERVICE_KEY: str = ""
     SUPABASE_STORAGE_BUCKET: str = "attachments"
+    # Extra hosts (comma-separated) allowed for PDF image fetches in addition to
+    # the Supabase host — e.g. a CDN in front of the bucket. IP-safety checks in
+    # the SSRF guard still apply to every host listed here.
+    PDF_IMAGE_ALLOWED_HOSTS: str = ""
 
     # Security
     JWT_TOKEN_EXPIRE_MINUTES: int = 60

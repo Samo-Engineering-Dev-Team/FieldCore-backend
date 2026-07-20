@@ -158,6 +158,7 @@ def test_covered_schedule_moves_from_original_to_replacement() -> None:
         FakeSession(
             exec_results=[
                 QueryResult(all_items=[]),
+                QueryResult(all_items=[]),
                 QueryResult(all_items=[schedule]),
                 QueryResult(first=coverage),
             ]
@@ -168,6 +169,7 @@ def test_covered_schedule_moves_from_original_to_replacement() -> None:
         FakeSession(
             exec_results=[
                 QueryResult(all_items=[]),
+                QueryResult(all_items=[schedule.id]),
                 QueryResult(all_items=[schedule]),
                 QueryResult(first=coverage),
             ]

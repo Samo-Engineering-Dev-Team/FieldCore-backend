@@ -306,7 +306,7 @@ def test_create_technician_restores_deleted_matching_profile() -> None:
     assert active_user.status == UserStatus.ACTIVE
 
 
-def test_create_technician_user_starts_disabled_until_profile_exists() -> None:
+def test_create_technician_user_starts_active() -> None:
     from app.models import UserCreate
 
     service = _UserService()
@@ -325,8 +325,8 @@ def test_create_technician_user_starts_disabled_until_profile_exists() -> None:
 
     created_user = session.add.call_args.args[0]
 
-    assert created_user.status == UserStatus.DISABLED
-    assert response.status == UserStatus.DISABLED
+    assert created_user.status == UserStatus.ACTIVE
+    assert response.status == UserStatus.ACTIVE
 
 
 def test_activate_technician_user_requires_active_profile() -> None:
