@@ -99,6 +99,29 @@ def test_partner_can_list_reports_without_technician_scope() -> None:
     service._get_technician_by_user.assert_not_called()
 
 
+def test_read_reports_orders_by_created_at_desc_and_defaults_to_a_high_limit() -> None:
+    """Regression guard: with no ORDER BY, Postgres could return rows in an
+    arbitrary order once total report count exceeded the page limit, which
+    silently dropped an unpredictable subset of reports (repeater/diesel
+    disappeared from the web list once total rows passed the old default of
+    100). Ordering makes the drop deterministic (oldest first); raising the
+    default limit to the API's own ceiling (1000) means the drop doesn't
+    happen at today's report volumes at all.
+    """
+    service = _ReportService()
+    session = CapturingSession()
+    current_user = _make_user(UserRole.PARTNER)
+
+    service.read_reports(session=session, current_user=current_user)
+
+    compiled = session.statement.compile()
+    rendered_sql = str(compiled)
+
+    assert "ORDER BY" in rendered_sql
+    assert "created_at DESC" in rendered_sql
+    assert compiled.params.get("param_1") == 1000 or 1000 in compiled.params.values()
+
+
 def test_delete_unfinished_self_started_field_report_deletes_linked_task() -> None:
     service = _ReportService()
     technician_id = uuid4()

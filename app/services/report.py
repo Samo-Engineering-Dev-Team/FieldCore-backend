@@ -202,7 +202,7 @@ class _ReportService:
         status: ReportStatus | None = None,
         technician_id: UUID | None = None,
         offset: int = 0,
-        limit: int = 100,
+        limit: int = 1000,
     ) -> List[ReportResponse]:
         require_report_read(
             current_user,
@@ -229,7 +229,16 @@ class _ReportService:
         if status is not None:
             statement = statement.where(Report.status == status)
 
-        statement = statement.offset(offset).limit(limit)
+        # Without an explicit order, Postgres is free to return rows in
+        # whatever order it likes (e.g. primary-key order, uncorrelated with
+        # creation time). Once total rows exceeded `limit`, that silently
+        # dropped an arbitrary subset of reports from the default list
+        # instead of consistently dropping the oldest ones.
+        statement = (
+            statement.order_by(Report.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
         reports = session.exec(statement).all()
         return [self.report_to_response(report) for report in reports]
 
