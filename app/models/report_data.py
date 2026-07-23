@@ -1,0 +1,199 @@
+"""Canonical report `data`/`attachments` JSONB shapes, per report type.
+
+These are the target schemas Phase 1-3 migrate mobile/frontend writers and the
+PDF renderer (`app/services/pdf.py`) toward. `Report.data`/`Report.attachments`
+remain untyped `dict[str, Any]` JSONB columns (see `app/models/report.py`) —
+these models are a documentation + validation contract, not a DB migration.
+
+Not yet wired into the write path (`app/api/v1/report.py`) or the PDF renderer.
+See `docs/report-schemas.md` for the cross-repo contract and migration plan.
+"""
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class AttachmentFile(BaseModel):
+    file_path: str | None = None
+    public_url: str | None = None
+    signed_url: str | None = None
+    url: str | None = None
+    original_name: str | None = None
+    content_type: str | None = None
+    size: int | None = None
+    label: str | None = None
+
+
+class GeoPhoto(AttachmentFile):
+    lat: float | None = None
+    lon: float | None = None
+    address: str | None = None
+    altitude: float | None = None
+    speed: float | None = None
+    captured_at: str | None = None
+    index_number: int | None = None
+
+
+class CheckItem(BaseModel):
+    passed: bool
+    issue: str | None = None
+
+
+CheckMap = dict[str, CheckItem]
+
+
+# ── Repeater Site Visit ──────────────────────────────────────────────────
+
+SITE_OBSERVATION_KEYS = (
+    "perimeterFenceGood",
+    "siteYardClean",
+    "containerExteriorClean",
+    "generatorCanopiesClean",
+    "gatesAndDoorsSecure",
+    "securityCamerasGood",
+    "outdoorLightsWorking",
+    "areaOutsideClean",
+    "accessRoadSafe",
+    "accessGateLocked",
+)
+
+CONTAINER_INTERIOR_KEYS = (
+    "wallsAndFloorClean",
+    "lightingWorking",
+    "cableGridGood",
+    "odfNeat",
+    "equipmentCabinetsClean",
+    "noUnusualAlarms",
+    "cabinetLockedAndKeyed",
+    "noCombustibles",
+    "noWaterIngressLights",
+    "noWaterIngressOutdoor",
+    "siteRegisterUpdated",
+    "noDamageNeeded",
+)
+
+
+class NearbyConstructionWork(BaseModel):
+    passed: bool
+    issueDescription: str | None = None
+
+
+class SafetyObservations(BaseModel):
+    basicRiskAssessmentPerformed: bool
+    nearbyConstructionWork: NearbyConstructionWork | None = None
+
+
+class SiteConcerns(BaseModel):
+    description: str = ""
+
+
+class RepeaterReportData(BaseModel):
+    routineType: str = ""
+    dateRoutinePerformed: str | None = None
+    nocRoutineTicketReference: str | None = None
+    source: str | None = None
+    powerSystems: dict[str, Any] = Field(default_factory=dict)
+    gen1: dict[str, Any] = Field(default_factory=dict)
+    gen2: dict[str, Any] = Field(default_factory=dict)
+    siteObservations: CheckMap = Field(default_factory=dict)
+    containerInterior: CheckMap = Field(default_factory=dict)
+    safetyObservations: SafetyObservations | None = None
+    environmentalSystems: dict[str, Any] = Field(default_factory=dict)
+    siteConcerns: SiteConcerns = Field(default_factory=SiteConcerns)
+
+
+class RepeaterAttachments(BaseModel):
+    files: list[AttachmentFile] = Field(default_factory=list)
+
+
+# ── Diesel / Generator Refill ────────────────────────────────────────────
+
+
+class DieselFillupEntry(BaseModel):
+    gen_no: str | int | None = None
+    site_id: str | None = None
+    site_name: str | None = None
+    amount_used: float = Field(description="Rand amount spent on this fill-up")
+    liters_filled: float
+    fill_reason: str | None = None
+    gen_runtime_hours: str | float | None = None
+
+
+class DieselReportData(BaseModel):
+    diesel_fillups: list[DieselFillupEntry] = Field(default_factory=list)
+
+
+class DieselAttachments(BaseModel):
+    files: list[AttachmentFile] = Field(default_factory=list)
+
+
+# ── Routine Drive / Route Patrol ─────────────────────────────────────────
+
+
+class ManholeInspection(BaseModel):
+    id: str | None = None
+    manhole_id: str | None = None
+    photos: list[GeoPhoto] = Field(default_factory=list)
+    remarks: str | None = None
+    lid_locked: str | None = None
+    ducts_sealed: str | None = None
+    lid_disturbed: str | None = None
+    can_be_unlocked: str | None = None
+    clean_no_debris: str | None = None
+    manhole_exposed: str | None = None
+    marker_in_place: str | None = None
+    chemical_threats: str | None = None
+    corrosion_splice: str | None = None
+    slack_management: str | None = None
+    coordinates_on_file: str | None = None
+    disturbance_erosion: str | None = None
+    coordinates_recorded: str | None = None
+    water_ingress_rodents: str | None = None
+
+
+class BridgeCulvertCheck(BaseModel):
+    id: str | None = None
+    photos: list[GeoPhoto] = Field(default_factory=list)
+    location: str | None = None
+    coordinates: str | None = None
+    mitigation: str | None = None
+    flood_damage: str | None = None
+    ground_movement: str | None = None
+    risk_to_network: str | None = None
+
+
+class ActivityCheck(BaseModel):
+    id: str | None = None
+    photos: list[GeoPhoto] = Field(default_factory=list)
+    location: str | None = None
+    coordinates: str | None = None
+    risk_to_network: str | None = None
+    mitigation: str | None = None
+
+
+class RoutePatrolPhotos(BaseModel):
+    all_photos: list[GeoPhoto] = Field(default_factory=list)
+    noc_ticket: str | None = None
+    final_notes: str | None = None
+    form_version: str | None = None
+    technician_name: str | None = None
+    trip_start_photos: list[GeoPhoto] = Field(default_factory=list)
+    trip_end_photos: list[GeoPhoto] = Field(default_factory=list)
+    bridge_culvert_checks: list[BridgeCulvertCheck] = Field(default_factory=list)
+    activity_checks: list[ActivityCheck] = Field(default_factory=list)
+    manhole_inspections: list[ManholeInspection] = Field(default_factory=list)
+
+
+class RoutePatrolReportData(BaseModel):
+    source: str | None = None
+    patrol_date: str | None = None
+    route_segment: str | None = None
+    weather_conditions: str | None = None
+    anomalies_found: bool = False
+    anomaly_details: str | None = None
+    photos: RoutePatrolPhotos = Field(default_factory=RoutePatrolPhotos)
+
+
+class RoutePatrolAttachments(BaseModel):
+    files: list[AttachmentFile] = Field(default_factory=list)
