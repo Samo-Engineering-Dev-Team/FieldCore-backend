@@ -1004,74 +1004,78 @@ class PDFService:
                     story.extend(self._render_report_data(report.data))
 
             # Attachments Section
-            if report.attachments and report.report_type != ReportType.ROUTINE_DRIVE:
-                if report.report_type == ReportType.DIESEL:
-                    self._render_diesel_attachments(
-                        report, story, primary_hex, accent_hex
+            # ROUTINE_DRIVE and REPEATER render photos in their own body
+            # section; DIESEL renders every uploaded photo in its "9. Report
+            # Pictures" section (attachments.files are merged there).
+            # Rendering attachments again here duplicated every photo, so
+            # skip all three report types.
+            if report.attachments and report.report_type not in (
+                ReportType.ROUTINE_DRIVE,
+                ReportType.DIESEL,
+                ReportType.REPEATER,
+            ):
+                story.append(Spacer(1, 16))
+                story.extend(
+                    self._repeater_section_header(
+                        "Attachments", primary_hex, accent_hex
                     )
-                else:
-                    story.append(Spacer(1, 16))
-                    story.extend(
-                        self._repeater_section_header(
-                            "Attachments", primary_hex, accent_hex
-                        )
-                    )
+                )
 
-                    attachment_data = [["Field Name", "Value"]]
-                    for key, value in report.attachments.items():
-                        attachment_data.append([key, str(value)[:60]])
+                attachment_data = [["Field Name", "Value"]]
+                for key, value in report.attachments.items():
+                    attachment_data.append([key, self._format_attachment_value(value)])
 
-                    if len(attachment_data) > 1:
-                        att_table = Table(attachment_data, colWidths=[140, 330])
-                        att_table.setStyle(
-                            TableStyle(
-                                [
-                                    (
-                                        "BACKGROUND",
-                                        (0, 0),
-                                        (-1, 0),
-                                        colors.HexColor("#1a365d"),
-                                    ),
-                                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                                    ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
-                                    ("FONTNAME", (1, 1), (-1, -1), "Helvetica"),
-                                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                                    (
-                                        "TEXTCOLOR",
-                                        (0, 0),
-                                        (-1, 0),
+                if len(attachment_data) > 1:
+                    att_table = Table(attachment_data, colWidths=[140, 330])
+                    att_table.setStyle(
+                        TableStyle(
+                            [
+                                (
+                                    "BACKGROUND",
+                                    (0, 0),
+                                    (-1, 0),
+                                    colors.HexColor("#1a365d"),
+                                ),
+                                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                                ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+                                ("FONTNAME", (1, 1), (-1, -1), "Helvetica"),
+                                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                                (
+                                    "TEXTCOLOR",
+                                    (0, 0),
+                                    (-1, 0),
+                                    colors.HexColor("#ffffff"),
+                                ),
+                                (
+                                    "TEXTCOLOR",
+                                    (1, 1),
+                                    (-1, -1),
+                                    colors.HexColor("#4a5568"),
+                                ),
+                                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                                (
+                                    "GRID",
+                                    (0, 0),
+                                    (-1, -1),
+                                    1,
+                                    colors.HexColor("#cbd5e0"),
+                                ),
+                                (
+                                    "ROWBACKGROUNDS",
+                                    (0, 1),
+                                    (-1, -1),
+                                    [
                                         colors.HexColor("#ffffff"),
-                                    ),
-                                    (
-                                        "TEXTCOLOR",
-                                        (1, 1),
-                                        (-1, -1),
-                                        colors.HexColor("#4a5568"),
-                                    ),
-                                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                                    (
-                                        "GRID",
-                                        (0, 0),
-                                        (-1, -1),
-                                        1,
-                                        colors.HexColor("#cbd5e0"),
-                                    ),
-                                    (
-                                        "ROWBACKGROUNDS",
-                                        (0, 1),
-                                        (-1, -1),
-                                        [
-                                            colors.HexColor("#ffffff"),
-                                            colors.HexColor("#f7fafc"),
-                                        ],
-                                    ),
-                                ]
-                            )
+                                        colors.HexColor("#f7fafc"),
+                                    ],
+                                ),
+                            ]
                         )
-                        story.append(att_table)
+                    )
+                    story.append(att_table)
 
             # Footer
             story.append(Spacer(1, 24))
@@ -1229,74 +1233,77 @@ class PDFService:
                     )
                     story.extend(self._render_report_data(report.data))
 
-            if report.attachments and report.report_type != ReportType.ROUTINE_DRIVE:
-                if report.report_type == ReportType.DIESEL:
-                    self._render_diesel_attachments(
-                        report, story, primary_hex, accent_hex
+            # ROUTINE_DRIVE renders photos in its body; DIESEL renders every
+            # uploaded photo in its "9. Report Pictures" section (attachments.files
+            # are merged there). Rendering attachments again here duplicated every
+            # diesel photo, so skip both report types.
+            if report.attachments and report.report_type not in (
+                ReportType.ROUTINE_DRIVE,
+                ReportType.DIESEL,
+                ReportType.REPEATER,
+            ):
+                story.append(Spacer(1, 16))
+                story.extend(
+                    self._repeater_section_header(
+                        "Attachments", primary_hex, accent_hex
                     )
-                else:
-                    story.append(Spacer(1, 16))
-                    story.extend(
-                        self._repeater_section_header(
-                            "Attachments", primary_hex, accent_hex
-                        )
-                    )
+                )
 
-                    attachment_data = [["Field Name", "Value"]]
-                    for key, value in report.attachments.items():
-                        attachment_data.append([key, str(value)[:60]])
+                attachment_data = [["Field Name", "Value"]]
+                for key, value in report.attachments.items():
+                    attachment_data.append([key, self._format_attachment_value(value)])
 
-                    if len(attachment_data) > 1:
-                        att_table = Table(attachment_data, colWidths=[140, 330])
-                        att_table.setStyle(
-                            TableStyle(
-                                [
-                                    (
-                                        "BACKGROUND",
-                                        (0, 0),
-                                        (-1, 0),
-                                        colors.HexColor("#1a365d"),
-                                    ),
-                                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                                    ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
-                                    ("FONTNAME", (1, 1), (-1, -1), "Helvetica"),
-                                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                                    (
-                                        "TEXTCOLOR",
-                                        (0, 0),
-                                        (-1, 0),
+                if len(attachment_data) > 1:
+                    att_table = Table(attachment_data, colWidths=[140, 330])
+                    att_table.setStyle(
+                        TableStyle(
+                            [
+                                (
+                                    "BACKGROUND",
+                                    (0, 0),
+                                    (-1, 0),
+                                    colors.HexColor("#1a365d"),
+                                ),
+                                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                                ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
+                                ("FONTNAME", (1, 1), (-1, -1), "Helvetica"),
+                                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                                (
+                                    "TEXTCOLOR",
+                                    (0, 0),
+                                    (-1, 0),
+                                    colors.HexColor("#ffffff"),
+                                ),
+                                (
+                                    "TEXTCOLOR",
+                                    (1, 1),
+                                    (-1, -1),
+                                    colors.HexColor("#4a5568"),
+                                ),
+                                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                                (
+                                    "GRID",
+                                    (0, 0),
+                                    (-1, -1),
+                                    1,
+                                    colors.HexColor("#cbd5e0"),
+                                ),
+                                (
+                                    "ROWBACKGROUNDS",
+                                    (0, 1),
+                                    (-1, -1),
+                                    [
                                         colors.HexColor("#ffffff"),
-                                    ),
-                                    (
-                                        "TEXTCOLOR",
-                                        (1, 1),
-                                        (-1, -1),
-                                        colors.HexColor("#4a5568"),
-                                    ),
-                                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
-                                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-                                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                                    (
-                                        "GRID",
-                                        (0, 0),
-                                        (-1, -1),
-                                        1,
-                                        colors.HexColor("#cbd5e0"),
-                                    ),
-                                    (
-                                        "ROWBACKGROUNDS",
-                                        (0, 1),
-                                        (-1, -1),
-                                        [
-                                            colors.HexColor("#ffffff"),
-                                            colors.HexColor("#f7fafc"),
-                                        ],
-                                    ),
-                                ]
-                            )
+                                        colors.HexColor("#f7fafc"),
+                                    ],
+                                ),
+                            ]
                         )
-                        story.append(att_table)
+                    )
+                    story.append(att_table)
 
             story.append(Spacer(1, 24))
             story.append(self._create_divider())
@@ -4846,6 +4853,19 @@ class PDFService:
         text = str(value).strip()
         return text or default
 
+    def _format_attachment_value(self, value: Any) -> str:
+        """Summarize an attachment field for the generic Attachments table.
+
+        Lists/dicts (e.g. a photo array) must never hit `str(value)` directly —
+        that prints the Python repr (single-quoted, unescaped) instead of a
+        readable summary.
+        """
+        if isinstance(value, (list, tuple)):
+            return f"{len(value)} item(s)"
+        if isinstance(value, dict):
+            return f"{len(value)} field(s)"
+        return self._text_value(value)[:60]
+
     def _route_photo_groups(self, data: dict[str, Any]) -> dict[str, list[Any]]:
         photos = data.get("photos") if isinstance(data.get("photos"), dict) else {}
         groups: dict[str, list[Any]] = {}
@@ -5602,7 +5622,11 @@ class PDFService:
             story.append(Spacer(1, 6 * mm))
 
         # ── 4. Site Observations ──────────────────────────────────────────
-        site_obs: dict = data.get("siteObservations") or {}
+        # Fall back to the abbreviated keys the mobile app wrote before it
+        # was aligned to the canonical schema (see docs/report-schemas.md)
+        # so already-submitted reports render instead of showing blank
+        # sections.
+        site_obs: dict = data.get("siteObservations") or data.get("siteObs") or {}
         story.extend(
             self._repeater_section_header(
                 "4. Site Observations", primary_hex, accent_hex
@@ -5617,7 +5641,7 @@ class PDFService:
         story.append(Spacer(1, 6 * mm))
 
         # ── 5. Container Interior ─────────────────────────────────────────
-        container: dict = data.get("containerInterior") or {}
+        container: dict = data.get("containerInterior") or data.get("container") or {}
         story.extend(
             self._repeater_section_header(
                 "5. Container Interior", primary_hex, accent_hex
@@ -5637,6 +5661,8 @@ class PDFService:
 
         # ── 6. Safety Observations ────────────────────────────────────────
         safety: dict = data.get("safetyObservations") or {}
+        if not safety and "riskAssessment" in data:
+            safety = {"basicRiskAssessmentPerformed": bool(data.get("riskAssessment"))}
         story.extend(
             self._repeater_section_header(
                 "6. Safety Observations", primary_hex, accent_hex
@@ -5671,6 +5697,41 @@ class PDFService:
 
         # ── 7. Environmental Systems ──────────────────────────────────────
         env: dict = data.get("environmentalSystems") or {}
+        if not env and isinstance(data.get("env"), dict):
+            legacy_env: dict = data["env"]
+            env = {
+                "airConditioning": {
+                    k: legacy_env[k]
+                    for k in ("temperature", "cycleSetting")
+                    if k in legacy_env
+                },
+                "fireSystem": {
+                    k: legacy_env[k]
+                    for k in ("firePanelOk", "fireExtinguisherPressure")
+                    if k in legacy_env
+                },
+                "electricFence": {
+                    k: legacy_env[k]
+                    for k in (
+                        "energizerFunctioning",
+                        "fenceFreeFromDebris",
+                        "noDisturbedWiring",
+                        "wireTensionAcceptable",
+                        "alarmTestConfirmed",
+                    )
+                    if k in legacy_env
+                },
+                "alarmsAndSensors": {
+                    k: legacy_env[k]
+                    for k in (
+                        "doorAlarmsTestedFront",
+                        "doorAlarmsTestedRear",
+                        "floodSensorsTestedFront",
+                        "floodSensorsTestedRear",
+                    )
+                    if k in legacy_env
+                },
+            }
         story.extend(
             self._repeater_section_header(
                 "7. Environmental Systems", primary_hex, accent_hex
@@ -5686,6 +5747,8 @@ class PDFService:
 
         # ── 8. Site Concerns ──────────────────────────────────────────────
         concerns: dict = data.get("siteConcerns") or {}
+        if not concerns and isinstance(data.get("concerns"), str) and data["concerns"].strip():
+            concerns = {"description": data["concerns"]}
         story.extend(
             self._repeater_section_header("8. Site Concerns", primary_hex, accent_hex)
         )
@@ -5795,8 +5858,12 @@ class PDFService:
                             seen_photo_keys.add(str(val).strip())
 
         attachments = report.attachments if isinstance(report.attachments, dict) else {}
+        # `files` is the canonical key (docs/report-schemas.md); `photos` is
+        # the legacy mobile key still present on already-submitted reports.
         attachment_files = (
-            attachments.get("files") if isinstance(attachments, dict) else []
+            attachments.get("files") or attachments.get("photos")
+            if isinstance(attachments, dict)
+            else []
         )
         if isinstance(attachment_files, list):
             for file_item in attachment_files:
