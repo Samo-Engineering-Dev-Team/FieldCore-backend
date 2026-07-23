@@ -5117,6 +5117,12 @@ class PDFService:
             "No third-party activity checks were recorded.",
             [44, 42, 28, 56],
         )
+        # Dedup set shared with the "Photo Evidence" section below — a
+        # manhole's photos are rendered inline here, right after its
+        # checklist, so they must not also print again in the catch-all
+        # section at the end of the report.
+        rendered_photo_urls: set[str] = set()
+
         # Manhole Inspections — every manhole captures 12 checklist fields plus
         # coordinates/remarks; a single wide table can't fit them (the old
         # version dropped 6 fields and joined the rest into an unlabeled
@@ -5170,6 +5176,18 @@ class PDFService:
                         ]
                     )
                 )
+
+                manhole_photos: list[Any] = []
+                for photo in manhole.get("photos") or []:
+                    source = self._get_media_source(photo)
+                    if not source or source in rendered_photo_urls:
+                        continue
+                    rendered_photo_urls.add(source)
+                    manhole_photos.append(photo)
+                if manhole_photos:
+                    story.append(Spacer(1, 2 * mm))
+                    self._render_photo_grid(manhole_photos, story, cols=3)
+
                 story.append(Spacer(1, 5 * mm))
         else:
             story.append(
@@ -5179,22 +5197,28 @@ class PDFService:
             )
             story.append(Spacer(1, 5 * mm))
 
-        if photo_groups:
+        # Filter before deciding whether to print the section header at all —
+        # once manhole photos are rendered inline above, a manhole's group
+        # here always ends up empty. Printing "Photo Evidence" unconditionally
+        # (whenever `photo_groups` is non-empty) would leave an orphan heading
+        # with nothing under it whenever manholes were the only photos.
+        remaining_photo_groups = []
+        for title, group in photo_groups.items():
+            unique_group: list[Any] = []
+            for photo in group:
+                source = self._get_media_source(photo)
+                if not source or source in rendered_photo_urls:
+                    continue
+                rendered_photo_urls.add(source)
+                unique_group.append(photo)
+            if unique_group:
+                remaining_photo_groups.append((title, unique_group))
+
+        if remaining_photo_groups:
             story.extend(
                 self._repeater_section_header("Photo Evidence", primary_hex, accent_hex)
             )
-            rendered_urls: set[str] = set()
-            for title, group in photo_groups.items():
-                unique_group: list[Any] = []
-                for photo in group:
-                    source = self._get_media_source(photo)
-                    if not source or source in rendered_urls:
-                        continue
-                    rendered_urls.add(source)
-                    unique_group.append(photo)
-                if not unique_group:
-                    continue
-
+            for title, unique_group in remaining_photo_groups:
                 story.append(Paragraph(escape(title), value_style))
                 self._render_photo_grid(unique_group, story, cols=3)
                 story.append(Spacer(1, 3 * mm))

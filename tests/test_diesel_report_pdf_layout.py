@@ -260,13 +260,17 @@ def test_routine_drive_pdf_uses_presentable_patrol_layout() -> None:
     assert "IS BREE" in extracted
     assert "PATROL SUMMARY" in extracted
     assert "MANHOLE INSPECTIONS" in extracted
-    assert "PHOTO EVIDENCE" in extracted
     assert "ATTESTATION" in extracted
     assert "ROUTE CLEAR." in extracted
     assert "URL:" not in extracted
     assert "CONTENT TYPE:" not in extracted
     assert "ORIGINAL NAME:" not in extracted
     assert "REPORT DETAILS" not in extracted
+    # This report's only photo belongs to its one manhole, and now renders
+    # inline with that manhole's checklist instead of in a separate
+    # catch-all section — so no "Photo Evidence" heading, and no orphan
+    # heading with nothing under it either.
+    assert "PHOTO EVIDENCE" not in extracted
     assert fetched == ["reports/routine/photo_1.jpg"]
     assert image_count >= 1
 
@@ -492,3 +496,62 @@ def test_routine_drive_pdf_renders_full_manhole_checklist() -> None:
     assert "27.1841" in extracted
     assert "ANOMALIES FOUND" in extracted
     assert "YES" in extracted  # normalized from the string "true"
+
+
+def test_routine_drive_pdf_places_manhole_photos_with_their_own_manhole() -> None:
+    """Manhole photos used to all print together in a single catch-all
+    "Photo Evidence" section at the end, disconnected from which manhole
+    they belonged to. Each manhole's photos must render inline with that
+    manhole's own checklist instead, with no duplicate fetch/embed."""
+    service = PDFService()
+    report = _sample_routine_drive_report_full_manhole()
+    report.data["photos"]["manhole_inspections"][0]["photos"] = [
+        {
+            "path": "reports/routine/mh-01.jpg",
+            "original_name": "mh-01.jpg",
+            "content_type": "image/jpeg",
+        }
+    ]
+    report.data["photos"]["manhole_inspections"].append(
+        {
+            **report.data["photos"]["manhole_inspections"][0],
+            "id": "m2",
+            "manhole_id": "MH-02",
+            "coordinates_recorded": "-26.04, 28.08",
+            "photos": [
+                {
+                    "path": "reports/routine/mh-02.jpg",
+                    "original_name": "mh-02.jpg",
+                    "content_type": "image/jpeg",
+                }
+            ],
+        }
+    )
+
+    fetched: list[str] = []
+
+    def fetch_image(url: str) -> BytesIO:
+        fetched.append(url)
+        return BytesIO(
+            base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+            )
+        )
+
+    service._fetch_image_bytes = fetch_image  # type: ignore[method-assign]
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+        image_count = sum(len(page.images) for page in pdf.pages)
+
+    assert "1. MH-01" in extracted
+    assert "2. MH-02" in extracted
+    # Both manhole photos fetched exactly once each — no duplicate embed
+    # from also being picked up by the catch-all "Photo Evidence" pass.
+    assert sorted(fetched) == ["reports/routine/mh-01.jpg", "reports/routine/mh-02.jpg"]
+    assert image_count >= 2
+    # Nothing left over for the catch-all section once both manholes'
+    # photos render inline with their own checklists.
+    assert "PHOTO EVIDENCE" not in extracted
