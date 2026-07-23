@@ -4844,6 +4844,14 @@ class PDFService:
             return "N/A"
         return f"{liters:.2f}"
 
+    def _format_diesel_amount(self, value: Any) -> str:
+        """Format a Rand amount for diesel fill-up tables/cards, e.g. R 5,000.00."""
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            return "N/A"
+        return f"R {amount:,.2f}"
+
     def _text_value(self, value: Any, default: str = "N/A") -> str:
         """Return a display-safe string for report values."""
         if value is None:
@@ -5236,6 +5244,9 @@ class PDFService:
         total_liters = sum(
             float(entry.get("liters_filled") or 0) for entry in valid_entries
         )
+        total_amount = sum(
+            float(entry.get("amount_used") or 0) for entry in valid_entries
+        )
 
         primary_sites: list[str] = []
         serviced_generators: list[str] = []
@@ -5269,6 +5280,7 @@ class PDFService:
                     site_name,
                     generator_label,
                     self._format_diesel_liters_plain(entry.get("liters_filled")),
+                    self._format_diesel_amount(entry.get("amount_used")),
                     self._format_diesel_runtime(entry.get("gen_runtime_hours")),
                     fill_reason,
                 ]
@@ -5285,6 +5297,7 @@ class PDFService:
                         "Total Liters",
                         self._format_diesel_liters(total_liters, fixed=True),
                     ),
+                    ("Total Spend", self._format_diesel_amount(total_amount)),
                     ("Generators", str(len(serviced_generators))),
                     ("Runtime Records", str(len(runtimes))),
                 ],
@@ -5325,11 +5338,20 @@ class PDFService:
                         "Site",
                         "Generator",
                         "Liters",
+                        "Amount (R)",
                         "Runtime",
                         "Fill Reason",
                     ],
                     rows=detail_rows,
-                    col_widths=[12 * mm, 40 * mm, 20 * mm, 24 * mm, 28 * mm, 46 * mm],
+                    col_widths=[
+                        10 * mm,
+                        32 * mm,
+                        18 * mm,
+                        18 * mm,
+                        24 * mm,
+                        24 * mm,
+                        44 * mm,
+                    ],
                     primary_hex=primary_hex,
                 )
             )
