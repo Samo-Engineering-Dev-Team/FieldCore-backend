@@ -32,7 +32,7 @@ def read_reports(
     status: ReportStatus | None = Query(None),
     technician_id: UUID | None = Query(None),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=100, le=1000),
+    limit: int = Query(default=1000, le=1000),
 ) -> List[ReportResponse]:
     """"""
     response.headers["Cache-Control"] = "private, max-age=60, stale-while-revalidate=30"
