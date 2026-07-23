@@ -1,11 +1,49 @@
 from typing import Any
 
+from loguru import logger as LOG
+from pydantic import ValidationError
 from sqlalchemy import and_
 from sqlmodel import Session, select
 
 from app.models import Notification, User
-from app.utils.enums import UserRole
+from app.models.report_data import (
+    DieselReportData,
+    RepeaterReportData,
+    RoutePatrolReportData,
+)
+from app.utils.enums import ReportType, UserRole
 from app.utils.funcs import utcnow
+
+_REPORT_DATA_SCHEMAS = {
+    ReportType.REPEATER: RepeaterReportData,
+    ReportType.DIESEL: DieselReportData,
+    ReportType.ROUTINE_DRIVE: RoutePatrolReportData,
+}
+
+
+def validate_report_data_schema(report_type: ReportType, data: Any) -> None:
+    """Warn (never raise) when `data` drifts from the canonical schema for its
+    report type (see docs/report-schemas.md). This is the Phase 4 regression
+    guard for the mobile/web/backend key mismatches fixed in
+    REPORT_PDF_ISSUES.md — a mismatch here means a report will render with
+    blank sections or missing fields in the exported PDF, so it should show
+    up in logs immediately rather than being discovered by a technician
+    reading a broken PDF weeks later.
+
+    Deliberately non-blocking: a schema edge case must never stop a
+    technician's field submission from saving.
+    """
+    schema = _REPORT_DATA_SCHEMAS.get(report_type)
+    if schema is None or not isinstance(data, dict):
+        return
+    try:
+        schema.model_validate(data)
+    except ValidationError as e:
+        LOG.warning(
+            "report_data_schema_drift report_type={} errors={}",
+            report_type,
+            e.errors(include_url=False, include_context=False),
+        )
 
 
 def get_noc_user_ids(session: Session) -> list:

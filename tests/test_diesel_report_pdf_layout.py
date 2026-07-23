@@ -307,3 +307,188 @@ def test_repeater_pdf_uses_new_field_cover_and_header() -> None:
     assert "FRONT GATE AND FENCE VISIBLE, NO DAMAGE NOTED." in extracted
     assert image_count >= 1
     assert "REPORT DETAILS" not in extracted
+
+
+# ── Phase 4 regression guards (see REPORT_PDF_ISSUES.md / docs/report-schemas.md) ──
+
+
+def _sample_diesel_report_with_amount():
+    report = _sample_diesel_report()
+    report.data["diesel_fillups"][0]["amount_used"] = 350.5
+    report.data["diesel_fillups"].append(
+        {
+            "site_id": "site-1",
+            "gen_no": 2,
+            "liters_filled": 10,
+            "amount_used": 149.5,
+            "fill_reason": "Top-up",
+            "gen_runtime_hours": "10.0",
+        }
+    )
+    return report
+
+
+def test_diesel_pdf_renders_amount_used() -> None:
+    """Regression guard for issue #2: amount_used was captured but never rendered."""
+    service = PDFService()
+    report = _sample_diesel_report_with_amount()
+    service._fetch_image_bytes = lambda url: BytesIO(  # type: ignore[method-assign]
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+        )
+    )
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "AMOUNT (R)" in extracted
+    assert "R 350.50" in extracted
+    assert "R 149.50" in extracted
+    assert "TOTAL SPEND" in extracted
+    assert "R 500.00" in extracted  # 350.50 + 149.50
+
+
+def _sample_repeater_report_legacy_mobile_schema():
+    """Matches the pre-fix mobile payload: abbreviated keys, attachments.photos."""
+    report = _sample_repeater_report()
+    report.data = {
+        "meta": {"routineType": "Weekly", "datePerformed": "2026-03-26", "nocTicket": "N/A"},
+        "gen1": {},
+        "gen2": {},
+        "power": {},
+        "siteObs": {"perimeterFenceGood": {"passed": True}},
+        "container": {"wallsAndFloorClean": {"passed": True}},
+        "riskAssessment": True,
+        "env": {
+            "temperature": "22",
+            "cycleSetting": "Auto",
+            "firePanelOk": True,
+            "energizerFunctioning": True,
+            "doorAlarmsTestedFront": True,
+        },
+        "concerns": "Loose cable tray noted near ODF.",
+    }
+    report.attachments = {
+        "photos": [
+            {
+                "url": "https://example.com/site-photo.jpg",
+                "original_name": "site-photo.jpg",
+                "geo": {"lat": -26.0335279, "lon": 28.0764029, "address": None},
+            }
+        ]
+    }
+    return report
+
+
+def test_repeater_pdf_falls_back_to_legacy_mobile_schema() -> None:
+    """Regression guard for issue #1: mobile's pre-fix abbreviated keys must
+    still render (already-submitted reports aren't migrated), and the photo
+    array must never be dumped as a raw Python repr."""
+    service = PDFService()
+    report = _sample_repeater_report_legacy_mobile_schema()
+    service._fetch_image_bytes = lambda url: BytesIO(  # type: ignore[method-assign]
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+        )
+    )
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "4. SITE OBSERVATIONS" in extracted
+    assert "PERIMETER FENCE IN GOOD CONDITION" in extracted
+    assert "5. CONTAINER INTERIOR" in extracted
+    assert "WALLS AND FLOOR CLEAN" in extracted
+    assert "6. SAFETY OBSERVATIONS" in extracted
+    assert "BASIC RISK ASSESSMENT PERFORMED" in extracted
+    assert "7. ENVIRONMENTAL SYSTEMS" in extracted
+    assert "FIRE PANEL OK" in extracted
+    assert "8. SITE CONCERNS" in extracted
+    assert "LOOSE CABLE TRAY NOTED NEAR ODF." in extracted
+    assert "NO SITE OBSERVATIONS RECORDED" not in extracted
+    assert "NO CONTAINER INTERIOR DATA RECORDED" not in extracted
+    assert "NO SAFETY OBSERVATIONS RECORDED" not in extracted
+    assert "NO SITE CONCERNS RECORDED" not in extracted
+    # The original bug: str(value)[:60] on a list of dicts printed the
+    # Python repr verbatim, e.g. "[{'geo': {'lat': -26.03...".
+    assert "{'GEO'" not in extracted
+    assert "'LAT'" not in extracted
+    assert "'LON'" not in extracted
+    # The generic fallback "Attachments" table (Field Name / Value columns)
+    # must not run for REPEATER — it renders its own photos in section 9.
+    assert "FIELD NAME" not in extracted
+
+
+def _sample_routine_drive_report_full_manhole():
+    report = _sample_routine_drive_report()
+    report.data["anomalies_found"] = "true"  # some reports persist this as a string
+    report.data["photos"]["bridge_culvert_checks"] = [
+        {
+            "id": "b1",
+            "location": "Along N6",
+            "coordinates": "-32.3578, 27.1841",
+            "ground_movement": "No",
+            "flood_damage": "No",
+            "risk_to_network": "No",
+            "mitigation": "Stone banks",
+            "photos": [],
+        }
+    ]
+    report.data["photos"]["manhole_inspections"] = [
+        {
+            "id": "m1",
+            "manhole_id": "MH-01",
+            "coordinates_recorded": "-26.033451, 28.076345",
+            "lid_locked": "Yes",
+            "ducts_sealed": "Yes",
+            "lid_disturbed": "No",
+            "can_be_unlocked": "Yes",
+            "clean_no_debris": "Yes",
+            "manhole_exposed": "No",
+            "marker_in_place": "Yes",
+            "chemical_threats": "No",
+            "corrosion_splice": "No",
+            "slack_management": "Yes",
+            "disturbance_erosion": "No",
+            "water_ingress_rodents": "No",
+            "remarks": "Clean and locked.",
+            "photos": [],
+        }
+    ]
+    return report
+
+
+def test_routine_drive_pdf_renders_full_manhole_checklist() -> None:
+    """Regression guard for issue #3: the manhole table dropped 6 fields and
+    joined the rest into an unlabeled "No | No | No" string."""
+    service = PDFService()
+    report = _sample_routine_drive_report_full_manhole()
+    service._fetch_image_bytes = lambda url: BytesIO(  # type: ignore[method-assign]
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+        )
+    )
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "1. MH-01" in extracted
+    assert "CAN BE UNLOCKED" in extracted
+    assert "DUCTS SEALED" in extracted
+    assert "CLEAN / NO DEBRIS" in extracted
+    assert "MARKER IN PLACE" in extracted
+    assert "SLACK MANAGEMENT" in extracted
+    assert "CORROSION / SPLICE" in extracted
+    assert "DISTURBANCE / EROSION" in extracted
+    assert "WATER INGRESS / RODENTS" in extracted
+    assert "-26.033451, 28.076345" in extracted
+    assert "-32.3578" in extracted  # bridge/culvert coordinates column (wraps in the narrow cell)
+    assert "27.1841" in extracted
+    assert "ANOMALIES FOUND" in extracted
+    assert "YES" in extracted  # normalized from the string "true"

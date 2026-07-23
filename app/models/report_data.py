@@ -96,11 +96,17 @@ class RepeaterReportData(BaseModel):
     powerSystems: dict[str, Any] = Field(default_factory=dict)
     gen1: dict[str, Any] = Field(default_factory=dict)
     gen2: dict[str, Any] = Field(default_factory=dict)
-    siteObservations: CheckMap = Field(default_factory=dict)
-    containerInterior: CheckMap = Field(default_factory=dict)
-    safetyObservations: SafetyObservations | None = None
-    environmentalSystems: dict[str, Any] = Field(default_factory=dict)
-    siteConcerns: SiteConcerns = Field(default_factory=SiteConcerns)
+    # These five are required (the key must be present, even if its value is
+    # empty) rather than defaulted: both mobile and web always send all five
+    # on every save, including partial-progress autosaves — so a missing key
+    # means a client regressed to the pre-fix abbreviated names (siteObs,
+    # container, riskAssessment, env, concerns) rather than a legitimately
+    # empty section. That's exactly the drift this schema exists to catch.
+    siteObservations: CheckMap
+    containerInterior: CheckMap
+    safetyObservations: SafetyObservations
+    environmentalSystems: dict[str, Any]
+    siteConcerns: SiteConcerns
 
 
 class RepeaterAttachments(BaseModel):

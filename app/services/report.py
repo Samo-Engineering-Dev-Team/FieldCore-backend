@@ -35,6 +35,7 @@ from app.services.report_support import (
     create_noc_notifications,
     normalize_attachment_item,
     normalize_attachments,
+    validate_report_data_schema,
 )
 
 
@@ -145,6 +146,7 @@ class _ReportService:
         report_data["attachments"] = self._normalize_attachments(
             report_data.get("attachments")
         )
+        validate_report_data_schema(report_data["report_type"], report_data.get("data"))
         report: Report = Report(**report_data)
         try:
             session.add(report)
@@ -294,6 +296,10 @@ class _ReportService:
                 if "attachments" in filtered_data:
                     filtered_data["attachments"] = self._normalize_attachments(
                         filtered_data.get("attachments")
+                    )
+                if "data" in filtered_data:
+                    validate_report_data_schema(
+                        report.report_type, filtered_data.get("data")
                     )
 
                 has_changes = False
