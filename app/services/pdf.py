@@ -4982,6 +4982,17 @@ class PDFService:
         )
         anomaly_details = self._text_value(data.get("anomaly_details"), "")
 
+        raw_anomalies_found = data.get("anomalies_found")
+        if isinstance(raw_anomalies_found, str) and raw_anomalies_found.strip().lower() in (
+            "true",
+            "false",
+        ):
+            anomalies_found_text = (
+                "Yes" if raw_anomalies_found.strip().lower() == "true" else "No"
+            )
+        else:
+            anomalies_found_text = self._text_value(raw_anomalies_found)
+
         story.extend(
             self._repeater_section_header("Patrol Summary", primary_hex, accent_hex)
         )
@@ -5010,7 +5021,7 @@ class PDFService:
                     ),
                     ("Technician", self._text_value(photos.get("technician_name"))),
                     ("Weather", self._text_value(data.get("weather_conditions"))),
-                    ("Anomalies Found", self._text_value(data.get("anomalies_found"))),
+                    ("Anomalies Found", anomalies_found_text),
                     ("Final Notes", final_notes),
                 ]
             )
@@ -5081,16 +5092,17 @@ class PDFService:
         render_count_section(
             "Bridge / Culvert Checks",
             bridge_checks,
-            ["Location", "Ground Movement", "Flood Damage", "Risk", "Mitigation"],
+            ["Location", "Coordinates", "Ground Movement", "Flood Damage", "Risk", "Mitigation"],
             lambda row: [
                 row.get("location"),
+                row.get("coordinates"),
                 row.get("ground_movement"),
                 row.get("flood_damage"),
                 row.get("risk_to_network"),
                 row.get("mitigation"),
             ],
             "No bridge or culvert checks were recorded.",
-            [42, 30, 28, 25, 45],
+            [30, 26, 24, 22, 22, 46],
         )
         render_count_section(
             "Third-Party Activity Checks",
@@ -5105,31 +5117,67 @@ class PDFService:
             "No third-party activity checks were recorded.",
             [44, 42, 28, 56],
         )
-        render_count_section(
-            "Manhole Inspections",
-            manhole_checks,
-            ["Manhole", "Recorded Coordinates", "Lid Locked", "Risk Notes", "Remarks"],
-            lambda row: [
-                row.get("manhole_id"),
-                row.get("coordinates_recorded") or row.get("coordinates_on_file"),
-                row.get("lid_locked"),
-                " | ".join(
-                    str(row.get(key) or "")
-                    for key in (
-                        "disturbance_erosion",
-                        "manhole_exposed",
-                        "lid_disturbed",
-                        "water_ingress_rodents",
-                        "chemical_threats",
-                    )
-                    if row.get(key) and str(row.get(key)).strip() != "N/A"
-                )
-                or "N/A",
-                row.get("remarks"),
-            ],
-            "No manhole inspections were recorded.",
-            [30, 42, 24, 42, 32],
+        # Manhole Inspections — every manhole captures 12 checklist fields plus
+        # coordinates/remarks; a single wide table can't fit them (the old
+        # version dropped 6 fields and joined the rest into an unlabeled
+        # "No | No | No" string). Render one full label/value block per
+        # manhole instead, so nothing captured on mobile/web is lost here.
+        story.extend(
+            self._repeater_section_header("Manhole Inspections", primary_hex, accent_hex)
         )
+        if manhole_checks:
+            manhole_title_style = ParagraphStyle(
+                "RouteManholeTitle",
+                parent=self.styles["Normal"],
+                fontSize=10,
+                fontName="Helvetica-Bold",
+                textColor=colors.HexColor(primary_hex),
+                spaceBefore=2,
+                spaceAfter=3,
+            )
+            for index, manhole in enumerate(manhole_checks, start=1):
+                title = self._text_value(manhole.get("manhole_id"), f"Manhole {index}")
+                story.append(Paragraph(escape(f"{index}. {title}"), manhole_title_style))
+                story.append(
+                    self._build_field_kv_table(
+                        [
+                            (
+                                "Coordinates",
+                                self._text_value(
+                                    manhole.get("coordinates_recorded")
+                                    or manhole.get("coordinates_on_file")
+                                ),
+                            ),
+                            ("Lid Locked", self._text_value(manhole.get("lid_locked"))),
+                            ("Can Be Unlocked", self._text_value(manhole.get("can_be_unlocked"))),
+                            ("Ducts Sealed", self._text_value(manhole.get("ducts_sealed"))),
+                            ("Clean / No Debris", self._text_value(manhole.get("clean_no_debris"))),
+                            ("Marker In Place", self._text_value(manhole.get("marker_in_place"))),
+                            ("Slack Management", self._text_value(manhole.get("slack_management"))),
+                            ("Lid Disturbed", self._text_value(manhole.get("lid_disturbed"))),
+                            ("Manhole Exposed", self._text_value(manhole.get("manhole_exposed"))),
+                            (
+                                "Disturbance / Erosion",
+                                self._text_value(manhole.get("disturbance_erosion")),
+                            ),
+                            (
+                                "Water Ingress / Rodents",
+                                self._text_value(manhole.get("water_ingress_rodents")),
+                            ),
+                            ("Chemical Threats", self._text_value(manhole.get("chemical_threats"))),
+                            ("Corrosion / Splice", self._text_value(manhole.get("corrosion_splice"))),
+                            ("Remarks", self._text_value(manhole.get("remarks"))),
+                        ]
+                    )
+                )
+                story.append(Spacer(1, 5 * mm))
+        else:
+            story.append(
+                Paragraph(
+                    escape("No manhole inspections were recorded."), body_style
+                )
+            )
+            story.append(Spacer(1, 5 * mm))
 
         if photo_groups:
             story.extend(
@@ -5361,6 +5409,8 @@ class PDFService:
             )
 
         story.append(Spacer(1, 6 * mm))
+
+        self._render_diesel_attachments(report, story, primary_hex, accent_hex)
 
     def _render_diesel_attachments(
         self,
