@@ -555,3 +555,60 @@ def test_routine_drive_pdf_places_manhole_photos_with_their_own_manhole() -> Non
     # Nothing left over for the catch-all section once both manholes'
     # photos render inline with their own checklists.
     assert "PHOTO EVIDENCE" not in extracted
+
+
+def test_routine_drive_pdf_places_bridge_and_activity_photos_with_their_own_check() -> None:
+    """Same fix, extended to Bridge/Culvert and Third-Party Activity checks:
+    their photos used to land in the same catch-all "Photo Evidence" section
+    as everything else, disconnected from which check they belonged to."""
+    service = PDFService()
+    report = _sample_routine_drive_report_full_manhole()
+    report.data["photos"]["bridge_culvert_checks"][0]["photos"] = [
+        {
+            "path": "reports/routine/bridge-1.jpg",
+            "original_name": "bridge-1.jpg",
+            "content_type": "image/jpeg",
+        }
+    ]
+    report.data["photos"]["activity_checks"] = [
+        {
+            "id": "a1",
+            "location": "N6 Toll Gate",
+            "coordinates": "-32.40, 27.20",
+            "risk_to_network": "No",
+            "mitigation": "N/A",
+            "photos": [
+                {
+                    "path": "reports/routine/activity-1.jpg",
+                    "original_name": "activity-1.jpg",
+                    "content_type": "image/jpeg",
+                }
+            ],
+        }
+    ]
+
+    fetched: list[str] = []
+
+    def fetch_image(url: str) -> BytesIO:
+        fetched.append(url)
+        return BytesIO(
+            base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+            )
+        )
+
+    service._fetch_image_bytes = fetch_image  # type: ignore[method-assign]
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "BRIDGE / CULVERT CHECKS" in extracted
+    assert "BRIDGE / CULVERT 1 - ALONG N6" in extracted
+    assert "THIRD-PARTY ACTIVITY CHECKS" in extracted
+    assert "ACTIVITY CHECK 1 - N6 TOLL GATE" in extracted
+    assert sorted(fetched) == ["reports/routine/activity-1.jpg", "reports/routine/bridge-1.jpg"]
+    # Nothing left over for the catch-all section — both checks' photos, and
+    # the manhole's own (empty here), are fully accounted for inline.
+    assert "PHOTO EVIDENCE" not in extracted

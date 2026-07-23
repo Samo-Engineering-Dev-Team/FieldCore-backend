@@ -5089,6 +5089,31 @@ class PDFService:
             story.append(table)
             story.append(Spacer(1, 6 * mm))
 
+        # Dedup set shared across every inline photo block below plus the
+        # catch-all "Photo Evidence" section — a check's photos are rendered
+        # right after its own row/block, so they must not also print again
+        # in the catch-all section at the end of the report.
+        rendered_photo_urls: set[str] = set()
+
+        def render_inline_photos(caption: str | None, photos: Any) -> None:
+            """Render one item's own photos, deduped against every other
+            inline block and the catch-all section, directly under it.
+            `caption` is skipped when the item already printed its own
+            title (e.g. the numbered manhole heading)."""
+            unique_photos: list[Any] = []
+            for photo in photos or []:
+                source = self._get_media_source(photo)
+                if not source or source in rendered_photo_urls:
+                    continue
+                rendered_photo_urls.add(source)
+                unique_photos.append(photo)
+            if not unique_photos:
+                return
+            if caption:
+                story.append(Paragraph(escape(caption), value_style))
+            self._render_photo_grid(unique_photos, story, cols=3)
+            story.append(Spacer(1, 3 * mm))
+
         render_count_section(
             "Bridge / Culvert Checks",
             bridge_checks,
@@ -5104,6 +5129,10 @@ class PDFService:
             "No bridge or culvert checks were recorded.",
             [30, 26, 24, 22, 22, 46],
         )
+        for index, check in enumerate(bridge_checks, start=1):
+            title = self._text_value(check.get("location"), f"Bridge / Culvert {index}")
+            render_inline_photos(f"Bridge / Culvert {index} - {title}", check.get("photos"))
+
         render_count_section(
             "Third-Party Activity Checks",
             activity_checks,
@@ -5117,11 +5146,9 @@ class PDFService:
             "No third-party activity checks were recorded.",
             [44, 42, 28, 56],
         )
-        # Dedup set shared with the "Photo Evidence" section below — a
-        # manhole's photos are rendered inline here, right after its
-        # checklist, so they must not also print again in the catch-all
-        # section at the end of the report.
-        rendered_photo_urls: set[str] = set()
+        for index, check in enumerate(activity_checks, start=1):
+            title = self._text_value(check.get("location"), f"Activity Check {index}")
+            render_inline_photos(f"Activity Check {index} - {title}", check.get("photos"))
 
         # Manhole Inspections — every manhole captures 12 checklist fields plus
         # coordinates/remarks; a single wide table can't fit them (the old
@@ -5177,17 +5204,7 @@ class PDFService:
                     )
                 )
 
-                manhole_photos: list[Any] = []
-                for photo in manhole.get("photos") or []:
-                    source = self._get_media_source(photo)
-                    if not source or source in rendered_photo_urls:
-                        continue
-                    rendered_photo_urls.add(source)
-                    manhole_photos.append(photo)
-                if manhole_photos:
-                    story.append(Spacer(1, 2 * mm))
-                    self._render_photo_grid(manhole_photos, story, cols=3)
-
+                render_inline_photos(None, manhole.get("photos"))
                 story.append(Spacer(1, 5 * mm))
         else:
             story.append(
