@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Query, Response as FastAPIResponse
 from fastapi.responses import Response
+from datetime import datetime
 from typing import List
 from uuid import UUID
 
 from app.models import ReportCreate, ReportUpdate, ReportResponse
+from app.models.report_data import DieselSiteHistory
 from app.services import ReportService, CurrentUser
 from app.database import SessionDep
 from app.utils.enums import ReportStatus, ReportType
@@ -44,6 +46,61 @@ def read_reports(
         technician_id,
         offset,
         limit,
+    )
+
+
+# NOTE: the diesel-history routes must stay above `/{report_id}` — FastAPI matches
+# in declaration order and the UUID path would otherwise swallow the literal segment.
+
+
+@router.get(
+    "/diesel-history/{site_id}", response_model=DieselSiteHistory, status_code=200
+)
+def read_diesel_site_history(
+    site_id: UUID,
+    service: ReportService,
+    session: SessionDep,
+    current_user: CurrentUser,
+    date_from: datetime | None = Query(
+        None, description="Only include fill-ups from this date onward"
+    ),
+    date_to: datetime | None = Query(
+        None, description="Only include fill-ups up to this date"
+    ),
+) -> DieselSiteHistory:
+    """Every diesel fill-up recorded against a site, split by generator."""
+    return service.read_diesel_site_history(
+        site_id, session, current_user, date_from, date_to
+    )
+
+
+@router.get("/diesel-history/{site_id}/export/pdf", status_code=200)
+def export_diesel_site_history_pdf(
+    site_id: UUID,
+    service: ReportService,
+    session: SessionDep,
+    current_user: CurrentUser,
+    date_from: datetime | None = Query(
+        None, description="Only include fill-ups from this date onward"
+    ),
+    date_to: datetime | None = Query(
+        None, description="Only include fill-ups up to this date"
+    ),
+) -> Response:
+    """Export a site's full diesel fill-up history as a PDF document."""
+    pdf_buffer, filename = service.export_diesel_site_history_pdf(
+        site_id, session, current_user, date_from, date_to
+    )
+
+    pdf_bytes = pdf_buffer.getvalue()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
     )
 
 

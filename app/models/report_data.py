@@ -9,6 +9,7 @@ Not yet wired into the write path (`app/api/v1/report.py`) or the PDF renderer.
 See `docs/report-schemas.md` for the cross-repo contract and migration plan.
 """
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -132,6 +133,59 @@ class DieselReportData(BaseModel):
 
 class DieselAttachments(BaseModel):
     files: list[AttachmentFile] = Field(default_factory=list)
+
+
+# ── Diesel site history ──────────────────────────────────────────────────
+#
+# Read-side shapes only. A "history entry" is one element of a report's
+# `data.diesel_fillups` array, flattened together with the fields that live on
+# the owning report (date, technician, ticket ref). Nothing writes these.
+
+
+class DieselHistoryEntry(BaseModel):
+    """One fill-up, flattened with its owning report's context."""
+
+    report_id: str
+    fill_date: datetime | None = Field(
+        default=None, description="Report date; the fill-up itself carries no date"
+    )
+    iso_week: str = Field(default="N/A", description='ISO week label, e.g. "WEEK 30"')
+    gen_no: int = Field(description="1 or 2; entries with no usable gen_no land in 1")
+    gen_no_inferred: bool = Field(
+        default=False, description="True when gen_no was absent/unparseable"
+    )
+    liters_filled: float = 0.0
+    amount_used: float = 0.0
+    fill_reason: str | None = None
+    gen_runtime_hours: str | float | None = None
+    technician_name: str | None = None
+    seacom_ref: str | None = None
+
+
+class DieselGeneratorHistory(BaseModel):
+    """One generator's fill-ups for a site, with its own subtotals."""
+
+    gen_no: int
+    entries: list[DieselHistoryEntry] = Field(default_factory=list)
+    entry_count: int = 0
+    total_liters: float = 0.0
+    total_amount: float = 0.0
+    highest_runtime_minutes: int | None = None
+
+
+class DieselSiteHistory(BaseModel):
+    """Every diesel fill-up recorded against one site, split by generator."""
+
+    site_id: str
+    site_name: str
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    first_fill_date: datetime | None = None
+    last_fill_date: datetime | None = None
+    generators: list[DieselGeneratorHistory] = Field(default_factory=list)
+    entry_count: int = 0
+    total_liters: float = 0.0
+    total_amount: float = 0.0
 
 
 # ── Routine Drive / Route Patrol ─────────────────────────────────────────

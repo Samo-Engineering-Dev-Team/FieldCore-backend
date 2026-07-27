@@ -37,10 +37,11 @@ from loguru import logger as LOG
 from app.core.settings import app_settings
 from app.models import Report
 from app.utils.enums import ReportType
-from app.utils.funcs import utcnow
+from app.utils.funcs import format_iso_week, parse_diesel_runtime_minutes, utcnow
 
 if TYPE_CHECKING:
     from app.models import IncidentReport
+    from app.models.report_data import DieselSiteHistory
 
 # Imported lazily inside generate_incident_report_pdf to avoid circular import at module load
 # from app.models import IncidentReport
@@ -4082,6 +4083,10 @@ class PDFService:
             return "N/A"
         return dt.strftime("%Y-%m-%d %H:%M:%S")
 
+    def _format_iso_week(self, dt: datetime | None) -> str:
+        """Format a date as the ISO week label used on diesel reports, e.g. "WEEK 30"."""
+        return format_iso_week(dt)
+
     def _render_report_data(self, data: dict[str, Any], level: int = 0) -> list:
         """
         Recursively render report data dictionary into PDF elements.
@@ -4772,40 +4777,7 @@ class PDFService:
 
     def _parse_diesel_runtime_minutes(self, value: Any) -> int | None:
         """Parse runtime stored as hours, numeric string, or H/M notation."""
-        if isinstance(value, bool) or value is None:
-            return None
-
-        if isinstance(value, (int, float)):
-            if not value or value < 0:
-                return None
-            total_minutes = round(float(value) * 60)
-            return total_minutes if total_minutes > 0 else None
-
-        if not isinstance(value, str):
-            return None
-
-        normalized = value.strip().upper().replace(" ", "")
-        if not normalized:
-            return None
-
-        runtime_match = re.fullmatch(r"(?:(\d+)H(?:(\d{1,2})M)?|(\d+)M)", normalized)
-        if runtime_match:
-            hours = int(runtime_match.group(1) or 0)
-            minutes = int(runtime_match.group(2) or runtime_match.group(3) or 0)
-            if minutes >= 60:
-                return None
-            total_minutes = (hours * 60) + minutes
-            return total_minutes if total_minutes > 0 else None
-
-        try:
-            numeric_hours = float(normalized)
-        except ValueError:
-            return None
-
-        if numeric_hours <= 0:
-            return None
-        total_minutes = round(numeric_hours * 60)
-        return total_minutes if total_minutes > 0 else None
+        return parse_diesel_runtime_minutes(value)
 
     def _format_diesel_runtime(self, value: Any) -> str:
         """Format diesel runtime using the same compact H/M style as technician print."""
@@ -5397,6 +5369,7 @@ class PDFService:
         story.append(
             self._build_field_kv_table(
                 [
+                    ("Week Number", self._format_iso_week(report.created_at)),
                     (
                         "Primary Site",
                         ", ".join(primary_sites)
@@ -5452,6 +5425,234 @@ class PDFService:
         story.append(Spacer(1, 6 * mm))
 
         self._render_diesel_attachments(report, story, primary_hex, accent_hex)
+
+    def _render_diesel_history_body(
+        self,
+        history: "DieselSiteHistory",
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """
+        Render a site's full fill-up history: an overview, then one section per
+        generator. Unlike the single-fill-up report this spans many reports, so
+        each row carries its own date and week.
+        """
+        body_style = ParagraphStyle(
+            "DieselHistoryNote",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#2d3748"),
+            leading=15,
+        )
+
+        def date_label(value: datetime | None) -> str:
+            return value.strftime("%d/%m/%Y") if value else "N/A"
+
+        covered = "No fill-ups recorded"
+        if history.first_fill_date and history.last_fill_date:
+            covered = (
+                f"{date_label(history.first_fill_date)} - "
+                f"{date_label(history.last_fill_date)}"
+            )
+
+        story.extend(
+            self._repeater_section_header("1. Site Overview", primary_hex, accent_hex)
+        )
+        story.append(
+            self._build_field_metric_cards(
+                [
+                    ("Fill Entries", str(history.entry_count)),
+                    (
+                        "Total Liters",
+                        self._format_diesel_liters(history.total_liters, fixed=True),
+                    ),
+                    ("Total Spend", self._format_diesel_amount(history.total_amount)),
+                    ("Generators", str(len(history.generators))),
+                ],
+                accent_hex=accent_hex,
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        requested_range = "All time"
+        if history.date_from or history.date_to:
+            requested_range = (
+                f"{date_label(history.date_from) if history.date_from else 'Earliest'}"
+                f" - {date_label(history.date_to) if history.date_to else 'Latest'}"
+            )
+
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Site", history.site_name),
+                    ("Requested Range", requested_range),
+                    ("History Covered", covered),
+                    (
+                        "Generators Serviced",
+                        ", ".join(f"Gen {gen.gen_no}" for gen in history.generators)
+                        or "None",
+                    ),
+                ]
+            )
+        )
+        story.append(Spacer(1, 6 * mm))
+
+        if not history.generators:
+            story.extend(
+                self._repeater_section_header(
+                    "2. Fill-up History", primary_hex, accent_hex
+                )
+            )
+            story.append(
+                Paragraph(
+                    "<i>No diesel fill-ups recorded for this site"
+                    f"{'' if requested_range == 'All time' else ' in the selected range'}.</i>",
+                    body_style,
+                )
+            )
+            return
+
+        for index, generator in enumerate(history.generators, start=2):
+            story.extend(
+                self._repeater_section_header(
+                    f"{index}. Generator {generator.gen_no} History",
+                    primary_hex,
+                    accent_hex,
+                )
+            )
+
+            # Date and week share a column, the way the source fill-up log writes
+            # them ("20/05/2025 WEEK 20"). Nine separate columns do not fit A4
+            # portrait once cell padding is accounted for, and the cover page
+            # template is fixed at the 170mm portrait content width.
+            rows: list[list[str]] = []
+            for entry in generator.entries:
+                week = entry.iso_week.replace("WEEK ", "W")
+                short_date = (
+                    entry.fill_date.strftime("%d/%m/%y") if entry.fill_date else "N/A"
+                )
+                rows.append(
+                    [
+                        f"{short_date} {week}",
+                        self._format_diesel_liters_plain(entry.liters_filled),
+                        self._format_diesel_amount(entry.amount_used),
+                        self._format_diesel_runtime(entry.gen_runtime_hours),
+                        str(entry.fill_reason or "Not specified"),
+                        str(entry.technician_name or "N/A"),
+                        str(entry.seacom_ref or "N/A"),
+                    ]
+                )
+
+            rows.append(
+                [
+                    "Subtotal",
+                    self._format_diesel_liters_plain(generator.total_liters),
+                    self._format_diesel_amount(generator.total_amount),
+                    self._format_runtime_minutes(generator.highest_runtime_minutes),
+                    f"{generator.entry_count} entries",
+                    "",
+                    "",
+                ]
+            )
+
+            story.append(
+                self._build_field_data_table(
+                    headers=[
+                        "Date / Week",
+                        "Liters",
+                        "Amount (R)",
+                        "Runtime",
+                        "Fill Reason",
+                        "Technician",
+                        "SEACOM Ref",
+                    ],
+                    rows=rows,
+                    # Sums to the 170mm portrait content width. Free text (fill
+                    # reason, technician) may wrap; the reference must not, so it
+                    # takes the slack.
+                    col_widths=[
+                        30 * mm,
+                        15 * mm,
+                        22 * mm,
+                        20 * mm,
+                        25 * mm,
+                        27 * mm,
+                        31 * mm,
+                    ],
+                    primary_hex=primary_hex,
+                )
+            )
+            story.append(Spacer(1, 6 * mm))
+
+    def generate_diesel_history_pdf(self, history: "DieselSiteHistory") -> BytesIO:
+        """Generate the per-site diesel fill-up history PDF."""
+        buffer = BytesIO()
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20 * mm,
+            leftMargin=20 * mm,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+            title=f"Diesel_History_{history.site_name}",
+        )
+
+        story: list = []
+        primary_hex, accent_hex = self._cover_palette("diesel")
+        generated_display = self._format_datetime(utcnow())
+        title = "Diesel Usage History"
+
+        story.extend(
+            self._build_field_cover_page(
+                report_type_label="Generator Diesel Refill",
+                title=title,
+                site=history.site_name,
+                subtitle=_FIELDCORE_REPORT_LABEL,
+                descriptor=(
+                    "Complete generator refuelling history for this site, compiled "
+                    "for operational review, archive, and audit traceability."
+                ),
+                detail_items=[
+                    ("Report Type", "Diesel Usage History"),
+                    ("Site", history.site_name),
+                    ("Fill Entries", str(history.entry_count)),
+                    (
+                        "Total Liters",
+                        self._format_diesel_liters(history.total_liters, fixed=True),
+                    ),
+                    ("Total Spend", self._format_diesel_amount(history.total_amount)),
+                    ("Generators", str(len(history.generators))),
+                    ("Generated", generated_display),
+                ],
+                generated_at=generated_display,
+                accent_hex=accent_hex,
+            )
+        )
+
+        story.extend(
+            self._build_field_page_header(
+                title=title,
+                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {history.site_name}",
+                accent_hex=accent_hex,
+            )
+        )
+
+        self._render_diesel_history_body(history, story, primary_hex, accent_hex)
+
+        story.append(Spacer(1, 8))
+        story.append(
+            Paragraph(
+                f"Generated on {generated_display} UTC | Site: {history.site_name}",
+                self.styles["Footer"],
+            )
+        )
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
 
     def _render_diesel_attachments(
         self,
