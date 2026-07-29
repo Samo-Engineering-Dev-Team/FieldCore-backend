@@ -30,7 +30,8 @@ from app.utils.funcs import utcnow
 SITE_TYPE_SCHEDULE_TYPES: dict[SiteType, tuple[str, ...]] = {
     SiteType.ROUTINE_DRIVE: ("routine_drive",),
     SiteType.REPEATER: ("repeater_site_visit", "generator_diesel_refill"),
-    SiteType.POP: (),
+    SiteType.POP: ("pop_inspection",),
+    SiteType.DATACENTER: ("datacenter_inspection",),
     SiteType.TASK_SITE: (),
 }
 

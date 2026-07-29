@@ -1,10 +1,13 @@
 """
 MaintenanceSchedule model — recurring site maintenance scheduling.
 
-Three mandatory scheduled task types per SAMO/SEACOM agreement:
+Three mandatory scheduled task types per SAMO/SEACOM agreement, plus
+Datacenter/POP inspections:
   routine_drive           — weekly Routine Drive / fibre route visual patrol (see route_patrol.py)
   repeater_site_visit     — Repeater site monthly inspection (generates Repeater report)
   generator_diesel_refill — Generator diesel refill (generates Diesel report)
+  datacenter_inspection   — Datacenter hosted-site routine inspection (generates Datacenter report)
+  pop_inspection          — POP hosted-site routine inspection (generates POP report)
 """
 
 from uuid import UUID
@@ -13,14 +16,21 @@ from sqlmodel import SQLModel, Field, DateTime
 
 from .base import BaseDB
 
-# The three mandatory scheduled task types
-SCHEDULE_TYPES = ["routine_drive", "repeater_site_visit", "generator_diesel_refill"]
+SCHEDULE_TYPES = [
+    "routine_drive",
+    "repeater_site_visit",
+    "generator_diesel_refill",
+    "datacenter_inspection",
+    "pop_inspection",
+]
 FREQUENCIES = ["weekly", "monthly", "quarterly"]
 
 SCHEDULE_TYPE_LABELS = {
     "routine_drive": "Routine Drive",
     "repeater_site_visit": "Repeater Site Visit",
     "generator_diesel_refill": "Generator Diesel Refill",
+    "datacenter_inspection": "Datacenter Inspection",
+    "pop_inspection": "POP Inspection",
 }
 
 

@@ -12,7 +12,7 @@ See `docs/report-schemas.md` for the cross-repo contract and migration plan.
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AttachmentFile(BaseModel):
@@ -417,6 +417,14 @@ class CabinetInspection(BaseModel):
     cabinet_photo: GeoPhoto | None = None
     remarks: str | None = None
 
+    @model_validator(mode="after")
+    def _alarm_note_required_when_visual_alarms_yes(self) -> "CabinetInspection":
+        if self.visual_alarms == "yes" and not (self.alarm_note or "").strip():
+            raise ValueError(
+                "alarm_note is required when visual_alarms is 'yes'"
+            )
+        return self
+
 
 class ExtraPhotoSection(BaseModel):
     """A trailing, technician-named photo section after the cabinets (e.g. 'SITE-BACK VIEW')."""
@@ -494,6 +502,15 @@ class HostedSiteRoutineData(BaseModel):
     cabinets: list[CabinetInspection] = Field(default_factory=list)
     extra_sections: list[ExtraPhotoSection] = Field(default_factory=list)
     other_issues: str | None = None
+
+    @model_validator(mode="after")
+    def _cabinet_order_is_1_based_and_contiguous(self) -> "HostedSiteRoutineData":
+        orders = [c.order for c in self.cabinets]
+        if orders and sorted(orders) != list(range(1, len(orders) + 1)):
+            raise ValueError(
+                f"cabinet order must be 1-based, contiguous and unique; got {orders}"
+            )
+        return self
 
 
 class HostedSiteAttachments(BaseModel):

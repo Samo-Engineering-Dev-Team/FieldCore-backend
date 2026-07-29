@@ -64,6 +64,7 @@ class SiteType(StrEnum):
     ROUTINE_DRIVE = "routine_drive"
     REPEATER = "repeater"
     POP = "pop"
+    DATACENTER = "datacenter"
 
 
 class TaskStatus(StrEnum):
@@ -91,6 +92,8 @@ class ReportType(StrEnum):
     DIESEL = "diesel"
     REPEATER = "repeater"
     ROUTINE_DRIVE = "routine-drive"
+    DATACENTER = "datacenter"
+    POP = "pop"
 
 
 class ReportStatus(StrEnum):
