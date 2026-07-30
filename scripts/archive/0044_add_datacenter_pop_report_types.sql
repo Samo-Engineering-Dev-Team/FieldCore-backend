@@ -1,3 +1,7 @@
+-- ARCHIVED: never applied. Superseded by Alembic migration 2992dcb83d5d
+-- ("add datacenter and pop to reporttype enum") — this repo now uses
+-- Alembic for schema changes; see migrations/. Kept here only as a record.
+--
 -- Add DATACENTER and POP to the reporttype enum.
 -- SQLAlchemy maps Python enum members by NAME, so ReportType.DATACENTER is
 -- stored as the label 'DATACENTER'.

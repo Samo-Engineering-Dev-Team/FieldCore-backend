@@ -23,8 +23,12 @@ uv run pytest tests/test_presence.py::test_function_name -q
 # Start local infrastructure (PostgreSQL/PostGIS on port 5433, Redis on 6379)
 docker compose up -d postgres redis
 
-# Apply SQL migrations (Linux)
+# Apply the legacy hand-numbered SQL scripts (pre-Alembic history only, see below)
 ls scripts/00*.sql | sort | xargs -I {} psql -h localhost -p 5433 -U postgres -d seacom_experimental_db -f {}
+
+# Alembic — the current migration tool (see "Migrations" below)
+uv run alembic upgrade head
+uv run alembic revision --autogenerate -m "describe the change"
 ```
 
 ## Architecture
@@ -84,9 +88,15 @@ Each resource typically has four shapes: `Model` (table), `ModelCreate`, `ModelU
 - `Database.session()` is a context manager for use outside DI (background tasks, services)
 - `Database.init()` calls `SQLModel.metadata.create_all()` on startup and applies inline schema fixes for legacy columns
 
-### SQL migrations
+### Migrations
 
-Numbered scripts in `scripts/` (e.g., `0008_*.sql`, `0032_*.sql`) must be applied in order after initial setup. `scripts/fix_trigger.sql` and `scripts/0011_enforce_single_active_report_per_task.sql` are critical for report update reliability. Move deprecated scripts to `scripts/archive/` rather than deleting them.
+Schema changes go through **Alembic** (`migrations/`) — write new migrations with `uv run alembic revision --autogenerate -m "..."`, review the generated diff before committing (autogenerate doesn't know intent), then apply with `uv run alembic upgrade head`.
+
+`migrations/env.py` builds `target_metadata` from `SQLModel.metadata` (populated by `import app.models`) and excludes a fixed set of tables from all diffing/management — see `_FOREIGN_OR_UNMANAGED_TABLES` in that file. **Before adding a table to that list, or removing one from it, understand why it's there**: some belong to a separate tenant/licensing product sharing this Postgres project, not to FieldCore; others (`user_sessions`, `login_audit`) are real FieldCore tables that are deliberately unmanaged by the ORM for their own reasons, documented inline.
+
+`ALTER TYPE ... ADD VALUE` (adding a Postgres enum label, e.g. `ReportType`) can't run inside a transaction — wrap it in `with op.get_context().autocommit_block():` inside the migration rather than reaching for a raw script (see `migrations/versions/*_add_datacenter_and_pop_to_reporttype_.py` for the pattern).
+
+Before this repo used Alembic, schema came from `SQLModel.metadata.create_all()` plus hand-numbered scripts in `scripts/` (`0001`–`0044`). Those scripts are frozen history now — don't add new ones; the live DB was `alembic stamp`ed at a baseline revision reflecting where they left off (see that migration's docstring for the drift it surfaced and deliberately left unresolved). `scripts/fix_trigger.sql` and `scripts/0011_enforce_single_active_report_per_task.sql` remain critical for report update reliability if you're setting up a fresh local DB from scratch (`docker compose up` + those scripts), since the Alembic baseline doesn't recreate them. Move deprecated scripts to `scripts/archive/` rather than deleting them.
 
 ### Presence system
 
