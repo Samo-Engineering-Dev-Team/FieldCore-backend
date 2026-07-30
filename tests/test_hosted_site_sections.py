@@ -93,6 +93,26 @@ class TestSiteChecksSection:
         model = parse(data)
         assert is_hosted_site_section_complete("site_checks", model) is True
 
+    def test_empty_site_checks_is_incomplete_not_vacuously_true(self) -> None:
+        # Regression: completeness must check every SITE_CHECK_KEYS entry is
+        # present, not just that whatever keys happen to be present pass —
+        # an empty dict iterated with `.items()` is vacuously "all pass".
+        data = load("hosted_site_routine_dc.json")
+        data["site_checks"] = {}
+        model = parse(data)
+        assert is_hosted_site_section_complete("site_checks", model) is False
+        missing = hosted_site_missing_fields(model)
+        assert {"sectionKey": "site_checks", "field": "access_safe:status"} in missing
+        assert len([m for m in missing if m["sectionKey"] == "site_checks"]) == 12
+
+    def test_partial_site_checks_flags_each_absent_key(self) -> None:
+        data = load("hosted_site_routine_dc.json")
+        data["site_checks"] = {"access_safe": {"status": "yes", "issue": None}}
+        model = parse(data)
+        assert is_hosted_site_section_complete("site_checks", model) is False
+        missing = hosted_site_missing_fields(model)
+        assert {"sectionKey": "site_checks", "field": "perimeter_fence:status"} in missing
+
 
 class TestPowerReadingsSection:
     def test_blank_reading_while_status_yes_is_incomplete(self) -> None:

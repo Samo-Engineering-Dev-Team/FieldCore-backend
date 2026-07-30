@@ -14,6 +14,7 @@ from app.models.report_data import (
     RectifierReadings,
     RepeaterReportData,
     RoutePatrolReportData,
+    SITE_CHECK_KEYS,
     SITE_CHECK_LABELS,
     UpsReadings,
 )
@@ -170,9 +171,10 @@ def is_hosted_site_section_complete(section_key: str, data: HostedSiteRoutineDat
             and h.snoc_routine_ticket.strip()
         )
     if section_key == "site_checks":
-        if not data.site_checks:
-            return False
-        for key, item in data.site_checks.items():
+        for key in SITE_CHECK_KEYS:
+            item = data.site_checks.get(key)
+            if item is None or not item.status:
+                return False
             bad_when = SITE_CHECK_LABELS[key].bad_when if key in SITE_CHECK_LABELS else "no"
             if item.status == bad_when and not (item.issue or "").strip():
                 return False
@@ -215,7 +217,11 @@ def hosted_site_missing_fields(data: HostedSiteRoutineData) -> list[dict[str, An
             if not value.strip():
                 out.append({"sectionKey": "details", "field": field})
 
-    for key, item in data.site_checks.items():
+    for key in SITE_CHECK_KEYS:
+        item = data.site_checks.get(key)
+        if item is None or not item.status:
+            out.append({"sectionKey": "site_checks", "field": f"{key}:status"})
+            continue
         bad_when = SITE_CHECK_LABELS[key].bad_when if key in SITE_CHECK_LABELS else "no"
         if item.status == bad_when and not (item.issue or "").strip():
             out.append({"sectionKey": "site_checks", "field": f"{key}:issue"})
