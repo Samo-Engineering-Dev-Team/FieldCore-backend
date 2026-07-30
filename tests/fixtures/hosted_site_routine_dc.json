@@ -1,0 +1,255 @@
+{
+  "source": "mobile",
+  "form_version": "hosted-site-routine-1",
+  "header": {
+    "service_provider": "SAMOTELECOMS",
+    "routine_type": "Weekly Site Inspection",
+    "site_name": "PE IS DC",
+    "technician_name": "Zola Momoza",
+    "date_routine_performed": "2026-07-28",
+    "snoc_routine_ticket": "SEACOM-491040",
+    "site_owner_access_ticket": "SVR139094974"
+  },
+  "site_checks": {
+    "access_safe": {
+      "status": "yes",
+      "issue": null
+    },
+    "perimeter_fence": {
+      "status": "yes",
+      "issue": null
+    },
+    "ac_dbs_locked": {
+      "status": "n/a",
+      "issue": null
+    },
+    "gates_doors_locked": {
+      "status": "n/a",
+      "issue": null
+    },
+    "room_clean": {
+      "status": "yes",
+      "issue": null
+    },
+    "combustibles": {
+      "status": "no",
+      "issue": null
+    },
+    "aircon_working": {
+      "status": "yes",
+      "issue": null
+    },
+    "lighting": {
+      "status": "yes",
+      "issue": null
+    },
+    "env_monitoring": {
+      "status": "n/a",
+      "issue": null
+    },
+    "fire_monitoring": {
+      "status": "n/a",
+      "issue": null
+    },
+    "access_monitoring": {
+      "status": "n/a",
+      "issue": null
+    },
+    "aircon_controller": {
+      "status": "n/a",
+      "issue": null
+    }
+  },
+  "power_readings": {
+    "rectifier": {
+      "status": "yes",
+      "a_output_voltage": "54.2",
+      "a_load_current": "0.7",
+      "a_battery_charging_current": "0.0A",
+      "b_output_voltage": "54.4",
+      "b_load_current": "5.9A",
+      "b_battery_charging_current": "0.3A"
+    },
+    "ups": {
+      "status": "n/a",
+      "a_load_percent": null,
+      "b_load_percent": null,
+      "a_battery_capacity_percent": null,
+      "b_battery_capacity_percent": null,
+      "a_battery_charge_voltage": null,
+      "b_battery_charge_voltage": null
+    }
+  },
+  "cabinets": [
+    {
+      "order": 1,
+      "location": "Row 1  Cab V6A",
+      "equipment_hosted": "Rectifier A",
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "yes",
+      "alarm_note": "Alarms on Controller Module",
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-1-pdu.jpg",
+        "original_name": "dc-cabinet-1-pdu.jpg",
+        "label": "cabinet:1:pdu",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-1-cabinet.jpg",
+        "original_name": "dc-cabinet-1-cabinet.jpg",
+        "label": "cabinet:1:cabinet",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 2,
+      "location": "Row 1  Cab V6A",
+      "equipment_hosted": "Rectifier B",
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "yes",
+      "alarm_note": "Alarms on Controller Module",
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-2-pdu.jpg",
+        "original_name": "dc-cabinet-2-pdu.jpg",
+        "label": "cabinet:2:pdu",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-2-cabinet.jpg",
+        "original_name": "dc-cabinet-2-cabinet.jpg",
+        "label": "cabinet:2:cabinet",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 3,
+      "location": "Row 2  Cab V6A",
+      "equipment_hosted": "ODF",
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-3-pdu.jpg",
+        "original_name": "dc-cabinet-3-pdu.jpg",
+        "label": "cabinet:3:pdu",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-3-cabinet.jpg",
+        "original_name": "dc-cabinet-3-cabinet.jpg",
+        "label": "cabinet:3:cabinet",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 4,
+      "location": "Row 2  Cab V6A",
+      "equipment_hosted": "Seacom Infinera TM",
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-4-pdu.jpg",
+        "original_name": "dc-cabinet-4-pdu.jpg",
+        "label": "cabinet:4:pdu",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-4-cabinet.jpg",
+        "original_name": "dc-cabinet-4-cabinet.jpg",
+        "label": "cabinet:4:cabinet",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 5,
+      "location": "Row 2  Cab V6A",
+      "equipment_hosted": "ADVA",
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-5-pdu.jpg",
+        "original_name": "dc-cabinet-5-pdu.jpg",
+        "label": "cabinet:5:pdu",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-5-cabinet.jpg",
+        "original_name": "dc-cabinet-5-cabinet.jpg",
+        "label": "cabinet:5:cabinet",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 6,
+      "location": "Row 2  Cab V6A",
+      "equipment_hosted": "Juniper",
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-6-pdu.jpg",
+        "original_name": "dc-cabinet-6-pdu.jpg",
+        "label": "cabinet:6:pdu",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/dc-cabinet-6-cabinet.jpg",
+        "original_name": "dc-cabinet-6-cabinet.jpg",
+        "label": "cabinet:6:cabinet",
+        "lat": -33.9608,
+        "lon": 25.6022,
+        "captured_at": "2026-07-28T09:01:00Z"
+      },
+      "remarks": null
+    }
+  ],
+  "extra_sections": [],
+  "other_issues": "Both recctifiers has alarms and I cannot see batteries"
+}

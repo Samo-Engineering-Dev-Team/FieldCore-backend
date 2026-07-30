@@ -10,9 +10,9 @@ See `docs/report-schemas.md` for the cross-repo contract and migration plan.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AttachmentFile(BaseModel):
@@ -256,4 +256,264 @@ class RoutePatrolReportData(BaseModel):
 
 
 class RoutePatrolAttachments(BaseModel):
+    files: list[AttachmentFile] = Field(default_factory=list)
+
+
+# ── Hosted Site Routine (Datacenter / POP) ───────────────────────────────
+#
+# Backs ReportType.DATACENTER and ReportType.POP. Both workbooks are the same
+# source template one version apart (see DC_POP_REPORTS_IMPLEMENTATION_PLAN.md
+# §1) — one schema, parameterized by report type for title/cover art/default
+# routine type, not two.
+
+RoutineCheckStatus = Literal["yes", "no", "n/a"]
+
+
+class HostedSiteHeader(BaseModel):
+    service_provider: str
+    routine_type: str
+    site_name: str
+    technician_name: str
+    date_routine_performed: str
+    snoc_routine_ticket: str
+    site_owner_access_ticket: str | None = None
+
+
+class SiteCheckItem(BaseModel):
+    status: RoutineCheckStatus
+    issue: str | None = None
+
+
+# Ordered, stable keys — independent of the source labels so relabelling a
+# question never orphans stored data.
+SITE_CHECK_KEYS = (
+    "access_safe",
+    "perimeter_fence",
+    "ac_dbs_locked",
+    "gates_doors_locked",
+    "room_clean",
+    "combustibles",
+    "aircon_working",
+    "lighting",
+    "env_monitoring",
+    "fire_monitoring",
+    "access_monitoring",
+    "aircon_controller",
+)
+
+
+class SiteCheckLabel(BaseModel):
+    label: str
+    bad_when: RoutineCheckStatus
+
+
+# Labels transcribed verbatim from the workbook (including its typos) so the
+# rendered PDF matches the document the client already signs off. `bad_when`
+# drives colour without hardcoding per-question polarity logic elsewhere —
+# every item is yes=good except `combustibles`, which is yes=bad.
+SITE_CHECK_LABELS: dict[str, SiteCheckLabel] = {
+    "access_safe": SiteCheckLabel(
+        label="Is the acces to the site/container/room safe?", bad_when="no"
+    ),
+    "perimeter_fence": SiteCheckLabel(
+        label="Is the Perimeter fence condition in order?", bad_when="no"
+    ),
+    "ac_dbs_locked": SiteCheckLabel(
+        label="AC DB's safe and securely locked", bad_when="no"
+    ),
+    "gates_doors_locked": SiteCheckLabel(
+        label="Gates and doors securely locked and locks funtional? ", bad_when="no"
+    ),
+    "room_clean": SiteCheckLabel(label="Equipment room clean?", bad_when="no"),
+    "combustibles": SiteCheckLabel(
+        label="Any combustable materials in site/container/room - boxes, etc?",
+        bad_when="yes",
+    ),
+    "aircon_working": SiteCheckLabel(label="Airconditioner/s working ", bad_when="no"),
+    "lighting": SiteCheckLabel(
+        label="Is the lighting in order and working?", bad_when="no"
+    ),
+    "env_monitoring": SiteCheckLabel(
+        label="Is the Site/room/container Environmental Monitoring system working and monitored",
+        bad_when="no",
+    ),
+    "fire_monitoring": SiteCheckLabel(
+        label="Is the Site/room/container fire monitoring system working and monitored",
+        bad_when="no",
+    ),
+    "access_monitoring": SiteCheckLabel(
+        label="Is the Site/room/container access monitoring system working and monitored",
+        bad_when="no",
+    ),
+    "aircon_controller": SiteCheckLabel(
+        label="Is the Site/room/container fitted with an Aircon controller system?",
+        bad_when="no",
+    ),
+}
+
+
+class RectifierReadings(BaseModel):
+    status: RoutineCheckStatus
+    a_output_voltage: str | None = None
+    a_load_current: str | None = None
+    a_battery_charging_current: str | None = None
+    b_output_voltage: str | None = None
+    b_load_current: str | None = None
+    b_battery_charging_current: str | None = None
+
+
+class UpsReadings(BaseModel):
+    status: RoutineCheckStatus
+    a_load_percent: str | None = None
+    b_load_percent: str | None = None
+    a_battery_capacity_percent: str | None = None
+    b_battery_capacity_percent: str | None = None
+    a_battery_charge_voltage: str | None = None
+    b_battery_charge_voltage: str | None = None
+
+
+class PowerReadings(BaseModel):
+    rectifier: RectifierReadings
+    ups: UpsReadings
+
+
+class CabinetCheckLabel(BaseModel):
+    label: str
+    bad_when: RoutineCheckStatus
+
+
+# `damages_observed` and `visual_alarms` are yes=bad; the other three are
+# yes=good — same polarity-as-data rule as SITE_CHECK_LABELS.
+CABINET_CHECK_LABELS: dict[str, CabinetCheckLabel] = {
+    "locked_and_keys": CabinetCheckLabel(
+        label="Is the cabinet locked and keys available?", bad_when="no"
+    ),
+    "damages_observed": CabinetCheckLabel(
+        label="Any damages observed when inspecting the cabinet??", bad_when="yes"
+    ),
+    "clean": CabinetCheckLabel(label="Is the cabinet clean?", bad_when="no"),
+    "patching_neat": CabinetCheckLabel(
+        label="Is the fibre patching and routing in the cabinet between ODF/Patch Panels and devices neat?",
+        bad_when="no",
+    ),
+    "visual_alarms": CabinetCheckLabel(
+        label="Are there any visual alarms on equipment in cabinet? Note",
+        bad_when="yes",
+    ),
+}
+
+
+class CabinetInspection(BaseModel):
+    order: int = Field(description="1-based, authoritative render order")
+    location: str
+    equipment_hosted: str | None = None
+    locked_and_keys: RoutineCheckStatus
+    damages_observed: RoutineCheckStatus
+    clean: RoutineCheckStatus
+    patching_neat: RoutineCheckStatus
+    visual_alarms: RoutineCheckStatus
+    alarm_note: str | None = None
+    pdu_photo: GeoPhoto | None = None
+    cabinet_photo: GeoPhoto | None = None
+    remarks: str | None = None
+
+    @model_validator(mode="after")
+    def _alarm_note_required_when_visual_alarms_yes(self) -> "CabinetInspection":
+        if self.visual_alarms == "yes" and not (self.alarm_note or "").strip():
+            raise ValueError(
+                "alarm_note is required when visual_alarms is 'yes'"
+            )
+        return self
+
+
+class ExtraPhotoSection(BaseModel):
+    """A trailing, technician-named photo section after the cabinets (e.g. 'SITE-BACK VIEW')."""
+
+    order: int
+    label: str
+    photos: list[GeoPhoto] = Field(default_factory=list)
+    remarks: str | None = None
+
+
+class HostedSiteSectionMeta(BaseModel):
+    key: str
+    number: int
+    label: str
+    hint: str
+    required: bool
+
+
+# One shared, ordered section definition — drives capture order, view/edit
+# order, PDF order and progress counting on both clients, so they cannot
+# disagree (DC_POP_REPORTS_IMPLEMENTATION_PLAN.md §4.5). This is also the
+# order authority for the PDF renderer (Phase 3).
+HOSTED_SITE_SECTIONS: list[HostedSiteSectionMeta] = [
+    HostedSiteSectionMeta(
+        key="details",
+        number=1,
+        label="Details",
+        hint="Service provider, routine type, site, technician, date and ticket references.",
+        required=True,
+    ),
+    HostedSiteSectionMeta(
+        key="site_checks",
+        number=2,
+        label="Site checklist",
+        hint="All 12 site checks answered, with an issue description on every finding.",
+        required=True,
+    ),
+    HostedSiteSectionMeta(
+        key="power_readings",
+        number=3,
+        label="Power readings",
+        hint="Rectifier and UPS status, with readings recorded whenever a block is checked.",
+        required=True,
+    ),
+    HostedSiteSectionMeta(
+        key="cabinets",
+        number=4,
+        label="Cabinets",
+        hint="Every cabinet in the room, inspected one at a time with its own two photos.",
+        required=True,
+    ),
+    HostedSiteSectionMeta(
+        key="extra_sections",
+        number=5,
+        label="Extra sections",
+        hint="Optional trailing photo sections, e.g. a site-back view.",
+        required=False,
+    ),
+    HostedSiteSectionMeta(
+        key="other_issues",
+        number=6,
+        label="Other issues",
+        hint="Anything else requiring attention or investigation. May be left blank.",
+        required=False,
+    ),
+]
+
+
+class HostedSiteRoutineData(BaseModel):
+    source: Literal["mobile", "web"]
+    form_version: str = "hosted-site-routine-1"
+    header: HostedSiteHeader
+    site_checks: dict[str, SiteCheckItem]
+    power_readings: PowerReadings
+    cabinets: list[CabinetInspection] = Field(default_factory=list)
+    extra_sections: list[ExtraPhotoSection] = Field(default_factory=list)
+    other_issues: str | None = None
+
+    @model_validator(mode="after")
+    def _cabinet_order_is_1_based_and_contiguous(self) -> "HostedSiteRoutineData":
+        orders = [c.order for c in self.cabinets]
+        if orders and sorted(orders) != list(range(1, len(orders) + 1)):
+            raise ValueError(
+                f"cabinet order must be 1-based, contiguous and unique; got {orders}"
+            )
+        return self
+
+
+class HostedSiteAttachments(BaseModel):
+    """`label` grammar: `cabinet:<order>:pdu`, `cabinet:<order>:cabinet`, `extra:<order>:<index>`."""
+
     files: list[AttachmentFile] = Field(default_factory=list)

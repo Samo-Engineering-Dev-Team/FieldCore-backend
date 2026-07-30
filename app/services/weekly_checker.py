@@ -122,6 +122,8 @@ def check_weekly_scheduled_tasks(session: Session) -> dict:
             "repeater_site_visit": "Repeater Site Visit",
             "generator_diesel_refill": "Generator Diesel Refill",
             "pop_site": "POP Site",
+            "datacenter_inspection": "Datacenter Inspection",
+            "pop_inspection": "POP Inspection",
         }
         overdue_labels = ", ".join(_SCHEDULE_LABELS.get(t, t) for t in overdue_types)
 

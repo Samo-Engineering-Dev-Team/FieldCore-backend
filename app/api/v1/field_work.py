@@ -62,3 +62,59 @@ def submit_generator_refuel(
     current_user: CurrentUser,
 ) -> FieldWorkResponse:
     return service.submit(payload, ReportType.DIESEL, session, current_user)
+
+
+@router.post(
+    "/datacenter-inspections/start",
+    response_model=ReportResponse,
+    status_code=201,
+)
+def start_datacenter_inspection(
+    payload: FieldWorkCreate,
+    service: FieldWorkService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> ReportResponse:
+    return service.start(payload, ReportType.DATACENTER, session, current_user)
+
+
+@router.post(
+    "/datacenter-inspections",
+    response_model=FieldWorkResponse,
+    status_code=201,
+)
+def submit_datacenter_inspection(
+    payload: FieldWorkCreate,
+    service: FieldWorkService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> FieldWorkResponse:
+    return service.submit(payload, ReportType.DATACENTER, session, current_user)
+
+
+@router.post(
+    "/pop-inspections/start",
+    response_model=ReportResponse,
+    status_code=201,
+)
+def start_pop_inspection(
+    payload: FieldWorkCreate,
+    service: FieldWorkService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> ReportResponse:
+    return service.start(payload, ReportType.POP, session, current_user)
+
+
+@router.post(
+    "/pop-inspections",
+    response_model=FieldWorkResponse,
+    status_code=201,
+)
+def submit_pop_inspection(
+    payload: FieldWorkCreate,
+    service: FieldWorkService,
+    session: SessionDep,
+    current_user: CurrentUser,
+) -> FieldWorkResponse:
+    return service.submit(payload, ReportType.POP, session, current_user)
