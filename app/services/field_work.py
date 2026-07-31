@@ -24,12 +24,16 @@ REPORT_TO_SCHEDULE_TYPE = {
     ReportType.ROUTINE_DRIVE: "routine_drive",
     ReportType.REPEATER: "repeater_site_visit",
     ReportType.DIESEL: "generator_diesel_refill",
+    ReportType.DATACENTER: "datacenter_inspection",
+    ReportType.POP: "pop_inspection",
 }
 
 REPORT_TO_DESCRIPTION = {
     ReportType.ROUTINE_DRIVE: "Routine Drive",
     ReportType.REPEATER: "Repeater Site Visit",
     ReportType.DIESEL: "Generator Diesel Refill",
+    ReportType.DATACENTER: "Datacenter Inspection",
+    ReportType.POP: "POP Inspection",
 }
 
 

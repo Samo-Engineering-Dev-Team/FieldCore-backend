@@ -354,6 +354,35 @@ def test_diesel_pdf_renders_amount_used() -> None:
     assert "R 500.00" in extracted  # 350.50 + 149.50
 
 
+def test_diesel_pdf_renders_week_number_derived_from_report_date() -> None:
+    """Week Number is derived from report.created_at, never captured by the technician."""
+    service = PDFService()
+    report = _sample_diesel_report()  # created_at = 2026-04-16 -> ISO week 16
+    service._fetch_image_bytes = lambda url: BytesIO(  # type: ignore[method-assign]
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+        )
+    )
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "WEEK NUMBER" in extracted
+    assert "WEEK 16" in extracted
+
+
+def test_format_iso_week_handles_missing_and_boundary_dates() -> None:
+    service = PDFService()
+
+    assert service._format_iso_week(None) == "N/A"
+    # 1 Jan 2026 falls in ISO week 1 of 2026.
+    assert service._format_iso_week(datetime(2026, 1, 1, tzinfo=timezone.utc)) == "WEEK 1"
+    # 31 Dec 2024 belongs to ISO week 1 of 2025, not week 53 of 2024.
+    assert service._format_iso_week(datetime(2024, 12, 31, tzinfo=timezone.utc)) == "WEEK 1"
+
+
 def _sample_repeater_report_legacy_mobile_schema():
     """Matches the pre-fix mobile payload: abbreviated keys, attachments.photos."""
     report = _sample_repeater_report()
@@ -612,3 +641,192 @@ def test_routine_drive_pdf_places_bridge_and_activity_photos_with_their_own_chec
     # Nothing left over for the catch-all section — both checks' photos, and
     # the manhole's own (empty here), are fully accounted for inline.
     assert "PHOTO EVIDENCE" not in extracted
+
+
+# ── Diesel site history ──────────────────────────────────────────────────────
+
+
+def _history_entry(day: int, gen_no: int, liters: float, amount: float, **overrides):
+    from app.models.report_data import DieselHistoryEntry
+    from app.utils.funcs import format_iso_week
+
+    fill_date = datetime(2026, 4, day, 8, 30, tzinfo=timezone.utc)
+    payload = {
+        "report_id": str(uuid4()),
+        "fill_date": fill_date,
+        "iso_week": format_iso_week(fill_date),
+        "gen_no": gen_no,
+        "liters_filled": liters,
+        "amount_used": amount,
+        "fill_reason": "Routine",
+        "gen_runtime_hours": "5762H21M",
+        "technician_name": "Musa Dlamini",
+        "seacom_ref": "SEACOM-350289",
+    }
+    payload.update(overrides)
+    return DieselHistoryEntry(**payload)
+
+
+def _sample_site_history(*, include_gen2: bool = True):
+    from app.models.report_data import DieselGeneratorHistory, DieselSiteHistory
+
+    gen1_entries = [
+        _history_entry(2, 1, 22.0, 500.0),
+        _history_entry(9, 1, 0.0, 0.0, fill_reason="Not refueled"),
+        _history_entry(16, 1, 18.5, 420.25),
+    ]
+    generators = [
+        DieselGeneratorHistory(
+            gen_no=1,
+            entries=gen1_entries,
+            entry_count=len(gen1_entries),
+            total_liters=40.5,
+            total_amount=920.25,
+            highest_runtime_minutes=345741,
+        )
+    ]
+    if include_gen2:
+        gen2_entries = [_history_entry(16, 2, 30.0, 700.0)]
+        generators.append(
+            DieselGeneratorHistory(
+                gen_no=2,
+                entries=gen2_entries,
+                entry_count=1,
+                total_liters=30.0,
+                total_amount=700.0,
+                highest_runtime_minutes=345741,
+            )
+        )
+
+    entries = [e for gen in generators for e in gen.entries]
+    return DieselSiteHistory(
+        site_id=str(uuid4()),
+        site_name="Harrismith",
+        first_fill_date=datetime(2026, 4, 2, 8, 30, tzinfo=timezone.utc),
+        last_fill_date=datetime(2026, 4, 16, 8, 30, tzinfo=timezone.utc),
+        generators=generators,
+        entry_count=len(entries),
+        total_liters=sum(e.liters_filled for e in entries),
+        total_amount=sum(e.amount_used for e in entries),
+    )
+
+
+def _history_pdf_text(history) -> str:
+    service = PDFService()
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+    pdf_buffer = service.generate_diesel_history_pdf(history)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        return " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+
+def test_diesel_history_pdf_renders_a_section_per_generator() -> None:
+    extracted = _history_pdf_text(_sample_site_history())
+
+    assert "DIESEL USAGE HISTORY" in extracted
+    assert "HARRISMITH" in extracted
+    assert "GENERATOR 1 HISTORY" in extracted
+    assert "GENERATOR 2 HISTORY" in extracted
+    # Per-row date and week: the history spans reports, unlike the single-fill-up
+    # report where every row shares one date.
+    assert "02/04/2026 - 16/04/2026" in extracted  # overview range, full years
+    assert "02/04/26 W14" in extracted
+    assert "SUBTOTAL" in extracted
+
+
+def test_diesel_history_pdf_omits_gen2_section_for_single_generator_site() -> None:
+    extracted = _history_pdf_text(_sample_site_history(include_gen2=False))
+
+    assert "GENERATOR 1 HISTORY" in extracted
+    assert "GENERATOR 2 HISTORY" not in extracted
+
+
+def test_diesel_history_pdf_handles_a_site_with_no_fillups() -> None:
+    from app.models.report_data import DieselSiteHistory
+
+    empty = DieselSiteHistory(site_id=str(uuid4()), site_name="Estcourt")
+    extracted = _history_pdf_text(empty)
+
+    assert "DIESEL USAGE HISTORY" in extracted
+    assert "NO DIESEL FILL-UPS RECORDED FOR THIS SITE" in extracted
+    assert "GENERATOR 1 HISTORY" not in extracted
+
+
+def test_diesel_history_pdf_repeats_table_header_across_pages() -> None:
+    from app.models.report_data import DieselGeneratorHistory, DieselSiteHistory
+
+    entries = [_history_entry(2, 1, 20.0, 450.0) for _ in range(120)]
+    history = DieselSiteHistory(
+        site_id=str(uuid4()),
+        site_name="Harrismith",
+        generators=[
+            DieselGeneratorHistory(
+                gen_no=1,
+                entries=entries,
+                entry_count=len(entries),
+                total_liters=2400.0,
+                total_amount=54000.0,
+            )
+        ],
+        entry_count=len(entries),
+        total_liters=2400.0,
+        total_amount=54000.0,
+    )
+
+    service = PDFService()
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+    pdf_buffer = service.generate_diesel_history_pdf(history)
+
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        pages = [(page.extract_text() or "").upper() for page in pdf.pages]
+
+    assert len(pages) > 2
+    # Every page carrying rows must carry the header too.
+    row_pages = [p for p in pages if "SEACOM-350289" in p]
+    assert len(row_pages) > 1
+    assert all("SEACOM REF" in p for p in row_pages)
+
+
+def test_diesel_history_pdf_survives_malformed_runtime_and_zero_fillups() -> None:
+    """
+    Runtime reaches the renderer uncoerced (str | float | None), and the real log
+    is full of "N/A", lowercase "5770h19m", and blanks. Zero-litre "Not refueled"
+    visits are the majority of rows and are deliberately kept — they are the
+    compliance record, not noise.
+    """
+    from app.models.report_data import DieselGeneratorHistory, DieselSiteHistory
+
+    entries = [
+        _history_entry(2, 1, 0.0, 0.0, gen_runtime_hours="N/A", fill_reason="Not refueled"),
+        _history_entry(9, 1, 0.0, 0.0, gen_runtime_hours="", fill_reason=None),
+        _history_entry(16, 1, 22.51, 677.1, gen_runtime_hours="5770h19m"),
+        _history_entry(16, 1, 18.0, 400.0, gen_runtime_hours=None, technician_name=None),
+        _history_entry(16, 1, 1.0, 1.0, gen_runtime_hours=1234.2, seacom_ref=None),
+    ]
+    history = DieselSiteHistory(
+        site_id=str(uuid4()),
+        site_name="Estcourt",
+        generators=[
+            DieselGeneratorHistory(
+                gen_no=1,
+                entries=entries,
+                entry_count=len(entries),
+                total_liters=41.51,
+                total_amount=1078.1,
+                highest_runtime_minutes=None,
+            )
+        ],
+        entry_count=len(entries),
+        total_liters=41.51,
+        total_amount=1078.1,
+    )
+
+    extracted = _history_pdf_text(history)
+
+    assert "GENERATOR 1 HISTORY" in extracted
+    # Zero-litre visits are kept, not filtered out.
+    assert "NOT REFUELED" in extracted
+    # Lowercase H/M notation still parses into the canonical display form.
+    assert "5770H19M" in extracted
+    # Missing values degrade to placeholders rather than raising.
+    assert "NOT SPECIFIED" in extracted
+    assert "N/A" in extracted

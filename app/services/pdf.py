@@ -36,11 +36,13 @@ from PIL import Image as PILImage, ImageOps
 from loguru import logger as LOG
 from app.core.settings import app_settings
 from app.models import Report
+from app.models.report_data import CABINET_CHECK_LABELS, HOSTED_SITE_SECTIONS, SITE_CHECK_LABELS
 from app.utils.enums import ReportType
-from app.utils.funcs import utcnow
+from app.utils.funcs import format_iso_week, parse_diesel_runtime_minutes, utcnow
 
 if TYPE_CHECKING:
     from app.models import IncidentReport
+    from app.models.report_data import DieselSiteHistory
 
 # Imported lazily inside generate_incident_report_pdf to avoid circular import at module load
 # from app.models import IncidentReport
@@ -115,6 +117,10 @@ class PDFService:
             "client": "Seacom Client Report.jpg",
             "telecoms": "Telecoms.jpg",
             "rhs": "RHS.jpg",
+            # No dedicated DC/POP cover art exists yet — reuse Telecoms and
+            # swap the filenames when artwork is supplied.
+            "datacenter": "Telecoms.jpg",
+            "pop": "Telecoms.jpg",
         }
         self._first_page_bg_image: Path | None = None
         self._first_page_bg_primary: str = "#0b2265"
@@ -233,6 +239,8 @@ class PDFService:
             "client": ("#0f172a", "#0b2265"),
             "telecoms": ("#155e75", "#0e7490"),
             "rhs": ("#4c1d95", "#5b21b6"),
+            "datacenter": ("#0f766e", "#115e59"),
+            "pop": ("#9a3412", "#7c2d12"),
         }
         return palettes.get(cover_key or "base", palettes["base"])
 
@@ -1225,6 +1233,8 @@ class PDFService:
                     self._render_route_patrol_body(
                         report, story, primary_hex, accent_hex
                     )
+                elif report.report_type in (ReportType.DATACENTER, ReportType.POP):
+                    self._render_hosted_site_body(report, story, primary_hex, accent_hex)
                 else:
                     story.extend(
                         self._repeater_section_header(
@@ -1235,10 +1245,13 @@ class PDFService:
 
             # ROUTINE_DRIVE renders photos in its body; DIESEL renders every
             # uploaded photo in its "9. Report Pictures" section (attachments.files
-            # are merged there). Rendering attachments again here duplicated every
-            # diesel photo, so skip both report types.
+            # are merged there); DATACENTER/POP read photos from data.cabinets[]/
+            # .extra_sections[], never attachments.files. Rendering attachments
+            # again here would duplicate every photo, so skip all four types.
             if report.attachments and report.report_type not in (
                 ReportType.ROUTINE_DRIVE,
+                ReportType.DATACENTER,
+                ReportType.POP,
                 ReportType.DIESEL,
                 ReportType.REPEATER,
             ):
@@ -4074,6 +4087,10 @@ class PDFService:
 
     def _format_report_type(self, report_type: ReportType) -> str:
         """Format report type enum to display string."""
+        if report_type == ReportType.DATACENTER:
+            return "Datacenter Inspection"
+        if report_type == ReportType.POP:
+            return "POP Inspection"
         return report_type.value.replace("-", " ").title()
 
     def _format_datetime(self, dt: datetime | None) -> str:
@@ -4081,6 +4098,10 @@ class PDFService:
         if dt is None:
             return "N/A"
         return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    def _format_iso_week(self, dt: datetime | None) -> str:
+        """Format a date as the ISO week label used on diesel reports, e.g. "WEEK 30"."""
+        return format_iso_week(dt)
 
     def _render_report_data(self, data: dict[str, Any], level: int = 0) -> list:
         """
@@ -4178,8 +4199,17 @@ class PDFService:
         section_data: dict[str, Any],
         label_map: dict[str, str],
         primary_hex: str = "#0e7490",
+        polarity_map: dict[str, Any] | None = None,
     ) -> list:
-        """Render a dict of CheckWithIssue objects as a color-coded checklist table."""
+        """Render a dict of check items as a color-coded checklist table.
+
+        Two value shapes are accepted per key: the legacy `{passed: bool}` /
+        bare-bool shape (unchanged), and the hosted-site tri-state
+        `{status: "yes"|"no"|"n/a", issue}` shape. Tri-state colour is driven
+        by `polarity_map[key].bad_when` rather than coerced to boolean, so
+        `n/a` renders neutral (no green/red judgement) instead of a false
+        pass or fail.
+        """
         GREEN = "#166534"
         RED = "#991b1b"
 
@@ -4220,20 +4250,28 @@ class PDFService:
                 Paragraph("Issue / Notes", hdr_s),
             ]
         ]
-        pass_flags: list[bool] = []
+        # None = neutral (n/a) — no green/red judgement, just striped background.
+        pass_flags: list[bool | None] = []
 
         for key, value in section_data.items():
             label = label_map.get(key, key.replace("_", " ").title())
-            if isinstance(value, dict):
+            if isinstance(value, dict) and "status" in value:
+                status = str(value.get("status") or "").strip().lower()
+                issue = (value.get("issue") or "").strip()
+                bad_when = getattr((polarity_map or {}).get(key), "bad_when", "no")
+                passed = None if (not status or status == "n/a") else status != bad_when
+                result_text = status.upper() if status else "N/A"
+            elif isinstance(value, dict):
                 passed = bool(value.get("passed", True))
                 issue = (value.get("issueDescription") or "").strip()
+                result_text = "PASS" if passed else "FAIL"
             elif isinstance(value, bool):
                 passed = value
                 issue = ""
+                result_text = "PASS" if passed else "FAIL"
             else:
                 continue
             pass_flags.append(passed)
-            result_text = "PASS" if passed else "FAIL"
             table_data.append(
                 [
                     Paragraph(label, lbl_s),
@@ -4262,6 +4300,8 @@ class PDFService:
             ),
         ]
         for i, passed in enumerate(pass_flags, start=1):
+            if passed is None:
+                continue
             bg = GREEN if passed else RED
             style_cmds.append(("BACKGROUND", (1, i), (1, i), colors.HexColor(bg)))
 
@@ -4772,40 +4812,7 @@ class PDFService:
 
     def _parse_diesel_runtime_minutes(self, value: Any) -> int | None:
         """Parse runtime stored as hours, numeric string, or H/M notation."""
-        if isinstance(value, bool) or value is None:
-            return None
-
-        if isinstance(value, (int, float)):
-            if not value or value < 0:
-                return None
-            total_minutes = round(float(value) * 60)
-            return total_minutes if total_minutes > 0 else None
-
-        if not isinstance(value, str):
-            return None
-
-        normalized = value.strip().upper().replace(" ", "")
-        if not normalized:
-            return None
-
-        runtime_match = re.fullmatch(r"(?:(\d+)H(?:(\d{1,2})M)?|(\d+)M)", normalized)
-        if runtime_match:
-            hours = int(runtime_match.group(1) or 0)
-            minutes = int(runtime_match.group(2) or runtime_match.group(3) or 0)
-            if minutes >= 60:
-                return None
-            total_minutes = (hours * 60) + minutes
-            return total_minutes if total_minutes > 0 else None
-
-        try:
-            numeric_hours = float(normalized)
-        except ValueError:
-            return None
-
-        if numeric_hours <= 0:
-            return None
-        total_minutes = round(numeric_hours * 60)
-        return total_minutes if total_minutes > 0 else None
+        return parse_diesel_runtime_minutes(value)
 
     def _format_diesel_runtime(self, value: Any) -> str:
         """Format diesel runtime using the same compact H/M style as technician print."""
@@ -5397,6 +5404,7 @@ class PDFService:
         story.append(
             self._build_field_kv_table(
                 [
+                    ("Week Number", self._format_iso_week(report.created_at)),
                     (
                         "Primary Site",
                         ", ".join(primary_sites)
@@ -5453,6 +5461,234 @@ class PDFService:
 
         self._render_diesel_attachments(report, story, primary_hex, accent_hex)
 
+    def _render_diesel_history_body(
+        self,
+        history: "DieselSiteHistory",
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """
+        Render a site's full fill-up history: an overview, then one section per
+        generator. Unlike the single-fill-up report this spans many reports, so
+        each row carries its own date and week.
+        """
+        body_style = ParagraphStyle(
+            "DieselHistoryNote",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#2d3748"),
+            leading=15,
+        )
+
+        def date_label(value: datetime | None) -> str:
+            return value.strftime("%d/%m/%Y") if value else "N/A"
+
+        covered = "No fill-ups recorded"
+        if history.first_fill_date and history.last_fill_date:
+            covered = (
+                f"{date_label(history.first_fill_date)} - "
+                f"{date_label(history.last_fill_date)}"
+            )
+
+        story.extend(
+            self._repeater_section_header("1. Site Overview", primary_hex, accent_hex)
+        )
+        story.append(
+            self._build_field_metric_cards(
+                [
+                    ("Fill Entries", str(history.entry_count)),
+                    (
+                        "Total Liters",
+                        self._format_diesel_liters(history.total_liters, fixed=True),
+                    ),
+                    ("Total Spend", self._format_diesel_amount(history.total_amount)),
+                    ("Generators", str(len(history.generators))),
+                ],
+                accent_hex=accent_hex,
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        requested_range = "All time"
+        if history.date_from or history.date_to:
+            requested_range = (
+                f"{date_label(history.date_from) if history.date_from else 'Earliest'}"
+                f" - {date_label(history.date_to) if history.date_to else 'Latest'}"
+            )
+
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Site", history.site_name),
+                    ("Requested Range", requested_range),
+                    ("History Covered", covered),
+                    (
+                        "Generators Serviced",
+                        ", ".join(f"Gen {gen.gen_no}" for gen in history.generators)
+                        or "None",
+                    ),
+                ]
+            )
+        )
+        story.append(Spacer(1, 6 * mm))
+
+        if not history.generators:
+            story.extend(
+                self._repeater_section_header(
+                    "2. Fill-up History", primary_hex, accent_hex
+                )
+            )
+            story.append(
+                Paragraph(
+                    "<i>No diesel fill-ups recorded for this site"
+                    f"{'' if requested_range == 'All time' else ' in the selected range'}.</i>",
+                    body_style,
+                )
+            )
+            return
+
+        for index, generator in enumerate(history.generators, start=2):
+            story.extend(
+                self._repeater_section_header(
+                    f"{index}. Generator {generator.gen_no} History",
+                    primary_hex,
+                    accent_hex,
+                )
+            )
+
+            # Date and week share a column, the way the source fill-up log writes
+            # them ("20/05/2025 WEEK 20"). Nine separate columns do not fit A4
+            # portrait once cell padding is accounted for, and the cover page
+            # template is fixed at the 170mm portrait content width.
+            rows: list[list[str]] = []
+            for entry in generator.entries:
+                week = entry.iso_week.replace("WEEK ", "W")
+                short_date = (
+                    entry.fill_date.strftime("%d/%m/%y") if entry.fill_date else "N/A"
+                )
+                rows.append(
+                    [
+                        f"{short_date} {week}",
+                        self._format_diesel_liters_plain(entry.liters_filled),
+                        self._format_diesel_amount(entry.amount_used),
+                        self._format_diesel_runtime(entry.gen_runtime_hours),
+                        str(entry.fill_reason or "Not specified"),
+                        str(entry.technician_name or "N/A"),
+                        str(entry.seacom_ref or "N/A"),
+                    ]
+                )
+
+            rows.append(
+                [
+                    "Subtotal",
+                    self._format_diesel_liters_plain(generator.total_liters),
+                    self._format_diesel_amount(generator.total_amount),
+                    self._format_runtime_minutes(generator.highest_runtime_minutes),
+                    f"{generator.entry_count} entries",
+                    "",
+                    "",
+                ]
+            )
+
+            story.append(
+                self._build_field_data_table(
+                    headers=[
+                        "Date / Week",
+                        "Liters",
+                        "Amount (R)",
+                        "Runtime",
+                        "Fill Reason",
+                        "Technician",
+                        "SEACOM Ref",
+                    ],
+                    rows=rows,
+                    # Sums to the 170mm portrait content width. Free text (fill
+                    # reason, technician) may wrap; the reference must not, so it
+                    # takes the slack.
+                    col_widths=[
+                        30 * mm,
+                        15 * mm,
+                        22 * mm,
+                        20 * mm,
+                        25 * mm,
+                        27 * mm,
+                        31 * mm,
+                    ],
+                    primary_hex=primary_hex,
+                )
+            )
+            story.append(Spacer(1, 6 * mm))
+
+    def generate_diesel_history_pdf(self, history: "DieselSiteHistory") -> BytesIO:
+        """Generate the per-site diesel fill-up history PDF."""
+        buffer = BytesIO()
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20 * mm,
+            leftMargin=20 * mm,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+            title=f"Diesel_History_{history.site_name}",
+        )
+
+        story: list = []
+        primary_hex, accent_hex = self._cover_palette("diesel")
+        generated_display = self._format_datetime(utcnow())
+        title = "Diesel Usage History"
+
+        story.extend(
+            self._build_field_cover_page(
+                report_type_label="Generator Diesel Refill",
+                title=title,
+                site=history.site_name,
+                subtitle=_FIELDCORE_REPORT_LABEL,
+                descriptor=(
+                    "Complete generator refuelling history for this site, compiled "
+                    "for operational review, archive, and audit traceability."
+                ),
+                detail_items=[
+                    ("Report Type", "Diesel Usage History"),
+                    ("Site", history.site_name),
+                    ("Fill Entries", str(history.entry_count)),
+                    (
+                        "Total Liters",
+                        self._format_diesel_liters(history.total_liters, fixed=True),
+                    ),
+                    ("Total Spend", self._format_diesel_amount(history.total_amount)),
+                    ("Generators", str(len(history.generators))),
+                    ("Generated", generated_display),
+                ],
+                generated_at=generated_display,
+                accent_hex=accent_hex,
+            )
+        )
+
+        story.extend(
+            self._build_field_page_header(
+                title=title,
+                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {history.site_name}",
+                accent_hex=accent_hex,
+            )
+        )
+
+        self._render_diesel_history_body(history, story, primary_hex, accent_hex)
+
+        story.append(Spacer(1, 8))
+        story.append(
+            Paragraph(
+                f"Generated on {generated_display} UTC | Site: {history.site_name}",
+                self.styles["Footer"],
+            )
+        )
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
     def _render_diesel_attachments(
         self,
         report: Report,
@@ -5495,6 +5731,379 @@ class PDFService:
             )
         )
         self._render_photo_grid(photos, story, cols=3)
+
+    # ── Hosted Site Routine (Datacenter / POP) rendering ──────────────────────
+
+    def _hosted_site_section_heading(self, key: str) -> str:
+        """Numbered heading matching the shared HOSTED_SITE_SECTIONS order, so
+        the PDF, web sheet and mobile form can never fall out of order."""
+        for section in HOSTED_SITE_SECTIONS:
+            if section.key == key:
+                return f"{section.number}. {section.label}"
+        return key.replace("_", " ").title()
+
+    def _render_hosted_site_cabinets(
+        self,
+        cabinets: list[dict[str, Any]],
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """One KeepTogether block per cabinet, in `order`: heading, 5-row check
+        table with alarm note, then the PDU and cabinet photo side by side,
+        then remarks. Photos are never hoisted into a trailing gallery."""
+        empty_style = ParagraphStyle(
+            "HostedSiteNoCabinets",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica-Oblique",
+            textColor=colors.HexColor("#718096"),
+        )
+        if not cabinets:
+            story.append(Paragraph("No cabinets recorded.", empty_style))
+            return
+
+        ordered = sorted(cabinets, key=lambda c: c.get("order") or 0)
+
+        # Batch-fetch every cabinet photo up front (cached, parallel, deduped)
+        # rather than one round trip per cabinet — mirrors _render_photo_grid's
+        # own batching, which matters once a walkaround has 20-30 cabinets.
+        urls: list[str] = []
+        slots: list[tuple[int, str]] = []
+        for i, cab in enumerate(ordered):
+            for slot in ("pdu_photo", "cabinet_photo"):
+                url = self._get_media_source(cab.get(slot))
+                if url:
+                    urls.append(url)
+                    slots.append((i, slot))
+        buffers = self._fetch_images_parallel(urls)
+        photo_buffers: dict[tuple[int, str], BytesIO | None] = dict(
+            zip(slots, buffers)
+        )
+
+        heading_style = ParagraphStyle(
+            "HostedSiteCabinetHeading",
+            parent=self.styles["Normal"],
+            fontSize=11,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#1b2540"),
+        )
+        caption_style = ParagraphStyle(
+            "HostedSiteCabinetPhotoCaption",
+            parent=self.styles["Normal"],
+            fontSize=8,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#718096"),
+            alignment=TA_CENTER,
+        )
+        remarks_style = ParagraphStyle(
+            "HostedSiteCabinetRemarks",
+            parent=self.styles["Normal"],
+            fontSize=9,
+            fontName="Helvetica-Oblique",
+            textColor=colors.HexColor("#4a5568"),
+        )
+        cabinet_label_map = {
+            key: meta.label for key, meta in CABINET_CHECK_LABELS.items()
+        }
+        photo_w = 80 * mm
+        photo_h = photo_w * 0.68
+
+        for i, cab in enumerate(ordered):
+            block: list = []
+            order = cab.get("order")
+            location = self._text_value(cab.get("location"))
+            equipment = cab.get("equipment_hosted")
+            heading = f"Cabinet {order} — {location}"
+            if equipment:
+                heading += f" ({equipment})"
+            block.append(Paragraph(escape(heading), heading_style))
+            block.append(Spacer(1, 2 * mm))
+
+            check_data = {
+                key: {
+                    "status": cab.get(key),
+                    "issue": cab.get("alarm_note") if key == "visual_alarms" else None,
+                }
+                for key in (
+                    "locked_and_keys",
+                    "damages_observed",
+                    "clean",
+                    "patching_neat",
+                    "visual_alarms",
+                )
+                if cab.get(key) is not None
+            }
+            block.extend(
+                self._render_checklist_table(
+                    check_data,
+                    cabinet_label_map,
+                    primary_hex,
+                    polarity_map=CABINET_CHECK_LABELS,
+                )
+            )
+            block.append(Spacer(1, 3 * mm))
+
+            pdu_buf = photo_buffers.get((i, "pdu_photo"))
+            cabinet_buf = photo_buffers.get((i, "cabinet_photo"))
+            pdu_img = self._fit_photo_image(pdu_buf, photo_w, photo_h) if pdu_buf else None
+            cabinet_img = (
+                self._fit_photo_image(cabinet_buf, photo_w, photo_h)
+                if cabinet_buf
+                else None
+            )
+            img_row = [
+                pdu_img or Paragraph("<i>(PDU photo unavailable)</i>", caption_style),
+                cabinet_img
+                or Paragraph("<i>(cabinet photo unavailable)</i>", caption_style),
+            ]
+            cap_row = [
+                Paragraph("Full PDU Image", caption_style),
+                Paragraph("Full Cabinet Image", caption_style),
+            ]
+            photo_table = Table([img_row, cap_row], colWidths=[85 * mm, 85 * mm])
+            photo_table.setStyle(
+                TableStyle(
+                    [
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+                        ("TOPPADDING", (0, 0), (-1, -1), 3),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                        ("BOX", (0, 0), (0, -1), 0.5, colors.HexColor("#e2e8f0")),
+                        ("BOX", (1, 0), (1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ]
+                )
+            )
+            block.append(photo_table)
+
+            remarks = (cab.get("remarks") or "").strip()
+            if remarks:
+                block.append(Spacer(1, 2 * mm))
+                block.append(
+                    Paragraph(f"<b>Remarks:</b> {escape(remarks)}", remarks_style)
+                )
+
+            block.append(Spacer(1, 6 * mm))
+            story.append(KeepTogether(block))
+
+    def _render_hosted_site_body(
+        self,
+        report: Report,
+        story: list,
+        primary_hex: str,
+        accent_hex: str,
+    ) -> None:
+        """Datacenter and POP share this renderer — same source workbook
+        template, one version apart. Sections follow HOSTED_SITE_SECTIONS
+        order so the PDF, web sheet and mobile form can never disagree.
+        Photos are read from data.cabinets[]/.extra_sections[], never from
+        attachments.files (the generic attachments fallback is suppressed
+        for these two types in generate_report_pdf)."""
+        data = report.data if isinstance(report.data, dict) else {}
+
+        body_style = ParagraphStyle(
+            "HostedSiteBody",
+            parent=self.styles["Normal"],
+            fontSize=10,
+            fontName="Helvetica",
+            textColor=colors.HexColor("#2d3748"),
+            leading=15,
+        )
+
+        # 1. Details
+        header = data.get("header") if isinstance(data.get("header"), dict) else {}
+        story.extend(
+            self._repeater_section_header(
+                self._hosted_site_section_heading("details"), primary_hex, accent_hex
+            )
+        )
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Service Provider", self._text_value(header.get("service_provider"))),
+                    ("Routine Type", self._text_value(header.get("routine_type"))),
+                    ("Site Name", self._text_value(header.get("site_name"))),
+                    ("Technician Name", self._text_value(header.get("technician_name"))),
+                    (
+                        "Date Routine Performed",
+                        self._text_value(header.get("date_routine_performed")),
+                    ),
+                    ("SNOC Routine Ticket", self._text_value(header.get("snoc_routine_ticket"))),
+                    (
+                        "Site Owner Access Ticket",
+                        self._text_value(header.get("site_owner_access_ticket")),
+                    ),
+                ]
+            )
+        )
+        story.append(Spacer(1, 6 * mm))
+
+        # 2. Site checklist
+        story.extend(
+            self._repeater_section_header(
+                self._hosted_site_section_heading("site_checks"), primary_hex, accent_hex
+            )
+        )
+        site_checks = (
+            data.get("site_checks") if isinstance(data.get("site_checks"), dict) else {}
+        )
+        site_check_label_map = {key: meta.label for key, meta in SITE_CHECK_LABELS.items()}
+        story.extend(
+            self._render_checklist_table(
+                site_checks,
+                site_check_label_map,
+                primary_hex,
+                polarity_map=SITE_CHECK_LABELS,
+            )
+        )
+        story.append(Spacer(1, 6 * mm))
+
+        # 3. Power readings — two gated blocks; a block not checked "yes"
+        # suppresses its reading grid, matching the workbook leaving those
+        # rows blank.
+        story.extend(
+            self._repeater_section_header(
+                self._hosted_site_section_heading("power_readings"),
+                primary_hex,
+                accent_hex,
+            )
+        )
+        power = (
+            data.get("power_readings")
+            if isinstance(data.get("power_readings"), dict)
+            else {}
+        )
+        rectifier = (
+            power.get("rectifier") if isinstance(power.get("rectifier"), dict) else {}
+        )
+        ups = power.get("ups") if isinstance(power.get("ups"), dict) else {}
+
+        story.append(
+            Paragraph(
+                f"<b>Rectifier:</b> {str(rectifier.get('status') or 'N/A').upper()}",
+                body_style,
+            )
+        )
+        story.append(Spacer(1, 2 * mm))
+        if str(rectifier.get("status") or "").strip().lower() == "yes":
+            story.append(
+                self._build_field_kv_table(
+                    [
+                        (
+                            "A Output Voltage",
+                            self._text_value(rectifier.get("a_output_voltage")),
+                        ),
+                        ("A Load Current", self._text_value(rectifier.get("a_load_current"))),
+                        (
+                            "A Battery Charging Current",
+                            self._text_value(rectifier.get("a_battery_charging_current")),
+                        ),
+                        (
+                            "B Output Voltage",
+                            self._text_value(rectifier.get("b_output_voltage")),
+                        ),
+                        ("B Load Current", self._text_value(rectifier.get("b_load_current"))),
+                        (
+                            "B Battery Charging Current",
+                            self._text_value(rectifier.get("b_battery_charging_current")),
+                        ),
+                    ]
+                )
+            )
+        story.append(Spacer(1, 4 * mm))
+
+        story.append(
+            Paragraph(f"<b>UPS:</b> {str(ups.get('status') or 'N/A').upper()}", body_style)
+        )
+        story.append(Spacer(1, 2 * mm))
+        if str(ups.get("status") or "").strip().lower() == "yes":
+            # Reproduces the workbook's own inconsistent visual row order (B
+            # above A for usage/load and battery-charge voltage; battery
+            # capacity reads A-then-B) so the printed PDF still matches the
+            # source document — see DC_POP_REPORTS_IMPLEMENTATION_PLAN.md §4.3.
+            story.append(
+                self._build_field_kv_table(
+                    [
+                        ("B Usage/Load (%)", self._text_value(ups.get("b_load_percent"))),
+                        ("A Usage/Load (%)", self._text_value(ups.get("a_load_percent"))),
+                        (
+                            "A Battery Capacity (%)",
+                            self._text_value(ups.get("a_battery_capacity_percent")),
+                        ),
+                        (
+                            "B Battery Capacity (%)",
+                            self._text_value(ups.get("b_battery_capacity_percent")),
+                        ),
+                        (
+                            "B Battery Charge Voltage",
+                            self._text_value(ups.get("b_battery_charge_voltage")),
+                        ),
+                        (
+                            "A Battery Charge Voltage",
+                            self._text_value(ups.get("a_battery_charge_voltage")),
+                        ),
+                    ]
+                )
+            )
+        story.append(Spacer(1, 6 * mm))
+
+        # 4. Cabinets — the core requirement: checks + PDU/cabinet photo
+        # together under each cabinet's own heading, never a trailing gallery.
+        story.extend(
+            self._repeater_section_header(
+                self._hosted_site_section_heading("cabinets"), primary_hex, accent_hex
+            )
+        )
+        cabinets = [c for c in (data.get("cabinets") or []) if isinstance(c, dict)]
+        self._render_hosted_site_cabinets(cabinets, story, primary_hex, accent_hex)
+        story.append(Spacer(1, 6 * mm))
+
+        # 5. Extra sections
+        story.extend(
+            self._repeater_section_header(
+                self._hosted_site_section_heading("extra_sections"),
+                primary_hex,
+                accent_hex,
+            )
+        )
+        extra_sections = [
+            s for s in (data.get("extra_sections") or []) if isinstance(s, dict)
+        ]
+        if extra_sections:
+            for section in sorted(extra_sections, key=lambda s: s.get("order") or 0):
+                story.append(
+                    Paragraph(
+                        f"<b>{escape(self._text_value(section.get('label')))}</b>",
+                        body_style,
+                    )
+                )
+                story.append(Spacer(1, 2 * mm))
+                photos = (
+                    section.get("photos") if isinstance(section.get("photos"), list) else []
+                )
+                if photos:
+                    self._render_photo_grid(photos, story, cols=3)
+                remarks = (section.get("remarks") or "").strip()
+                if remarks:
+                    story.append(Paragraph(f"<i>{escape(remarks)}</i>", body_style))
+                story.append(Spacer(1, 4 * mm))
+        else:
+            story.append(Paragraph("<i>No extra sections captured.</i>", body_style))
+        story.append(Spacer(1, 4 * mm))
+
+        # 6. Other issues
+        other_issues_meta = next(
+            (s for s in HOSTED_SITE_SECTIONS if s.key == "other_issues"), None
+        )
+        story.extend(
+            self._build_narrative_section(
+                other_issues_meta.number if other_issues_meta else 6,
+                other_issues_meta.label if other_issues_meta else "Other Issues",
+                data.get("other_issues"),
+                primary_hex,
+                accent_hex,
+            )
+        )
 
     def _render_repeater_body(
         self,

@@ -7,9 +7,16 @@ from sqlmodel import Session, select
 
 from app.models import Notification, User
 from app.models.report_data import (
+    CabinetInspection,
     DieselReportData,
+    HOSTED_SITE_SECTIONS,
+    HostedSiteRoutineData,
+    RectifierReadings,
     RepeaterReportData,
     RoutePatrolReportData,
+    SITE_CHECK_KEYS,
+    SITE_CHECK_LABELS,
+    UpsReadings,
 )
 from app.utils.enums import ReportType, UserRole
 from app.utils.funcs import utcnow
@@ -18,7 +25,88 @@ _REPORT_DATA_SCHEMAS = {
     ReportType.REPEATER: RepeaterReportData,
     ReportType.DIESEL: DieselReportData,
     ReportType.ROUTINE_DRIVE: RoutePatrolReportData,
+    ReportType.DATACENTER: HostedSiteRoutineData,
+    ReportType.POP: HostedSiteRoutineData,
 }
+
+
+def coerce_diesel_number(value: Any) -> float:
+    """
+    Best-effort float from a diesel numeric field, returning 0.0 rather than raising.
+
+    Field data is dirty: litres and amounts arrive as `22`, `"22.51"`, `"R21.28"`,
+    `"R563,30"` (comma decimal), `""`, and `"N/A"`. A history spanning years will
+    hit all of them, so a total must never be able to 500 the request.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if not isinstance(value, str):
+        return 0.0
+
+    cleaned = value.strip().upper().removeprefix("R").strip()
+    if not cleaned or cleaned in {"N/A", "NA", "-"}:
+        return 0.0
+    # "563,30" is a decimal comma; "1,563.30" is a thousands separator.
+    if "," in cleaned and "." not in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    else:
+        cleaned = cleaned.replace(",", "")
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
+
+
+def coerce_reading_number(value: Any) -> float | None:
+    """
+    Best-effort float from a hosted-site power reading, returning None rather
+    than raising or silently coercing to 0.
+
+    Readings arrive mixed: `54.2`, `0.7`, `"0.0A"`, `"5.9A"`, `31`, `" "`.
+    Unlike `coerce_diesel_number`, a missing/unparseable reading must not
+    collapse to 0 — a real 0V reading and a blank cell mean different things
+    on a trend chart.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if not isinstance(value, str):
+        return None
+
+    cleaned = value.strip().upper()
+    if not cleaned or cleaned in {"N/A", "NA", "-"}:
+        return None
+    cleaned = cleaned.rstrip("AV%").strip()
+    if "," in cleaned and "." not in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    else:
+        cleaned = cleaned.replace(",", "")
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def coerce_diesel_gen_no(value: Any) -> tuple[int, bool]:
+    """
+    Resolve a fill-up's generator number to 1 or 2.
+
+    Returns `(gen_no, inferred)`. `inferred` is True when the entry carried no
+    usable `gen_no` and was defaulted to generator 1 — a site with one generator
+    frequently omits the field entirely.
+    """
+    if isinstance(value, bool):
+        return 1, True
+    if isinstance(value, (int, float)):
+        return (2, False) if int(value) == 2 else (1, int(value) != 1)
+    if isinstance(value, str):
+        digits = "".join(ch for ch in value if ch.isdigit())
+        if digits == "2":
+            return 2, False
+        if digits == "1":
+            return 1, False
+    return 1, True
 
 
 def validate_report_data_schema(report_type: ReportType, data: Any) -> None:
@@ -44,6 +132,132 @@ def validate_report_data_schema(report_type: ReportType, data: Any) -> None:
             report_type,
             e.errors(include_url=False, include_context=False),
         )
+
+
+REQUIRED_HOSTED_SITE_SECTION_COUNT = sum(1 for s in HOSTED_SITE_SECTIONS if s.required)
+
+
+def is_cabinet_complete(cabinet: CabinetInspection) -> bool:
+    """Mirrors `isCabinetComplete` in hosted-site-definitions.ts / hosted-site-routine.ts."""
+    if not cabinet.location.strip():
+        return False
+    if cabinet.visual_alarms == "yes" and not (cabinet.alarm_note or "").strip():
+        return False
+    return cabinet.pdu_photo is not None and cabinet.cabinet_photo is not None
+
+
+def _is_power_block_complete(block: RectifierReadings | UpsReadings) -> bool:
+    if block.status != "yes":
+        return True
+    readings = block.model_dump(exclude={"status"})
+    return all(isinstance(v, str) and v.strip() for v in readings.values())
+
+
+def is_hosted_site_section_complete(section_key: str, data: HostedSiteRoutineData) -> bool:
+    """Mirrors `isSectionComplete` in hosted-site-definitions.ts / hosted-site-routine.ts.
+
+    Kept in lockstep with those two clients per DC_POP_REPORTS_IMPLEMENTATION_PLAN.md
+    §4.5 — a divergence here means the three clients disagree on progress for
+    the same report.
+    """
+    if section_key == "details":
+        h = data.header
+        return bool(
+            h.service_provider.strip()
+            and h.routine_type.strip()
+            and h.site_name.strip()
+            and h.technician_name.strip()
+            and h.date_routine_performed.strip()
+            and h.snoc_routine_ticket.strip()
+        )
+    if section_key == "site_checks":
+        for key in SITE_CHECK_KEYS:
+            item = data.site_checks.get(key)
+            if item is None or not item.status:
+                return False
+            bad_when = SITE_CHECK_LABELS[key].bad_when if key in SITE_CHECK_LABELS else "no"
+            if item.status == bad_when and not (item.issue or "").strip():
+                return False
+        return True
+    if section_key == "power_readings":
+        pr = data.power_readings
+        return _is_power_block_complete(pr.rectifier) and _is_power_block_complete(pr.ups)
+    if section_key == "cabinets":
+        return len(data.cabinets) > 0 and all(is_cabinet_complete(c) for c in data.cabinets)
+    if section_key == "extra_sections":
+        return all(bool(s.label.strip()) and len(s.photos) > 0 for s in data.extra_sections)
+    if section_key == "other_issues":
+        return True
+    return False
+
+
+def completed_hosted_site_section_count(data: HostedSiteRoutineData) -> int:
+    return sum(
+        1
+        for s in HOSTED_SITE_SECTIONS
+        if s.required and is_hosted_site_section_complete(s.key, data)
+    )
+
+
+def hosted_site_missing_fields(data: HostedSiteRoutineData) -> list[dict[str, Any]]:
+    """Mirrors `missingFields` in hosted-site-definitions.ts / hosted-site-routine.ts."""
+    out: list[dict[str, Any]] = []
+
+    if not is_hosted_site_section_complete("details", data):
+        h = data.header
+        required = [
+            ("service_provider", h.service_provider),
+            ("routine_type", h.routine_type),
+            ("site_name", h.site_name),
+            ("technician_name", h.technician_name),
+            ("date_routine_performed", h.date_routine_performed),
+            ("snoc_routine_ticket", h.snoc_routine_ticket),
+        ]
+        for field, value in required:
+            if not value.strip():
+                out.append({"sectionKey": "details", "field": field})
+
+    for key in SITE_CHECK_KEYS:
+        item = data.site_checks.get(key)
+        if item is None or not item.status:
+            out.append({"sectionKey": "site_checks", "field": f"{key}:status"})
+            continue
+        bad_when = SITE_CHECK_LABELS[key].bad_when if key in SITE_CHECK_LABELS else "no"
+        if item.status == bad_when and not (item.issue or "").strip():
+            out.append({"sectionKey": "site_checks", "field": f"{key}:issue"})
+
+    pr = data.power_readings
+    if not _is_power_block_complete(pr.rectifier):
+        out.append({"sectionKey": "power_readings", "field": "rectifier:readings"})
+    if not _is_power_block_complete(pr.ups):
+        out.append({"sectionKey": "power_readings", "field": "ups:readings"})
+
+    if not data.cabinets:
+        out.append({"sectionKey": "cabinets", "field": "cabinets:empty"})
+    else:
+        for c in data.cabinets:
+            if not c.location.strip():
+                out.append(
+                    {"sectionKey": "cabinets", "cabinetOrder": c.order, "field": "location"}
+                )
+            if c.visual_alarms == "yes" and not (c.alarm_note or "").strip():
+                out.append(
+                    {"sectionKey": "cabinets", "cabinetOrder": c.order, "field": "alarm_note"}
+                )
+            if c.pdu_photo is None:
+                out.append(
+                    {"sectionKey": "cabinets", "cabinetOrder": c.order, "field": "pdu_photo"}
+                )
+            if c.cabinet_photo is None:
+                out.append(
+                    {"sectionKey": "cabinets", "cabinetOrder": c.order, "field": "cabinet_photo"}
+                )
+
+    for s in data.extra_sections:
+        if not s.label.strip() or not s.photos:
+            out.append({"sectionKey": "extra_sections", "field": f"extra:{s.order}"})
+
+    return out
 
 
 def get_noc_user_ids(session: Session) -> list:

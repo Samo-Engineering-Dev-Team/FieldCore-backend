@@ -1,0 +1,523 @@
+{
+  "source": "mobile",
+  "form_version": "hosted-site-routine-1",
+  "header": {
+    "service_provider": "SAMO Telecoms",
+    "routine_type": "SITE INSPECTION",
+    "site_name": "MTN TYGERBERG",
+    "technician_name": "PETRA",
+    "date_routine_performed": "2026-07-04",
+    "snoc_routine_ticket": "SEACOM-492717",
+    "site_owner_access_ticket": null
+  },
+  "site_checks": {
+    "access_safe": {
+      "status": "yes",
+      "issue": null
+    },
+    "perimeter_fence": {
+      "status": "yes",
+      "issue": null
+    },
+    "ac_dbs_locked": {
+      "status": "yes",
+      "issue": null
+    },
+    "gates_doors_locked": {
+      "status": "yes",
+      "issue": null
+    },
+    "room_clean": {
+      "status": "yes",
+      "issue": null
+    },
+    "combustibles": {
+      "status": "no",
+      "issue": null
+    },
+    "aircon_working": {
+      "status": "yes",
+      "issue": null
+    },
+    "lighting": {
+      "status": "yes",
+      "issue": "ONE LIGHT IS WORKING THE OTHER ONE NEED REPAIR"
+    },
+    "env_monitoring": {
+      "status": "yes",
+      "issue": null
+    },
+    "fire_monitoring": {
+      "status": "yes",
+      "issue": null
+    },
+    "access_monitoring": {
+      "status": "yes",
+      "issue": null
+    },
+    "aircon_controller": {
+      "status": "yes",
+      "issue": null
+    }
+  },
+  "power_readings": {
+    "rectifier": {
+      "status": "yes",
+      "a_output_voltage": "54.6",
+      "a_load_current": "31",
+      "a_battery_charging_current": null,
+      "b_output_voltage": "54.4",
+      "b_load_current": "29",
+      "b_battery_charging_current": null
+    },
+    "ups": {
+      "status": "n/a",
+      "a_load_percent": null,
+      "b_load_percent": null,
+      "a_battery_capacity_percent": null,
+      "b_battery_capacity_percent": null,
+      "a_battery_charge_voltage": null,
+      "b_battery_charge_voltage": null
+    }
+  },
+  "cabinets": [
+    {
+      "order": 1,
+      "location": "ZACPTA004.HWM01 GND/AE/3",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-1-pdu.jpg",
+        "original_name": "pop-cabinet-1-pdu.jpg",
+        "label": "cabinet:1:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-1-cabinet.jpg",
+        "original_name": "pop-cabinet-1-cabinet.jpg",
+        "label": "cabinet:1:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 2,
+      "location": "ZACPTA004.HWM01 GND/AE/4",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-2-pdu.jpg",
+        "original_name": "pop-cabinet-2-pdu.jpg",
+        "label": "cabinet:2:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-2-cabinet.jpg",
+        "original_name": "pop-cabinet-2-cabinet.jpg",
+        "label": "cabinet:2:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 3,
+      "location": "ZACPTA004.HWM01 GND/AE/5",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-3-pdu.jpg",
+        "original_name": "pop-cabinet-3-pdu.jpg",
+        "label": "cabinet:3:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-3-cabinet.jpg",
+        "original_name": "pop-cabinet-3-cabinet.jpg",
+        "label": "cabinet:3:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 4,
+      "location": "AE 6 CTM",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-4-pdu.jpg",
+        "original_name": "pop-cabinet-4-pdu.jpg",
+        "label": "cabinet:4:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-4-cabinet.jpg",
+        "original_name": "pop-cabinet-4-cabinet.jpg",
+        "label": "cabinet:4:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 5,
+      "location": "ADVA 74",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-5-pdu.jpg",
+        "original_name": "pop-cabinet-5-pdu.jpg",
+        "label": "cabinet:5:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-5-cabinet.jpg",
+        "original_name": "pop-cabinet-5-cabinet.jpg",
+        "label": "cabinet:5:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 6,
+      "location": "RECTIFIER A",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-6-pdu.jpg",
+        "original_name": "pop-cabinet-6-pdu.jpg",
+        "label": "cabinet:6:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-6-cabinet.jpg",
+        "original_name": "pop-cabinet-6-cabinet.jpg",
+        "label": "cabinet:6:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 7,
+      "location": "RECTIFIER A PANEL",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-7-pdu.jpg",
+        "original_name": "pop-cabinet-7-pdu.jpg",
+        "label": "cabinet:7:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-7-cabinet.jpg",
+        "original_name": "pop-cabinet-7-cabinet.jpg",
+        "label": "cabinet:7:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 8,
+      "location": "RECTIFIER B",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-8-pdu.jpg",
+        "original_name": "pop-cabinet-8-pdu.jpg",
+        "label": "cabinet:8:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-8-cabinet.jpg",
+        "original_name": "pop-cabinet-8-cabinet.jpg",
+        "label": "cabinet:8:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 9,
+      "location": "RECTIFIER PANEL B",
+      "equipment_hosted": null,
+      "locked_and_keys": "n/a",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "n/a",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-9-pdu.jpg",
+        "original_name": "pop-cabinet-9-pdu.jpg",
+        "label": "cabinet:9:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-9-cabinet.jpg",
+        "original_name": "pop-cabinet-9-cabinet.jpg",
+        "label": "cabinet:9:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 10,
+      "location": "SEACOM XTM-RACK XW 75",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-10-pdu.jpg",
+        "original_name": "pop-cabinet-10-pdu.jpg",
+        "label": "cabinet:10:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-10-cabinet.jpg",
+        "original_name": "pop-cabinet-10-cabinet.jpg",
+        "label": "cabinet:10:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 11,
+      "location": "CELL -C CTM Z07",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-11-pdu.jpg",
+        "original_name": "pop-cabinet-11-pdu.jpg",
+        "label": "cabinet:11:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-11-cabinet.jpg",
+        "original_name": "pop-cabinet-11-cabinet.jpg",
+        "label": "cabinet:11:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 12,
+      "location": "SEACOM XTM-RACK XW 76",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-12-pdu.jpg",
+        "original_name": "pop-cabinet-12-pdu.jpg",
+        "label": "cabinet:12:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-12-cabinet.jpg",
+        "original_name": "pop-cabinet-12-cabinet.jpg",
+        "label": "cabinet:12:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 13,
+      "location": "MTN TYGERBERG SWITCH",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-13-pdu.jpg",
+        "original_name": "pop-cabinet-13-pdu.jpg",
+        "label": "cabinet:13:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-13-cabinet.jpg",
+        "original_name": "pop-cabinet-13-cabinet.jpg",
+        "label": "cabinet:13:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 14,
+      "location": "FIRE PANEL",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-14-pdu.jpg",
+        "original_name": "pop-cabinet-14-pdu.jpg",
+        "label": "cabinet:14:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-14-cabinet.jpg",
+        "original_name": "pop-cabinet-14-cabinet.jpg",
+        "label": "cabinet:14:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    },
+    {
+      "order": 15,
+      "location": "FIRE CLAMBELL ALARM",
+      "equipment_hosted": null,
+      "locked_and_keys": "yes",
+      "damages_observed": "no",
+      "clean": "yes",
+      "patching_neat": "yes",
+      "visual_alarms": "no",
+      "alarm_note": null,
+      "pdu_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-15-pdu.jpg",
+        "original_name": "pop-cabinet-15-pdu.jpg",
+        "label": "cabinet:15:pdu",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:00:00Z"
+      },
+      "cabinet_photo": {
+        "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-cabinet-15-cabinet.jpg",
+        "original_name": "pop-cabinet-15-cabinet.jpg",
+        "label": "cabinet:15:cabinet",
+        "lat": -33.8886,
+        "lon": 18.6461,
+        "captured_at": "2026-07-04T10:01:00Z"
+      },
+      "remarks": null
+    }
+  ],
+  "extra_sections": [
+    {
+      "order": 1,
+      "label": "SITE-BACK VIEW",
+      "photos": [
+        {
+          "url": "https://storage.samoengineering.co.za/reports/fixtures/pop-site-back-view.jpg",
+          "original_name": "pop-site-back-view.jpg",
+          "label": "extra:1:0",
+          "lat": -33.8886,
+          "lon": 18.6461,
+          "captured_at": "2026-07-04T10:30:00Z"
+        }
+      ],
+      "remarks": null
+    }
+  ],
+  "other_issues": null
+}

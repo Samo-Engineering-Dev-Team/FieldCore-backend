@@ -36,6 +36,8 @@ class _TaskService:
         "rhs": ReportType.DIESEL,
         "corrective": ReportType.DIESEL,
         "routine-maintenance": ReportType.ROUTINE_DRIVE,
+        "datacenter-inspection": ReportType.DATACENTER,
+        "pop-inspection": ReportType.POP,
     }
 
     def task_to_response(self, task: Task, session: Session) -> TaskResponse:

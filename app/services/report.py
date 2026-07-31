@@ -1,5 +1,6 @@
 from uuid import UUID
 from io import BytesIO
+from datetime import datetime
 from fastapi import Depends
 from typing import List, Annotated, Any
 from sqlmodel import Session, select, text
@@ -14,10 +15,17 @@ from app.models import (
     ReportCreate,
     ReportUpdate,
     ReportResponse,
+    Site,
     Task,
     Technician,
+    TechnicianSite,
 )
 from app.models.auth import TokenData
+from app.models.report_data import (
+    DieselGeneratorHistory,
+    DieselHistoryEntry,
+    DieselSiteHistory,
+)
 from app.exceptions.http import (
     ConflictException,
     InternalServerErrorException,
@@ -32,11 +40,14 @@ from app.services.authorization import (
 )
 from app.services.maintenance_schedule import get_maintenance_schedule_service
 from app.services.report_support import (
+    coerce_diesel_gen_no,
+    coerce_diesel_number,
     create_noc_notifications,
     normalize_attachment_item,
     normalize_attachments,
     validate_report_data_schema,
 )
+from app.utils.funcs import format_iso_week, parse_diesel_runtime_minutes, utcnow
 
 
 class _ReportService:
@@ -581,6 +592,227 @@ class _ReportService:
         except ForbiddenException:
             raise
         except NotFoundException:
+            raise
+        except Exception as e:
+            raise InternalServerErrorException(f"Failed to generate PDF: {str(e)}")
+
+    def _assert_site_history_in_scope(
+        self,
+        site_id: UUID,
+        current_user: TokenData,
+        session: Session,
+    ) -> None:
+        """
+        Narrow technicians to their assigned sites.
+
+        Per-report export already restricts a technician to their own reports
+        (`_assert_can_access_report`). Site history spans every technician's
+        fill-ups, so the equivalent boundary here is site assignment.
+        """
+        if current_user.role != UserRole.TECHNICIAN:
+            return
+
+        technician = self._get_technician_by_user(current_user.user_id, session)
+        assignment = session.exec(
+            select(TechnicianSite).where(
+                TechnicianSite.technician_id == technician.id,
+                TechnicianSite.site_id == site_id,
+            )
+        ).first()
+        if assignment is None:
+            raise ForbiddenException(
+                "Technicians can only view diesel history for their assigned sites"
+            )
+
+    def read_diesel_site_history(
+        self,
+        site_id: UUID,
+        session: Session,
+        current_user: TokenData | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> DieselSiteHistory:
+        """
+        Every diesel fill-up recorded against one site, split by generator.
+
+        Fill-ups live inside `Report.data["diesel_fillups"]` (JSONB) and reports
+        reach a site only through their task, so this narrows to the site's
+        completed diesel reports in SQL and flattens the arrays in Python. A
+        site accumulates roughly one visit a week, so the per-site row count
+        stays small and the JSONB blob has to cross the wire either way.
+
+        Raises:
+            NotFoundException: If the site does not exist
+            ForbiddenException: If the caller may not read reports
+        """
+        if current_user is not None:
+            require_report_read(
+                current_user,
+                "You do not have permission to read reports.",
+            )
+
+        site = session.get(Site, site_id)
+        if site is None or site.deleted_at is not None:
+            raise NotFoundException("site not found")
+
+        if current_user is not None:
+            self._assert_site_history_in_scope(site_id, current_user, session)
+
+        conditions = [
+            Report.report_type == ReportType.DIESEL,
+            Report.status == ReportStatus.COMPLETED,
+            Report.deleted_at.is_(None),  # type: ignore[union-attr]
+            Task.site_id == site_id,
+        ]
+        if date_from is not None:
+            conditions.append(Report.created_at >= date_from)  # type: ignore[arg-type]
+        if date_to is not None:
+            conditions.append(Report.created_at <= date_to)  # type: ignore[arg-type]
+
+        statement = (
+            select(Report)
+            .join(Task, Task.id == Report.task_id)  # type: ignore[arg-type]
+            .options(
+                selectinload(Report.task).selectinload(Task.site),  # type: ignore[arg-type]
+                selectinload(Report.technician).selectinload(Technician.user),  # type: ignore[arg-type]
+            )
+            .where(*conditions)
+            .order_by(Report.created_at)  # type: ignore[arg-type]
+        )
+        reports: list[Report] = list(session.exec(statement).all())
+
+        buckets: dict[int, list[DieselHistoryEntry]] = {1: [], 2: []}
+        for report in reports:
+            data = report.data if isinstance(report.data, dict) else {}
+            fillups = data.get("diesel_fillups")
+            if not isinstance(fillups, list):
+                continue
+
+            technician_name = None
+            if report.technician and report.technician.user:
+                technician_name = (
+                    f"{report.technician.user.name} {report.technician.user.surname}"
+                )
+            seacom_ref = report.seacom_ref or (
+                report.task.seacom_ref if report.task else None
+            )
+
+            for raw in fillups:
+                if not isinstance(raw, dict):
+                    continue
+                gen_no, inferred = coerce_diesel_gen_no(raw.get("gen_no"))
+                buckets[gen_no].append(
+                    DieselHistoryEntry(
+                        report_id=str(report.id),
+                        fill_date=report.created_at,
+                        iso_week=format_iso_week(report.created_at),
+                        gen_no=gen_no,
+                        gen_no_inferred=inferred,
+                        liters_filled=coerce_diesel_number(raw.get("liters_filled")),
+                        amount_used=coerce_diesel_number(raw.get("amount_used")),
+                        fill_reason=(
+                            str(raw["fill_reason"]) if raw.get("fill_reason") else None
+                        ),
+                        gen_runtime_hours=raw.get("gen_runtime_hours"),
+                        technician_name=technician_name,
+                        seacom_ref=seacom_ref,
+                    )
+                )
+
+        generators: list[DieselGeneratorHistory] = []
+        for gen_no in (1, 2):
+            entries = buckets[gen_no]
+            if not entries:
+                # A one-generator site has no Gen 2 bucket; omit it rather than
+                # rendering an empty section.
+                continue
+            runtimes = [
+                minutes
+                for minutes in (
+                    parse_diesel_runtime_minutes(e.gen_runtime_hours) for e in entries
+                )
+                if minutes is not None
+            ]
+            generators.append(
+                DieselGeneratorHistory(
+                    gen_no=gen_no,
+                    entries=entries,
+                    entry_count=len(entries),
+                    total_liters=sum(e.liters_filled for e in entries),
+                    total_amount=sum(e.amount_used for e in entries),
+                    highest_runtime_minutes=max(runtimes) if runtimes else None,
+                )
+            )
+
+        all_entries = [e for gen in generators for e in gen.entries]
+        fill_dates = sorted(e.fill_date for e in all_entries if e.fill_date)
+
+        return DieselSiteHistory(
+            site_id=str(site_id),
+            site_name=site.name,
+            date_from=date_from,
+            date_to=date_to,
+            first_fill_date=fill_dates[0] if fill_dates else None,
+            last_fill_date=fill_dates[-1] if fill_dates else None,
+            generators=generators,
+            entry_count=len(all_entries),
+            total_liters=sum(e.liters_filled for e in all_entries),
+            total_amount=sum(e.amount_used for e in all_entries),
+        )
+
+    def export_diesel_site_history_pdf(
+        self,
+        site_id: UUID,
+        session: Session,
+        current_user: TokenData | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> tuple[BytesIO, str]:
+        """
+        Render a site's full diesel fill-up history as a PDF.
+
+        Returns:
+            Tuple of (PDF buffer, filename)
+        """
+        if current_user is not None:
+            require_report_export(
+                current_user,
+                "You do not have permission to export reports.",
+            )
+            # Export permission is checked above, but the site-assignment scope
+            # still applies — pass the user through so a technician cannot export
+            # a site they are not assigned to.
+            self._assert_site_history_in_scope(site_id, current_user, session)
+
+        history = self.read_diesel_site_history(
+            site_id,
+            session,
+            current_user=None,
+            date_from=date_from,
+            date_to=date_to,
+        )
+
+        try:
+            pdf_service = get_pdf_service()
+            pdf_buffer = pdf_service.generate_diesel_history_pdf(history)
+
+            pdf_bytes = pdf_buffer.getvalue()
+            if not pdf_bytes:
+                raise InternalServerErrorException(
+                    "Failed to generate PDF: empty buffer"
+                )
+
+            slug = (
+                "".join(
+                    ch if ch.isalnum() else "_" for ch in history.site_name.lower()
+                ).strip("_")
+                or "site"
+            )
+            filename = f"diesel_history_{slug}_{utcnow().strftime('%Y%m%d')}.pdf"
+
+            pdf_buffer.seek(0)
+            return pdf_buffer, filename
+        except (ForbiddenException, NotFoundException):
             raise
         except Exception as e:
             raise InternalServerErrorException(f"Failed to generate PDF: {str(e)}")
