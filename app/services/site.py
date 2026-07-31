@@ -18,6 +18,7 @@ from app.models import (
 )
 from app.exceptions.http import (
     ConflictException,
+    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
@@ -140,7 +141,14 @@ class _SiteService:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating site: {e}")
 
-    def read_site(self, site_id: UUID, session: Session) -> SiteResponse:
+    def read_site(
+        self,
+        site_id: UUID,
+        session: Session,
+        restrict_to_site_ids: List[UUID] | None = None,
+    ) -> SiteResponse:
+        if restrict_to_site_ids is not None and site_id not in restrict_to_site_ids:
+            raise ForbiddenException("This site is not assigned to you.")
         site = self._get_site(site_id, session)
         responses = self._build_site_responses([site], session)
         return responses[0]
@@ -151,8 +159,17 @@ class _SiteService:
         region: Region | None = None,
         offset: int = 0,
         limit: int = 100,
+        restrict_to_site_ids: List[UUID] | None = None,
     ) -> List[SiteResponse]:
+        # An empty restriction list means "nothing visible", NOT "unrestricted".
+        # Bailing here also avoids emitting an `IN ()` predicate.
+        if restrict_to_site_ids is not None and not restrict_to_site_ids:
+            return []
+
         statement = select(Site).where(Site.deleted_at.is_(None))  # type: ignore
+
+        if restrict_to_site_ids is not None:
+            statement = statement.where(Site.id.in_(restrict_to_site_ids))  # type: ignore
 
         if region is not None:
             statement = statement.where(Site.region == region)
@@ -168,9 +185,14 @@ class _SiteService:
         region: Region | None = None,
         offset: int = 0,
         limit: int = 25,
+        restrict_to_site_ids: List[UUID] | None = None,
     ) -> List[SiteSearchResult]:
         search_text = query.strip()
         if not search_text:
+            return []
+
+        # See read_sites: empty restriction means nothing is visible.
+        if restrict_to_site_ids is not None and not restrict_to_site_ids:
             return []
 
         like_query = f"%{search_text}%"
@@ -195,6 +217,9 @@ class _SiteService:
             .offset(offset)
             .limit(limit)
         )
+
+        if restrict_to_site_ids is not None:
+            statement = statement.where(Site.id.in_(restrict_to_site_ids))  # type: ignore
 
         if region is not None:
             statement = statement.where(Site.region == region)
