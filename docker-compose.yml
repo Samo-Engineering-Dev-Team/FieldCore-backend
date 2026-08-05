@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgis/postgis:16-3.4
-    container_name: seacom_db
+    container_name: field_core_db
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -20,7 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: seacom_redis
+    container_name: field_core_redis
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -29,7 +29,7 @@ services:
 
   backend:
     build: .
-    container_name: seacom_backend
+    container_name: field_core_backend
     env_file: .env
     environment:
       DB_HOST: postgres
@@ -51,7 +51,7 @@ services:
   # Celery worker — processes the notification/email/webhook queue (L2)
   worker:
     build: .
-    container_name: seacom_worker
+    container_name: field_core_worker
     command: uv run celery -A app.core.celery_app.celery_app worker --loglevel=info
     env_file: .env
     environment:
@@ -73,8 +73,8 @@ services:
   #   docker compose --profile frontend up
   # (set FRONTEND_PATH or adjust the build context to your checkout).
   frontend:
-    build: ${FRONTEND_PATH:-../seacom-app-frontend}
-    container_name: seacom_frontend
+    build: ${FRONTEND_PATH:-../FieldCore-frontend}
+    container_name: field_core_frontend
     profiles: ["frontend"]
     ports:
       - "80:80"

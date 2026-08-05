@@ -708,6 +708,77 @@ wheels = [
 ]
 
 [[package]]
+name = "field-core-backend"
+version = "1.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiosmtplib" },
+    { name = "alembic" },
+    { name = "apscheduler" },
+    { name = "celery", extra = ["redis"] },
+    { name = "fastapi", extra = ["standard"] },
+    { name = "geoalchemy2" },
+    { name = "httpx" },
+    { name = "loguru" },
+    { name = "passlib", extra = ["argon2"] },
+    { name = "pillow" },
+    { name = "psutil" },
+    { name = "psycopg2-binary" },
+    { name = "pydantic-settings" },
+    { name = "python-jose" },
+    { name = "redis" },
+    { name = "reportlab" },
+    { name = "shapely" },
+    { name = "slowapi" },
+    { name = "sqlmodel" },
+    { name = "strawberry-graphql", extra = ["fastapi"] },
+    { name = "supabase" },
+    { name = "tzdata" },
+    { name = "webauthn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pdfplumber" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosmtplib", specifier = ">=3.0.0" },
+    { name = "alembic", specifier = ">=1.18.5" },
+    { name = "apscheduler", specifier = ">=3.10,<4" },
+    { name = "celery", extras = ["redis"], specifier = ">=5.3,<6" },
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.128.0" },
+    { name = "geoalchemy2", specifier = ">=0.14.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "loguru", specifier = ">=0.7.3" },
+    { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
+    { name = "pillow", specifier = ">=10.0.0" },
+    { name = "psutil", specifier = ">=6.0.0" },
+    { name = "psycopg2-binary", specifier = ">=2.9.11" },
+    { name = "pydantic-settings", specifier = ">=2.12.0" },
+    { name = "python-jose", specifier = ">=3.5.0" },
+    { name = "redis", specifier = ">=4.5.0" },
+    { name = "reportlab", specifier = ">=4.0.0" },
+    { name = "shapely", specifier = ">=2.0.0" },
+    { name = "slowapi", specifier = ">=0.1.9" },
+    { name = "sqlmodel", specifier = ">=0.0.31" },
+    { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.235.0" },
+    { name = "supabase", specifier = ">=2.31.0" },
+    { name = "tzdata", specifier = ">=2024.1" },
+    { name = "webauthn", specifier = ">=2.7.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pdfplumber", specifier = ">=0.11.9" },
+    { name = "pytest", specifier = ">=8.4.2" },
+    { name = "ruff", specifier = ">=0.15.17" },
+]
+
+[[package]]
 name = "geoalchemy2"
 version = "0.18.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2162,77 +2233,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/49/71/9b29d6b87cef468d697f43c6a91e3fae4a80185779d7d5a4ef27d173439f/ruff-0.15.17-py3-none-win32.whl", hash = "sha256:596065960ab1ff593f744220c9fe6580eda00a95003cffa9f4048bb5b1bf0392", size = 10925574, upload-time = "2026-06-11T17:54:55.723Z" },
     { url = "https://files.pythonhosted.org/packages/3d/b2/8fc77f3723228836fa5d12497eb71c808f83782e10d058d2b15cfa14640b/ruff-0.15.17-py3-none-win_amd64.whl", hash = "sha256:6769e5fa1710b179b92e0bfa5a51735b35baea9013dadb06d5f44cbcf9547084", size = 12058788, upload-time = "2026-06-11T17:54:41.042Z" },
     { url = "https://files.pythonhosted.org/packages/2d/c7/c53e8dbff9c9dc4b7928773421ae294a5d28fcb8dcda1a089579d3a7e510/ruff-0.15.17-py3-none-win_arm64.whl", hash = "sha256:f3be1fbb34bcdfd146240d8fb92a709d4c2c8191348580a3c044ec60fa0b4456", size = 11355275, upload-time = "2026-06-11T17:54:43.635Z" },
-]
-
-[[package]]
-name = "seacom-app-backend"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiosmtplib" },
-    { name = "alembic" },
-    { name = "apscheduler" },
-    { name = "celery", extra = ["redis"] },
-    { name = "fastapi", extra = ["standard"] },
-    { name = "geoalchemy2" },
-    { name = "httpx" },
-    { name = "loguru" },
-    { name = "passlib", extra = ["argon2"] },
-    { name = "pillow" },
-    { name = "psutil" },
-    { name = "psycopg2-binary" },
-    { name = "pydantic-settings" },
-    { name = "python-jose" },
-    { name = "redis" },
-    { name = "reportlab" },
-    { name = "shapely" },
-    { name = "slowapi" },
-    { name = "sqlmodel" },
-    { name = "strawberry-graphql", extra = ["fastapi"] },
-    { name = "supabase" },
-    { name = "tzdata" },
-    { name = "webauthn" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pdfplumber" },
-    { name = "pytest" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiosmtplib", specifier = ">=3.0.0" },
-    { name = "alembic", specifier = ">=1.18.5" },
-    { name = "apscheduler", specifier = ">=3.10,<4" },
-    { name = "celery", extras = ["redis"], specifier = ">=5.3,<6" },
-    { name = "fastapi", extras = ["standard"], specifier = ">=0.128.0" },
-    { name = "geoalchemy2", specifier = ">=0.14.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "loguru", specifier = ">=0.7.3" },
-    { name = "passlib", extras = ["argon2"], specifier = ">=1.7.4" },
-    { name = "pillow", specifier = ">=10.0.0" },
-    { name = "psutil", specifier = ">=6.0.0" },
-    { name = "psycopg2-binary", specifier = ">=2.9.11" },
-    { name = "pydantic-settings", specifier = ">=2.12.0" },
-    { name = "python-jose", specifier = ">=3.5.0" },
-    { name = "redis", specifier = ">=4.5.0" },
-    { name = "reportlab", specifier = ">=4.0.0" },
-    { name = "shapely", specifier = ">=2.0.0" },
-    { name = "slowapi", specifier = ">=0.1.9" },
-    { name = "sqlmodel", specifier = ">=0.0.31" },
-    { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.235.0" },
-    { name = "supabase", specifier = ">=2.31.0" },
-    { name = "tzdata", specifier = ">=2024.1" },
-    { name = "webauthn", specifier = ">=2.7.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pdfplumber", specifier = ">=0.11.9" },
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "ruff", specifier = ">=0.15.17" },
 ]
 
 [[package]]
