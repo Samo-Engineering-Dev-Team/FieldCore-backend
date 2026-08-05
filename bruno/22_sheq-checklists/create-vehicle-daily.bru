@@ -1,0 +1,49 @@
+meta {
+  name: Create Vehicle Daily Checklist
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/sheq-checklists/
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "checklist_type": "vehicle-daily",
+    "performed_on": "2026-08-05",
+    "data": {
+      "company_name": "Samo Engineering",
+      "driver_name": "Thabo Nkosi",
+      "vehicle_registration": "CA 123-456",
+      "odometer_start": 10000,
+      "odometer_end": 10050,
+      "pre_trip": {
+        "tyres": { "status": "OK", "remarks": null },
+        "lights": { "status": "OK", "remarks": null },
+        "mirrors_windows": { "status": "OK", "remarks": null },
+        "wipers_washer": { "status": "OK", "remarks": null },
+        "horn": { "status": "OK", "remarks": null },
+        "brakes": { "status": "OK", "remarks": null },
+        "engine_oil": { "status": "OK", "remarks": null },
+        "coolant": { "status": "OK", "remarks": null },
+        "fuel_level": { "status": "OK", "remarks": null },
+        "tools_spare_wheel": { "status": "OK", "remarks": null },
+        "vehicle_clean": { "status": "Yes", "remarks": null }
+      },
+      "post_trip": {
+        "warning_lights_during_trip": { "status": "No", "remarks": null },
+        "damage_or_fault_noted": { "status": "No", "remarks": null },
+        "fuel_used_refilled": { "liters": 0, "remarks": null }
+      },
+      "parking": {
+        "vehicle_parked_securely": { "status": "Yes", "remarks": null }
+      }
+    }
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

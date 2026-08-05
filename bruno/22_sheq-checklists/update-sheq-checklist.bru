@@ -1,0 +1,20 @@
+meta {
+  name: Update SHEQ Checklist (submit)
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{base_url}}/sheq-checklists/{{sheq_submission_id}}
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "status": "submitted"
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

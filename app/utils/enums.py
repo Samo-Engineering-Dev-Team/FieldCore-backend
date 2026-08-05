@@ -139,6 +139,39 @@ class FieldType(StrEnum):
     ENUM = "enum"
 
 
+class SheqChecklistType(StrEnum):
+    """
+    The 4 SHEQ safety checklists (SHEQ-CHECKLISTS-PLAN.md §1). Each has its own
+    `data` shape (§6) and its own capture form per client, sharing one table
+    (`sheq_submissions`), one API surface and one signature mechanism.
+    """
+
+    VEHICLE_DAILY = "vehicle-daily"
+    JOURNEY_MANAGEMENT = "journey-management"
+    DAILY_RISK_ASSESSMENT = "daily-risk-assessment"
+    TECHNICIAN_MASTER_SAFETY = "technician-master-safety"
+
+
+class SheqStatus(StrEnum):
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    SIGNED_OFF = "signed_off"
+
+
+class SheqSignatureRole(StrEnum):
+    """Who a signature on a SheqSubmission belongs to (§7.3)."""
+
+    TECHNICIAN = "technician"
+    SUPERVISOR = "supervisor"
+    DRIVER = "driver"
+    EMPLOYEE = "employee"
+
+
+class SheqSignatureMethod(StrEnum):
+    DRAWN = "drawn"
+    TYPED = "typed"
+
+
 class IncidentSeverity(StrEnum):
     """
     Contractual fault severity levels — Annexure H, SAMO/SEACOM Maintenance Agreement.

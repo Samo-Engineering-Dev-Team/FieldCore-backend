@@ -1,0 +1,15 @@
+meta {
+  name: SHEQ Compliance Report
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/sheq-checklists/compliance?date_from=2026-08-01&date_to=2026-08-05
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

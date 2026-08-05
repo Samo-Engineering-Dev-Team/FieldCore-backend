@@ -135,6 +135,20 @@ class NotificationTemplates:
         )
 
     @staticmethod
+    def sheq_checklist_submitted(
+        technician_name: str,
+        checklist_label: str,
+    ) -> NotificationTemplate:
+        """SHEQ-CHECKLISTS-PLAN.md §7.4 — no `supervisor` role/assignment exists
+        on Technician, so this broadcasts to management the same way
+        `report_submitted` broadcasts to NOC, rather than a specific assignee."""
+        return NotificationTemplate(
+            title="SHEQ checklist submitted",
+            message=f"{technician_name} submitted a {checklist_label} checklist awaiting sign-off.",
+            priority=NotificationPriority.NORMAL,
+        )
+
+    @staticmethod
     def incident_assigned_to_technician(
         site_name: str,
         description: str | None,

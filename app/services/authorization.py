@@ -33,6 +33,17 @@ REPORT_WRITE_ROLES = (
     UserRole.NOC,
     UserRole.TECHNICIAN,
 )
+# SHEQ officer read access (SHEQ-CHECKLISTS-PLAN.md §8.2) — deliberately does
+# NOT fold into REPORT_READ_ROLES or any incident tuple. A sheq user reads and
+# exports SHEQ checklists only; create/update/delete/signature stay on
+# require_management or the submitting technician themselves.
+SHEQ_READ_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.NOC,
+    UserRole.SHEQ,
+)
 
 
 def is_management(current_user: TokenData) -> bool:
@@ -70,6 +81,10 @@ def require_report_export(current_user: TokenData, message: str) -> None:
 
 def require_report_write(current_user: TokenData, message: str) -> None:
     require_roles(current_user, REPORT_WRITE_ROLES, message)
+
+
+def require_sheq_read(current_user: TokenData, message: str) -> None:
+    require_roles(current_user, SHEQ_READ_ROLES, message)
 
 
 def get_technician_by_user(user_id: UUID, session: Session) -> Technician:

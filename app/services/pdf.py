@@ -8,6 +8,7 @@ import socket
 from urllib.parse import urlparse, unquote
 from io import BytesIO
 from datetime import datetime
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from pathlib import Path
 
@@ -37,7 +38,15 @@ from loguru import logger as LOG
 from app.core.settings import app_settings
 from app.models import Report
 from app.models.report_data import CABINET_CHECK_LABELS, HOSTED_SITE_SECTIONS, SITE_CHECK_LABELS
-from app.utils.enums import ReportType
+from app.models.sheq_submission import (
+    DAILY_RISK_MATRIX,
+    DAILY_RISK_MATRIX_GROUP_TITLES,
+    MASTER_SAFETY_PHOTO_SLOTS,
+    MASTER_SAFETY_SECTIONS,
+    MASTER_SAFETY_SECTION_TITLES,
+    VEHICLE_PRE_TRIP_LABELS,
+)
+from app.utils.enums import ReportType, SheqChecklistType
 from app.utils.funcs import format_iso_week, parse_diesel_runtime_minutes, utcnow
 
 if TYPE_CHECKING:
@@ -6622,6 +6631,555 @@ class PDFService:
                     story.append(Paragraph(escape(remarks), photo_note_style))
                 self._render_photo_grid(group.get("photos", []), story, cols=3)
                 story.append(Spacer(1, 3 * mm))
+
+
+    # ── SHEQ safety checklists (SHEQ-CHECKLISTS-PLAN.md §1B) ────────────────
+
+    _SHEQ_CHECKLIST_LABELS = {
+        SheqChecklistType.VEHICLE_DAILY: "Company Vehicle Daily Checklist",
+        SheqChecklistType.JOURNEY_MANAGEMENT: "Journey Management Plan",
+        SheqChecklistType.DAILY_RISK_ASSESSMENT: "Daily Risk Assessment",
+        SheqChecklistType.TECHNICIAN_MASTER_SAFETY: "Technician Master Safety & Operations Checklist",
+    }
+
+    def generate_sheq_checklist_pdf(
+        self, submission: Any, site_name: str = "N/A", task_ref: str = "N/A"
+    ) -> BytesIO:
+        """One body renderer per checklist type behind a shared cover/header,
+        following the same pipeline as `generate_report_pdf`. `submission` is
+        a `SheqSubmission` ORM instance (typed `Any` to avoid importing the
+        SQLModel table class into this module's TYPE_CHECKING-free surface)."""
+        buffer = BytesIO()
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20 * mm,
+            leftMargin=20 * mm,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+            title=f"SHEQ_{submission.checklist_type.value}_{submission.id}",
+        )
+
+        story: list = []
+        title = self._SHEQ_CHECKLIST_LABELS.get(submission.checklist_type, "SHEQ Checklist")
+
+        technician_name = "N/A"
+        try:
+            if submission.technician and submission.technician.user:
+                user = submission.technician.user
+                technician_name = f"{user.name} {user.surname}"
+        except Exception:
+            pass
+
+        status_display = submission.status.value.upper()
+        performed_display = (
+            submission.performed_on.isoformat() if submission.performed_on else "N/A"
+        )
+        generated_display = self._format_datetime(submission.created_at)
+        # No dedicated SHEQ cover art exists yet — falls back to the "base"
+        # palette/cover image via _cover_palette/_resolve_cover_image_path.
+        primary_hex, accent_hex = self._cover_palette("base")
+
+        story.extend(
+            self._build_field_cover_page(
+                report_type_label=title,
+                title=title,
+                site=site_name,
+                subtitle=_FIELDCORE_REPORT_LABEL,
+                descriptor=(
+                    f"SHEQ safety checklist completed by {technician_name}. Structured "
+                    "audit document for compliance review and archive."
+                ),
+                detail_items=[
+                    ("Checklist Type", title),
+                    ("Status", status_display),
+                    ("Technician", technician_name),
+                    ("Site", site_name),
+                    ("Reference", task_ref),
+                    ("Performed On", performed_display),
+                    ("Generated", generated_display),
+                ],
+                generated_at=generated_display,
+                accent_hex=accent_hex,
+            )
+        )
+        story.extend(
+            self._build_field_page_header(
+                title=title,
+                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {performed_display}",
+                accent_hex=accent_hex,
+            )
+        )
+        story.extend(
+            self._build_field_overview_cards(
+                [
+                    ("Status", status_display),
+                    ("Technician", technician_name),
+                    ("Site", site_name),
+                    ("Performed On", performed_display),
+                ],
+                accent_hex=accent_hex,
+            )
+        )
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Checklist Type", title),
+                    ("Reference", task_ref),
+                    ("Performed On", performed_display),
+                ]
+            )
+        )
+        story.append(Spacer(1, 6 * mm))
+
+        dispatch = {
+            SheqChecklistType.VEHICLE_DAILY: self._render_sheq_vehicle_daily_body,
+            SheqChecklistType.JOURNEY_MANAGEMENT: self._render_sheq_journey_management_body,
+            SheqChecklistType.DAILY_RISK_ASSESSMENT: self._render_sheq_daily_risk_assessment_body,
+            SheqChecklistType.TECHNICIAN_MASTER_SAFETY: self._render_sheq_technician_master_safety_body,
+        }
+        renderer = dispatch.get(submission.checklist_type)
+        if renderer:
+            renderer(submission, story, primary_hex, accent_hex)
+
+        story.append(Spacer(1, 24))
+        story.append(self._create_divider())
+        story.append(Spacer(1, 8))
+        story.append(
+            Paragraph(
+                f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC | "
+                f"Submission ID: {str(submission.id)[:8]}",
+                self.styles["Footer"],
+            )
+        )
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
+
+    def _render_sheq_signature_block(
+        self,
+        signatures: list[dict[str, Any]],
+        roles: list[tuple[str, str]],
+        story: list,
+        primary_hex: str,
+    ) -> None:
+        """Render one signature per (role, display label) pair, in that fixed
+        order. Typed fallbacks render in italic with the §7.3 disclaimer label
+        — never presented as equivalent to a drawn mark."""
+        label_style = ParagraphStyle(
+            "SheqSigLabel", parent=self.styles["Normal"], fontSize=9,
+            fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"),
+        )
+        meta_style = ParagraphStyle(
+            "SheqSigMeta", parent=self.styles["Normal"], fontSize=8,
+            fontName="Helvetica", textColor=colors.HexColor("#718096"),
+        )
+        typed_style = ParagraphStyle(
+            "SheqSigTyped", parent=self.styles["Normal"], fontSize=11,
+            fontName="Helvetica-Oblique", textColor=colors.HexColor("#2d3748"),
+        )
+
+        by_role: dict[str, dict[str, Any]] = {}
+        for record in signatures:
+            role = record.get("role")
+            if role and role not in by_role:
+                by_role[role] = record
+
+        for role_value, display_label in roles:
+            record = by_role.get(role_value)
+            story.append(Paragraph(display_label, label_style))
+            if not record:
+                story.append(Paragraph("Not yet signed", meta_style))
+            elif record.get("method") == "typed":
+                story.append(Paragraph(escape(str(record.get("typed_name") or "")), typed_style))
+                story.append(Paragraph("Typed signature — no drawn mark captured", meta_style))
+            else:
+                url = self._get_media_source(record.get("file_ref") or {})
+                buf = self._fetch_image_bytes(url) if url else None
+                img = self._fit_photo_image(buf, 55 * mm, 22 * mm) if buf else None
+                story.append(img if img is not None else Paragraph("<i>(signature image unavailable)</i>", meta_style))
+
+            if record:
+                signer = str(record.get("signer_name") or "")
+                signed_at = str(record.get("signed_at") or "")
+                meta_bits = [b for b in (signer, signed_at) if b]
+                if meta_bits:
+                    story.append(Paragraph(escape(" · ".join(meta_bits)), meta_style))
+            story.append(Spacer(1, 4 * mm))
+
+    def _render_sheq_vehicle_daily_body(
+        self, submission: Any, story: list, primary_hex: str, accent_hex: str
+    ) -> None:
+        data = submission.data or {}
+
+        story.extend(self._repeater_section_header("A. Pre-Trip Inspection", primary_hex, accent_hex))
+        pre_trip = data.get("pre_trip") or {}
+        section_data = {}
+        polarity: dict[str, Any] = {}
+        for key in VEHICLE_PRE_TRIP_LABELS:
+            row = pre_trip.get(key) or {}
+            section_data[key] = {"status": (row.get("status") or "").lower(), "issue": row.get("remarks")}
+            polarity[key] = SimpleNamespace(bad_when="fault")
+        story.extend(self._render_checklist_table(section_data, VEHICLE_PRE_TRIP_LABELS, primary_hex, polarity))
+
+        vc = pre_trip.get("vehicle_clean") or {}
+        story.extend(
+            self._render_checklist_table(
+                {"vehicle_clean": {"status": (vc.get("status") or "").lower(), "issue": vc.get("remarks")}},
+                {"vehicle_clean": "Vehicle Clean (inside & outside)"},
+                primary_hex,
+                {"vehicle_clean": SimpleNamespace(bad_when="no")},
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        story.extend(self._repeater_section_header("B. Post-Trip Check", primary_hex, accent_hex))
+        post_trip = data.get("post_trip") or {}
+        wl = post_trip.get("warning_lights_during_trip") or {}
+        df = post_trip.get("damage_or_fault_noted") or {}
+        story.extend(
+            self._render_checklist_table(
+                {
+                    "warning_lights_during_trip": {
+                        "status": (wl.get("status") or "").lower(), "issue": wl.get("remarks")
+                    },
+                    "damage_or_fault_noted": {
+                        "status": (df.get("status") or "").lower(), "issue": df.get("remarks")
+                    },
+                },
+                {
+                    "warning_lights_during_trip": "Any Warning Lights During Trip",
+                    "damage_or_fault_noted": "Damage or Fault Noted",
+                },
+                primary_hex,
+                {
+                    "warning_lights_during_trip": SimpleNamespace(bad_when="yes"),
+                    "damage_or_fault_noted": SimpleNamespace(bad_when="yes"),
+                },
+            )
+        )
+        fuel = post_trip.get("fuel_used_refilled") or {}
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Fuel Used / Refilled (litres)", self._text_value(fuel.get("liters"))),
+                    ("Remarks", self._text_value(fuel.get("remarks"))),
+                ]
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        story.extend(self._repeater_section_header("C. Vehicle Parking Check", primary_hex, accent_hex))
+        parking = data.get("parking") or {}
+        vp = parking.get("vehicle_parked_securely") or {}
+        story.extend(
+            self._render_checklist_table(
+                {"vehicle_parked_securely": {"status": (vp.get("status") or "").lower(), "issue": vp.get("remarks")}},
+                {"vehicle_parked_securely": "Vehicle Parked Securely"},
+                primary_hex,
+                {"vehicle_parked_securely": SimpleNamespace(bad_when="no")},
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        damage_photos = (submission.attachments or {}).get("damage_evidence")
+        if damage_photos:
+            story.extend(self._repeater_section_header("Damage Evidence", primary_hex, accent_hex))
+            self._render_photo_grid(damage_photos, story, cols=3)
+            story.append(Spacer(1, 4 * mm))
+
+        story.extend(self._repeater_section_header("D. Sign-off", primary_hex, accent_hex))
+        self._render_sheq_signature_block(
+            submission.signatures or [],
+            [("driver", "Driver Signature"), ("supervisor", "Supervisor Signature")],
+            story,
+            primary_hex,
+        )
+
+    def _render_sheq_journey_management_body(
+        self, submission: Any, story: list, primary_hex: str, accent_hex: str
+    ) -> None:
+        data = submission.data or {}
+        label_style = ParagraphStyle(
+            "SheqJmpLabel", parent=self.styles["Normal"], fontSize=9,
+            fontName="Helvetica-Bold", textColor=colors.HexColor("#2d3748"),
+        )
+        body_style = ParagraphStyle(
+            "SheqJmpBody", parent=self.styles["Normal"], fontSize=9,
+            fontName="Helvetica", textColor=colors.HexColor("#4a5568"), spaceAfter=6,
+        )
+
+        story.extend(self._repeater_section_header("Journey Details", primary_hex, accent_hex))
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Full Name and Surname", self._text_value(data.get("full_name"))),
+                    ("Vehicle Registration Number", self._text_value(data.get("vehicle_registration"))),
+                    ("Journey from", self._text_value(data.get("journey_from"))),
+                    ("Journey to", self._text_value(data.get("journey_to"))),
+                    ("Via which locations", self._text_value(data.get("via_locations"))),
+                    ("Estimated distance", self._text_value(data.get("estimated_distance_km"))),
+                    ("Estimated driving time", self._text_value(data.get("estimated_driving_time_hrs"))),
+                ]
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        story.extend(self._repeater_section_header("Risk Screening", primary_hex, accent_hex))
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Will total hours exceed 9hrs? (Y/N)", self._text_value(data.get("exceeds_9hrs"))),
+                    (
+                        "Will combined driving and working time exceed 12hrs? (Y/N)",
+                        self._text_value(data.get("exceeds_12hrs_combined")),
+                    ),
+                    (
+                        "Significant security/medical-response risk? (Y/N)",
+                        self._text_value(data.get("security_or_medical_risk")),
+                    ),
+                ]
+            )
+        )
+        alt = data.get("alternative_arrangements")
+        if alt:
+            story.append(Paragraph("Alternative travel arrangements / overnight rest location:", label_style))
+            story.append(Paragraph(escape(str(alt)), body_style))
+        story.append(Spacer(1, 4 * mm))
+
+        routes = data.get("routes") or []
+        if routes:
+            story.extend(self._repeater_section_header("Primary Route/s & Rest Stops", primary_hex, accent_hex))
+            table_data: list = [["Primary Route", "Rest Stops"]]
+            for route in routes:
+                table_data.append(
+                    [self._text_value(route.get("primary_route")), self._text_value(route.get("rest_stops"))]
+                )
+            routes_tbl = Table(table_data, colWidths=[85 * mm, 85 * mm])
+            routes_tbl.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(primary_hex)),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 9),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                        ("TOPPADDING", (0, 0), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ]
+                )
+            )
+            story.append(routes_tbl)
+            story.append(Spacer(1, 4 * mm))
+
+        if data.get("locations_to_avoid"):
+            story.append(
+                Paragraph(
+                    "Locations to be avoided or where extra precautions are to be taken:", label_style
+                )
+            )
+            story.append(Paragraph(escape(str(data["locations_to_avoid"])), body_style))
+        if data.get("additional_risk_reduction_measures"):
+            story.append(Paragraph("Additional Risk Reduction Measures:", label_style))
+            story.append(Paragraph(escape(str(data["additional_risk_reduction_measures"])), body_style))
+        story.append(Spacer(1, 4 * mm))
+
+        story.extend(self._repeater_section_header("Authorisation & Sign-off", primary_hex, accent_hex))
+        email_ref = data.get("email_ack_reference")
+        if email_ref:
+            story.append(
+                self._build_field_kv_table(
+                    [
+                        ("Supervisor authorisation", "Email acknowledgement"),
+                        ("Reference", self._text_value(email_ref)),
+                        ("Acknowledged at", self._text_value(data.get("email_ack_at"))),
+                    ]
+                )
+            )
+        else:
+            self._render_sheq_signature_block(
+                submission.signatures or [], [("supervisor", "Supervisor Authorisation")], story, primary_hex
+            )
+        self._render_sheq_signature_block(
+            submission.signatures or [], [("driver", "Journey Completed — Driver Signature")], story, primary_hex
+        )
+        story.append(
+            self._build_field_kv_table(
+                [("Updated JMP required?", self._text_value(data.get("updated_jmp_required")))]
+            )
+        )
+
+    def _render_sheq_daily_risk_assessment_body(
+        self, submission: Any, story: list, primary_hex: str, accent_hex: str
+    ) -> None:
+        data = submission.data or {}
+        ack_style = ParagraphStyle(
+            "SheqDraAck", parent=self.styles["Normal"], fontSize=9,
+            fontName="Helvetica-Oblique", textColor=colors.HexColor("#4a5568"), spaceAfter=8,
+        )
+
+        story.extend(self._repeater_section_header("On-Site Risk Assessment", primary_hex, accent_hex))
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Supervisor", self._text_value(data.get("supervisor_name"))),
+                    ("Site", self._text_value(data.get("site"))),
+                    ("Task to be done", self._text_value(data.get("task_to_be_done"))),
+                ]
+            )
+        )
+        hazards = data.get("hazards") or []
+        if hazards:
+            table_data: list = [["Hazard", "Action Taken", "Toolbox Talk Discussed"]]
+            for hazard in hazards:
+                table_data.append(
+                    [
+                        self._text_value(hazard.get("hazard")),
+                        self._text_value(hazard.get("action_taken")),
+                        self._text_value(hazard.get("toolbox_talk_discussed")),
+                    ]
+                )
+            hazards_tbl = Table(table_data, colWidths=[60 * mm, 70 * mm, 40 * mm])
+            hazards_tbl.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(primary_hex)),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 5),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ]
+                )
+            )
+            story.append(hazards_tbl)
+        story.append(Spacer(1, 4 * mm))
+
+        matrix = data.get("checklist_matrix") or {}
+        for group_key, items in DAILY_RISK_MATRIX.items():
+            group_title = DAILY_RISK_MATRIX_GROUP_TITLES.get(group_key, group_key)
+            story.extend(self._repeater_section_header(group_title, primary_hex, accent_hex))
+            group_data = matrix.get(group_key) or {}
+            section_data = {}
+            polarity: dict[str, Any] = {}
+            for item_key in items:
+                entry = group_data.get(item_key) or {}
+                section_data[item_key] = {
+                    "status": (entry.get("answer") or "").lower(), "issue": entry.get("comments")
+                }
+                polarity[item_key] = SimpleNamespace(bad_when="no")
+            story.extend(self._render_checklist_table(section_data, items, primary_hex, polarity))
+            story.append(Spacer(1, 3 * mm))
+
+        roster = data.get("roster") or []
+        if roster:
+            story.extend(self._repeater_section_header("Personnel Roster & PPE", primary_hex, accent_hex))
+            roster_signatures = {
+                s.get("roster_index"): s
+                for s in (submission.signatures or [])
+                if s.get("role") == "employee"
+            }
+            for index, row in enumerate(roster):
+                ppe = row.get("ppe") or {}
+                block: list = [
+                    self._build_field_kv_table(
+                        [
+                            ("Employee", self._text_value(row.get("employee_name"))),
+                            ("Reflector Vest", "Yes" if ppe.get("reflector_vest") else "No"),
+                            ("Safety Shoes", "Yes" if ppe.get("safety_shoes") else "No"),
+                            ("Gloves", "Yes" if ppe.get("gloves") else "No"),
+                        ]
+                    )
+                ]
+                signature = roster_signatures.get(index)
+                if signature and signature.get("method") == "typed":
+                    block.append(Paragraph(f"Signed: {escape(str(signature.get('typed_name') or ''))}", ack_style))
+                elif signature:
+                    url = self._get_media_source(signature.get("file_ref") or {})
+                    buf = self._fetch_image_bytes(url) if url else None
+                    img = self._fit_photo_image(buf, 40 * mm, 16 * mm) if buf else None
+                    if img is not None:
+                        block.append(img)
+                story.append(KeepTogether(block))
+                story.append(Spacer(1, 2 * mm))
+
+        story.extend(self._repeater_section_header("Supervisor Acknowledgement", primary_hex, accent_hex))
+        story.append(
+            Paragraph(
+                "I hereby acknowledge that the daily risk assessment and toolbox talk has been "
+                "communicated to all personnel on Site.",
+                ack_style,
+            )
+        )
+        self._render_sheq_signature_block(
+            submission.signatures or [], [("supervisor", "Supervisor Signature")], story, primary_hex
+        )
+
+    def _render_sheq_technician_master_safety_body(
+        self, submission: Any, story: list, primary_hex: str, accent_hex: str
+    ) -> None:
+        data = submission.data or {}
+        attachments = submission.attachments or {}
+        na_style = ParagraphStyle(
+            "SheqMasterNA", parent=self.styles["Normal"], fontSize=9,
+            fontName="Helvetica-Oblique", textColor=colors.HexColor("#718096"),
+        )
+        sections = data.get("sections") or {}
+
+        for section_key, rows in MASTER_SAFETY_SECTIONS.items():
+            title = MASTER_SAFETY_SECTION_TITLES.get(section_key, section_key)
+            section = sections.get(section_key) or {}
+            story.extend(self._repeater_section_header(title, primary_hex, accent_hex))
+
+            if section.get("not_applicable"):
+                story.append(Paragraph("N/A — not applicable to this technician's trade", na_style))
+                story.append(Spacer(1, 3 * mm))
+                continue
+
+            section_rows = section.get("rows") or {}
+            section_data = {}
+            polarity: dict[str, Any] = {}
+            for row_id in rows:
+                row = section_rows.get(row_id) or {}
+                section_data[row_id] = {
+                    "status": (row.get("decision") or "").lower(), "issue": row.get("comments")
+                }
+                polarity[row_id] = SimpleNamespace(bad_when="no-go")
+            story.extend(self._render_checklist_table(section_data, rows, primary_hex, polarity))
+
+            photos_for_section: list = []
+            for slot_key, slot_label in MASTER_SAFETY_PHOTO_SLOTS.items():
+                slot_photos = attachments.get(f"{section_key}.{slot_key}") or []
+                for photo in slot_photos:
+                    if isinstance(photo, dict) and not photo.get("label"):
+                        photo = {**photo, "label": slot_label}
+                    photos_for_section.append(photo)
+            if photos_for_section:
+                self._render_photo_grid(photos_for_section, story, cols=4)
+            story.append(Spacer(1, 4 * mm))
+
+        story.extend(self._repeater_section_header("Final Go / No-Go Decision", primary_hex, accent_hex))
+        story.append(
+            self._build_field_kv_table(
+                [
+                    ("Decision", self._text_value(data.get("overall_decision"))),
+                    ("Reason (if No-Go)", self._text_value(data.get("no_go_reason"))),
+                ]
+            )
+        )
+        self._render_sheq_signature_block(
+            submission.signatures or [],
+            [("technician", "Technician Signature"), ("supervisor", "Supervisor Signature")],
+            story,
+            primary_hex,
+        )
 
 
 def get_pdf_service() -> PDFService:

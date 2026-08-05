@@ -24,6 +24,7 @@ from .route_patrol import router as route_patrol_router
 from .field_work import router as field_work_router
 from .form_template import router as form_template_router
 from .form_submission import router as form_submission_router
+from .sheq_checklist import router as sheq_checklist_router
 from app.services.auth import get_current_user
 from os import getenv
 
@@ -63,5 +64,6 @@ router.include_router(route_patrol_router, dependencies=[Depends(get_current_use
 router.include_router(field_work_router, dependencies=[Depends(get_current_user)])
 router.include_router(form_template_router, dependencies=[Depends(get_current_user)])
 router.include_router(form_submission_router, dependencies=[Depends(get_current_user)])
+router.include_router(sheq_checklist_router, dependencies=[Depends(get_current_user)])
 if _allow_dev:
     router.include_router(dev_client_router)

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .report import Report
     from .incident import Incident
     from .routine_inspection import RoutineInspection
+    from .sheq_submission import SheqSubmission
 
 
 class BaseTechnician(SQLModel, ABC):
@@ -69,6 +70,7 @@ class Technician(BaseDB, BaseTechnician, table=True):
     routine_inspections: List["RoutineInspection"] = Relationship(
         back_populates="technician"
     )
+    sheq_submissions: List["SheqSubmission"] = Relationship(back_populates="technician")
 
     def update_location(self, latitude: float, longitude: float) -> None:
         """Update current location from mobile app."""

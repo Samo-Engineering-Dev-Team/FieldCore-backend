@@ -1,0 +1,28 @@
+meta {
+  name: Add Signature (supervisor sign-off)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{base_url}}/sheq-checklists/{{sheq_submission_id}}/signatures
+  body: json
+  auth: bearer
+}
+body:json {
+  {
+    "role": "supervisor",
+    "method": "drawn",
+    "file_ref": {
+      "url": "{{signature_file_url}}",
+      "file_path": "{{signature_file_path}}"
+    },
+    "captured_at": "2026-08-05T09:12:10Z",
+    "offline_captured": false,
+    "device": { "platform": "web" }
+  }
+}
+
+auth:bearer {
+  token: {{token}}
+}

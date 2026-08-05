@@ -1,0 +1,15 @@
+meta {
+  name: Get SHEQ Checklist
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/sheq-checklists/{{sheq_submission_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

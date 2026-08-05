@@ -26,6 +26,8 @@ from .system_settings import SystemSettingsService, get_system_settings_service
 from .form_template import FormTemplateService, get_form_template_service
 from .form_submission import FormSubmissionService, get_form_submission_service
 from .template_category import TemplateCategoryService, get_template_category_service
+from .sheq_submission import SheqSubmissionService, get_sheq_submission_service
+from .sheq_compliance import SheqComplianceService, get_sheq_compliance_service
 
 __all__ = [
     "AuthService",
@@ -64,4 +66,8 @@ __all__ = [
     "get_form_submission_service",
     "TemplateCategoryService",
     "get_template_category_service",
+    "SheqSubmissionService",
+    "get_sheq_submission_service",
+    "SheqComplianceService",
+    "get_sheq_compliance_service",
 ]

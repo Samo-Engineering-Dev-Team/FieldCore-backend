@@ -1,0 +1,15 @@
+meta {
+  name: Delete SHEQ Checklist
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{base_url}}/sheq-checklists/{{sheq_submission_id}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
