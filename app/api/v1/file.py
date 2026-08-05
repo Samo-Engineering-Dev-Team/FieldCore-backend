@@ -21,7 +21,10 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 # Folders a caller is allowed to write into (prevents path injection via ?folder=).
-ALLOWED_FOLDERS = {"incidents", "reports", "tasks", "routine", "avatars", "misc"}
+# "sheq" holds both signature PNGs and checklist evidence photos
+# (SHEQ-CHECKLISTS-PLAN.md §7.3) — a flat folder, like every other entry here;
+# _validate_folder below is an exact match, not a path-prefix check.
+ALLOWED_FOLDERS = {"incidents", "reports", "tasks", "routine", "avatars", "misc", "sheq"}
 
 # Max files a client may request signed URLs for in one call.
 MAX_FILES_PER_REQUEST = 10
