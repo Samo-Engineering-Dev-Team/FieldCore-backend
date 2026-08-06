@@ -1430,7 +1430,17 @@ class PDFService:
                 # asks the decoder for a pre-scaled image, avoiding a full decode.
                 im.draft("RGB", (_IMAGE_MAX_DIM, _IMAGE_MAX_DIM))
                 im = ImageOps.exif_transpose(im)  # honour camera rotation
-                if im.mode != "RGB":
+                if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+                    # A bare `.convert("RGB")` drops the alpha channel and keeps
+                    # whatever RGB values sit underneath it — for a signature PNG
+                    # (transparent background, RGB often (0,0,0)) that renders as
+                    # solid black instead of the transparent area disappearing.
+                    # Composite onto white first, matching how it looks on screen.
+                    rgba = im.convert("RGBA")
+                    background = PILImage.new("RGB", rgba.size, (255, 255, 255))
+                    background.paste(rgba, mask=rgba.split()[-1])
+                    im = background
+                elif im.mode != "RGB":
                     im = im.convert("RGB")
                 im.thumbnail(
                     (_IMAGE_MAX_DIM, _IMAGE_MAX_DIM), PILImage.Resampling.LANCZOS
