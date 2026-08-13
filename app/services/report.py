@@ -291,16 +291,12 @@ class _ReportService:
                     update_data,
                 )
 
-                # Step 2: Validate state
-                if report.status in [ReportStatus.COMPLETED]:
-                    raise ForbiddenException("Cannot update a completed report.")
-
-                # Step 3: Early exit if no data
+                # Step 2: Early exit if no data
                 if not update_data:
                     LOG.debug("No report update data provided for {}", report_id)
                     return self.report_to_response(report)
 
-                # Step 4: Filter allowed fields only
+                # Step 3: Filter allowed fields only
                 allowed_fields = {"data", "attachments", "status"}
                 filtered_data = {
                     k: v for k, v in update_data.items() if k in allowed_fields
@@ -312,7 +308,7 @@ class _ReportService:
                     )
                     return self.report_to_response(report)
 
-                # Step 5: Apply updates and touch timestamp
+                # Step 4: Apply updates and touch timestamp
                 if "attachments" in filtered_data:
                     filtered_data["attachments"] = self._normalize_attachments(
                         filtered_data.get("attachments")
@@ -336,14 +332,14 @@ class _ReportService:
 
                 report.touch()
 
-                # Step 6: Commit changes
+                # Step 5: Commit changes
                 session.add(report)
                 # Fail reasonably fast on contention, then retry a few times.
                 session.exec(text("SET LOCAL lock_timeout = '5s'"))
                 session.exec(text("SET LOCAL statement_timeout = '20s'"))
                 session.commit()
 
-                # Step 7: Refresh and return
+                # Step 6: Refresh and return
                 session.refresh(report)
                 LOG.info("Report {} updated successfully", report_id)
                 return self.report_to_response(report)
