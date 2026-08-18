@@ -4,9 +4,9 @@ from loguru import logger as LOG
 from sqlmodel import Session, select
 
 from app.exceptions.http import ForbiddenException, NotFoundException
-from app.models import Technician, TechnicianSite
+from app.models import FundsCapabilityAssignment, Technician, TechnicianSite
 from app.models.auth import TokenData
-from app.utils.enums import UserRole
+from app.utils.enums import FundsCapability, UserRole
 
 MANAGEMENT_ROLES = (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER, UserRole.NOC)
 ADMIN_MANAGER_ROLES = (UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MANAGER)
@@ -44,6 +44,23 @@ SHEQ_READ_ROLES = (
     UserRole.NOC,
     UserRole.SHEQ,
 )
+
+# Finance–Technician workflow (docs/FieldCore_Finance_Technician_Workflow_Spec.md).
+#
+# These tuples gate *sight* of funds data. They deliberately do NOT gate the
+# power to move a request along the chain — that is a FundsCapability row, checked
+# by require_funds_capability below. Keeping the two separate is the whole point
+# of decision 1 in FINANCE_TECHNICIAN_IMPLEMENTATION_PLAN.md: a manager can see
+# the Finance Dashboard without being able to approve, load or release anything.
+FINANCE_READ_ROLES = (
+    UserRole.SUPER_ADMIN,
+    UserRole.ADMIN,
+    UserRole.MANAGER,
+    UserRole.FINANCE,
+)
+# Who may see any technician's funds records. A technician outside this tuple is
+# scoped to their own rows by the service layer.
+FUNDS_READ_ALL_ROLES = FINANCE_READ_ROLES
 
 
 def is_management(current_user: TokenData) -> bool:
@@ -202,3 +219,84 @@ def assert_technician_self_or_roles(
     technician_id = get_technician_id_for_user(current_user.user_id, session)
     if technician_id != target_technician_id:
         raise ForbiddenException(message)
+
+
+# ── Funds chain capabilities ──────────────────────────────────────────────
+#
+# Authority over a stage of the release chain lives in `funds_capabilities`, not
+# in UserRole. The spec names individuals against each stage; those names are
+# illustrative and nothing here is hardcoded to a person.
+#
+# Note there is deliberately no management override. Spec §6 is explicit that
+# only the loader and the releasers can move money, and an admin bypass would
+# quietly undo that control. An admin who genuinely needs to act grants
+# themselves the capability first, which leaves a row behind saying so.
+
+
+def has_funds_capability(
+    user_id: UUID, capability: FundsCapability, session: Session
+) -> bool:
+    row = session.exec(
+        select(FundsCapabilityAssignment).where(
+            FundsCapabilityAssignment.user_id == user_id,
+            FundsCapabilityAssignment.capability == capability,
+            FundsCapabilityAssignment.is_active,  # type: ignore[arg-type]
+            FundsCapabilityAssignment.deleted_at.is_(None),  # type: ignore
+        )
+    ).first()
+    return row is not None
+
+
+def get_funds_capability(
+    user_id: UUID, capability: FundsCapability, session: Session
+) -> FundsCapabilityAssignment | None:
+    return session.exec(
+        select(FundsCapabilityAssignment).where(
+            FundsCapabilityAssignment.user_id == user_id,
+            FundsCapabilityAssignment.capability == capability,
+            FundsCapabilityAssignment.is_active,  # type: ignore[arg-type]
+            FundsCapabilityAssignment.deleted_at.is_(None),  # type: ignore
+        )
+    ).first()
+
+
+def require_funds_capability(
+    current_user: TokenData, capability: FundsCapability, session: Session
+) -> FundsCapabilityAssignment:
+    """Assert the caller holds `capability`, returning the assignment row.
+
+    The row is returned rather than discarded because callers need its
+    `is_fallback` flag: a fallback approver acts through the identical path, but
+    the fact that they did is recorded on Disbursement.is_fallback_approval so
+    Finance can see the escalation happened (spec §2).
+    """
+    assignment = get_funds_capability(current_user.user_id, capability, session)
+    if assignment is None:
+        raise ForbiddenException(
+            f"You do not hold the '{capability.value}' funds capability. "
+            "Ask an administrator to assign it before acting on this request."
+        )
+    return assignment
+
+
+def users_with_funds_capability(
+    capability: FundsCapability, session: Session
+) -> list[UUID]:
+    """User IDs to notify when a request reaches a stage. Includes fallback
+    holders — they need to see the queue in order to be able to stand in."""
+    rows = session.exec(
+        select(FundsCapabilityAssignment.user_id).where(
+            FundsCapabilityAssignment.capability == capability,
+            FundsCapabilityAssignment.is_active,  # type: ignore[arg-type]
+            FundsCapabilityAssignment.deleted_at.is_(None),  # type: ignore
+        )
+    ).all()
+    return list(dict.fromkeys(rows))
+
+
+def require_finance_read(current_user: TokenData, message: str) -> None:
+    require_roles(current_user, FINANCE_READ_ROLES, message)
+
+
+def can_read_all_funds(current_user: TokenData) -> bool:
+    return current_user.role in FUNDS_READ_ALL_ROLES

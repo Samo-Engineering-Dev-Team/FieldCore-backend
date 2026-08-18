@@ -28,6 +28,9 @@ from .form_submission import FormSubmissionService, get_form_submission_service
 from .template_category import TemplateCategoryService, get_template_category_service
 from .sheq_submission import SheqSubmissionService, get_sheq_submission_service
 from .sheq_compliance import SheqComplianceService, get_sheq_compliance_service
+from .generator import GeneratorService, get_generator_service
+from .funds_capability import FundsCapabilityService, get_funds_capability_service
+from .funds_request import FundsRequestService, get_funds_request_service
 
 __all__ = [
     "AuthService",
@@ -70,4 +73,10 @@ __all__ = [
     "get_sheq_submission_service",
     "SheqComplianceService",
     "get_sheq_compliance_service",
+    "GeneratorService",
+    "get_generator_service",
+    "FundsCapabilityService",
+    "get_funds_capability_service",
+    "FundsRequestService",
+    "get_funds_request_service",
 ]

@@ -382,3 +382,147 @@ def test_period_is_independent_of_the_callers_timezone():
 def test_naive_input_is_read_as_utc_not_as_host_local_time():
     naive = datetime(2026, 8, 20, 20, 30)
     assert funds_period(naive) == funds_period(naive.replace(tzinfo=timezone.utc))
+
+
+# ── Phase 2: stage authority mapping (spec §2, §6) ─────────────────────────
+#
+# These assert the shape of the chain without a session. The capability check
+# itself needs a DB and is therefore covered by the mapping plus the route-level
+# integration once the db_session fixture is usable.
+
+
+def test_every_live_stage_has_exactly_one_owning_capability():
+    from app.services.funds_request import STAGE_CAPABILITY
+    from app.utils.enums import FundsCapability
+
+    assert STAGE_CAPABILITY == {
+        FundsRequestStatus.PENDING: FundsCapability.APPROVE,
+        FundsRequestStatus.APPROVED: FundsCapability.LOAD,
+        FundsRequestStatus.LOADED: FundsCapability.RELEASE,
+    }
+
+
+def test_terminal_stages_have_no_owning_capability():
+    """Nothing can be acted on once a request is released, rejected or cancelled —
+    so no capability maps to those states and the service refuses outright."""
+    from app.services.funds_request import STAGE_CAPABILITY
+
+    for terminal in (
+        FundsRequestStatus.RELEASED,
+        FundsRequestStatus.REJECTED,
+        FundsRequestStatus.CANCELLED,
+    ):
+        assert terminal not in STAGE_CAPABILITY
+
+
+def test_stage_capabilities_are_three_distinct_holders():
+    """Spec §6: approval alone never releases funds. If any two stages shared a
+    capability, one person could walk a request through both."""
+    from app.services.funds_request import STAGE_CAPABILITY
+
+    assert len(set(STAGE_CAPABILITY.values())) == 3
+
+
+def test_finance_lead_holds_no_chain_stage():
+    """The finance lead signs off reconciliations, not disbursements. Keeping them
+    out of the chain is what stops recon approval doubling as a release."""
+    from app.services.funds_request import STAGE_CAPABILITY
+    from app.utils.enums import FundsCapability
+
+    assert FundsCapability.FINANCE_LEAD not in STAGE_CAPABILITY.values()
+
+
+def test_every_live_status_is_covered_by_the_capability_map():
+    """A new live status must not silently become actionable by nobody."""
+    from app.services.funds_request import STAGE_CAPABILITY
+
+    live = {
+        s
+        for s in FundsRequestStatus
+        if FundsRequest.ALLOWED_TRANSITIONS[s]  # has somewhere left to go
+    }
+    assert live == set(STAGE_CAPABILITY)
+
+
+# ── Phase 2: per-type validation (spec §3.1 rule, §3.2.6, §3.3) ─────────────
+
+
+def test_weekly_trip_without_a_manually_entered_diesel_price_is_refused():
+    """The core control of §3.1: the price is never filled in for the technician,
+    so its absence is an error rather than something to default."""
+    from app.exceptions.http import BadRequestException
+    from app.services.funds_request import get_funds_request_service
+
+    service = get_funds_request_service()
+    request = make_request(price=None)
+    with pytest.raises(BadRequestException) as exc:
+        service._validate_for_type(request, session=None)
+    assert "diesel price" in str(exc.value.detail).lower()
+
+
+def test_weekly_trip_with_a_price_passes_validation():
+    from app.services.funds_request import get_funds_request_service
+
+    get_funds_request_service()._validate_for_type(
+        make_request(price="23.50"), session=None
+    )
+
+
+def test_misc_request_requires_a_description():
+    from app.exceptions.http import BadRequestException
+    from app.services.funds_request import get_funds_request_service
+
+    service = get_funds_request_service()
+    request = make_request(type_=FundsRequestType.MISC)
+    with pytest.raises(BadRequestException):
+        service._validate_for_type(request, session=None)
+
+    request.description = "   "  # whitespace is not a description
+    with pytest.raises(BadRequestException):
+        service._validate_for_type(request, session=None)
+
+    request.description = "USB-C charger for the site laptop"
+    service._validate_for_type(request, session=None)
+
+
+def test_refuel_names_every_missing_field_at_once():
+    """A technician on a bad connection should not have to submit three times to
+    discover three missing fields."""
+    from app.exceptions.http import BadRequestException
+    from app.services.funds_request import get_funds_request_service
+
+    service = get_funds_request_service()
+    request = make_request(type_=FundsRequestType.GENERATOR_REFUEL)
+    with pytest.raises(BadRequestException) as exc:
+        service._validate_for_type(request, session=None)
+    detail = str(exc.value.detail).lower()
+    assert "site" in detail and "generator" in detail and "litres" in detail
+
+
+# ── Phase 2: money formatting and boundary conversion ──────────────────────
+
+
+def test_rand_formatting_groups_thousands():
+    from app.services.funds_request import _format_rand
+
+    assert _format_rand(Decimal("1234.56")) == "R1 234.56"
+    assert _format_rand(Decimal("980.00")) == "R980.00"
+    assert _format_rand(Decimal("1000000.00")) == "R1 000 000.00"
+
+
+def test_money_boundary_conversion_emits_numbers_not_none():
+    """Responses expose float so the API emits numbers rather than the quoted
+    strings Pydantic produces for Decimal in JSON mode."""
+    from app.services.funds_request import _money
+
+    assert _money(Decimal("1234.56")) == 1234.56
+    assert isinstance(_money(Decimal("1234.56")), float)
+    assert _money(None) == 0.0
+
+
+def test_hard_block_setting_key_is_stable():
+    """The key is written into system_settings by Finance; renaming it silently
+    would turn enforcement off."""
+    from app.services.funds_request import HARD_BLOCK_SETTING_KEY
+
+    assert HARD_BLOCK_SETTING_KEY == "funds.hard_block_unreconciled"
