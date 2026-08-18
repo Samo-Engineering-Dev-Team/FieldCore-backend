@@ -12,6 +12,10 @@ class UserRole(StrEnum):
     NOC = "noc"
     SHEQ = "sheq"
     PARTNER = "partner"
+    # Finance-Technician workflow. Grants access to the Finance Dashboard and the
+    # funds-request views only; authority over a chain stage is NOT this role, it
+    # is a FundsCapability row (see FundsCapability below).
+    FINANCE = "finance"
 
 
 class LinkTarget(StrEnum):
@@ -185,3 +189,98 @@ class IncidentSeverity(StrEnum):
     MAJOR = "major"
     MINOR = "minor"
     QUERY = "query"
+
+
+# ── Finance–Technician workflow ───────────────────────────────────────────
+#
+# docs/FieldCore_Finance_Technician_Workflow_Spec.md
+#
+# Every label below is stored in Postgres by member NAME (uppercase), not by
+# value — SQLAlchemy maps Python enum members by name. See the baseline
+# migration's docstring and the reporttype ALTER TYPE migration.
+
+
+class FundsRequestType(StrEnum):
+    """
+    Category of funded expense a technician can request (spec §3).
+
+    Single ledger with a type discriminator, resolving spec §7 Q5 — not one
+    table per request type.
+    """
+
+    WEEKLY_TRIP = "weekly_trip"
+    GENERATOR_REFUEL = "generator_refuel"
+    MISC = "misc"
+
+
+class FundsRequestStatus(StrEnum):
+    """
+    Position in the fixed three-stage release chain (spec §2).
+
+      PENDING   : submitted, awaiting a holder of FundsCapability.APPROVE
+      APPROVED  : awaiting a holder of FundsCapability.LOAD
+      LOADED    : funds are in the account, awaiting FundsCapability.RELEASE
+      RELEASED  : technician may act on the funds
+      REJECTED  : terminal; carries rejection_reason
+      CANCELLED : terminal; withdrawn by the requesting technician
+
+    Approval alone never releases funds (spec §6) — that rule is why LOADED
+    and RELEASED are distinct states rather than one "approved" flag.
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    LOADED = "loaded"
+    RELEASED = "released"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class FundsPriority(StrEnum):
+    """
+    Spec §2: no priority tiers for general requests. GENERATOR_REFUEL is the
+    single exception and is always HIGH — forced server-side at creation and
+    never taken from the client, since a generator running dry is an
+    operational risk rather than a requester preference.
+    """
+
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class FundsCapability(StrEnum):
+    """
+    Authority over one stage of the release chain.
+
+    Held via a `funds_capabilities` row, deliberately NOT via UserRole: one
+    person may hold several capabilities at once (the spec's own example has
+    one individual as both fallback approver and releaser), which a
+    single-valued UserRole in the JWT cannot express. The people named in the
+    spec are illustrative — holders are data, never hardcoded.
+    """
+
+    APPROVE = "approve"
+    LOAD = "load"
+    RELEASE = "release"
+    FINANCE_LEAD = "finance_lead"
+
+
+class ReconciliationStatus(StrEnum):
+    """
+    DRAFT while the technician is still adding expense lines; SUBMITTED locks
+    the lines; APPROVED is what clears the technician for their next request
+    (spec §3.1.7).
+    """
+
+    DRAFT = "draft"
+    SUBMITTED = "submitted"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ExpenseCategory(StrEnum):
+    """Itemised expense line category on a reconciliation (spec §3.1.6)."""
+
+    FUEL = "fuel"
+    TOLL = "toll"
+    MISC = "misc"

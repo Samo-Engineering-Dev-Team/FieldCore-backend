@@ -9,6 +9,7 @@ from shapely.geometry import Point
 from abc import ABC
 
 from .base import BaseDB
+from app.utils.enums import Region
 from app.utils.funcs import utcnow
 
 # ID number constraint - supports various formats (SA ID, passport, work permit, etc.)
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from .incident import Incident
     from .routine_inspection import RoutineInspection
     from .sheq_submission import SheqSubmission
+    from .funds_request import FundsRequest
 
 
 class BaseTechnician(SQLModel, ABC):
@@ -62,6 +64,15 @@ class Technician(BaseDB, BaseTechnician, table=True):
         default=True, description="Whether technician is available for dispatch"
     )
 
+    # Nullable by design. Spec §4 requires a region on the technician profile for
+    # Finance Dashboard grouping, but backfilling it would mean writing to every
+    # existing row in production, which the additive-only migration constraint
+    # rules out. Unset reads as "Unassigned" in the dashboard grouping.
+    region: Region | None = Field(
+        default=None,
+        description="Technician's assigned region, for dashboard grouping (spec §4)",
+    )
+
     user: "User" = Relationship()
     tasks: List["Task"] = Relationship(back_populates="technician")
     access_requests: List["AccessRequest"] = Relationship(back_populates="technician")
@@ -71,6 +82,7 @@ class Technician(BaseDB, BaseTechnician, table=True):
         back_populates="technician"
     )
     sheq_submissions: List["SheqSubmission"] = Relationship(back_populates="technician")
+    funds_requests: List["FundsRequest"] = Relationship(back_populates="technician")
 
     def update_location(self, latitude: float, longitude: float) -> None:
         """Update current location from mobile app."""
@@ -111,6 +123,7 @@ class Technician(BaseDB, BaseTechnician, table=True):
 
 
 class TechnicianCreate(BaseTechnician):
+    region: Region | None = Field(default=None, description="Assigned region")
     home_latitude: float | None = Field(
         default=None, ge=-90, le=90, description="Home base latitude"
     )
@@ -123,6 +136,7 @@ class TechnicianUpdate(SQLModel):
     phone: str | None = Field(
         default=None, max_length=13, min_length=10, description="Phone number"
     )
+    region: Region | None = Field(default=None, description="Assigned region")
     is_available: bool | None = Field(default=None, description="Availability status")
     home_latitude: float | None = Field(
         default=None, ge=-90, le=90, description="Home base latitude"
@@ -141,6 +155,7 @@ class TechnicianLocationUpdate(SQLModel):
 
 class TechnicianResponse(BaseDB, BaseTechnician):
     fullname: str = Field(default="", description="Full name")
+    region: Region | None = Field(default=None, description="Assigned region")
     is_available: bool = Field(default=True, description="Availability status")
     current_latitude: float | None = Field(default=None, description="Current latitude")
     current_longitude: float | None = Field(

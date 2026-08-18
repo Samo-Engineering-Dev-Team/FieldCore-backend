@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .access_request import AccessRequest
     from .incident import Incident
     from .routine_inspection import RoutineInspection
+    from .generator import Generator
 
 
 class BaseSite(SQLModel):
@@ -55,6 +56,7 @@ class Site(BaseDB, BaseSite, table=True):
     access_requests: List["AccessRequest"] = Relationship(back_populates="site")
     incidents: List["Incident"] = Relationship(back_populates="site")
     routine_inspections: List["RoutineInspection"] = Relationship(back_populates="site")
+    generators: List["Generator"] = Relationship(back_populates="site")
 
     def set_location(self, latitude: float, longitude: float) -> None:
         """Set location from latitude and longitude."""
