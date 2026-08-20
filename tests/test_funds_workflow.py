@@ -767,3 +767,97 @@ def test_a_genuine_zero_percent_is_still_critical():
 def test_status_returns_for_a_normal_period():
     assert _status_for(4, 4) == "Excellent"
     assert _status_for(3, 4) == "Good"
+
+
+# ── Stage authorisation ordering (found by walking a real request) ──────────
+
+
+def test_invalid_stage_move_names_the_stage_not_a_missing_record():
+    """Calling /load on a pending request used to fetch the disbursement first
+    and 500 with "no disbursement record". A caller acting at the wrong stage is
+    a 409 about the stage, not a server error about a record that was never
+    meant to exist yet."""
+    from app.exceptions.http import ConflictException
+    from app.services.funds_request import get_funds_request_service
+    from app.utils.enums import FundsCapability
+
+    service = get_funds_request_service()
+    request = make_request(status=FundsRequestStatus.PENDING)
+
+    import app.services.funds_request as fr
+
+    original = fr.require_funds_capability
+    fr.require_funds_capability = lambda user, cap, session: object()  # type: ignore[assignment]
+    try:
+        with pytest.raises(ConflictException) as exc:
+            service._authorise_stage(
+                request,
+                FundsRequestStatus.LOADED,
+                FundsCapability.LOAD,
+                session=None,
+                current_user=None,
+            )
+    finally:
+        fr.require_funds_capability = original  # type: ignore[assignment]
+
+    detail = str(exc.value.detail).lower()
+    assert "pending" in detail and "loaded" in detail
+    assert "disbursement" not in detail
+
+
+def test_capability_is_checked_before_the_transition():
+    """An unauthorised caller gets 403, not a description of the request's
+    state — authorise first, then validate."""
+    from app.exceptions.http import ForbiddenException
+    from app.services.funds_request import get_funds_request_service
+    from app.utils.enums import FundsCapability
+
+    service = get_funds_request_service()
+    request = make_request(status=FundsRequestStatus.PENDING)
+
+    import app.services.funds_request as fr
+
+    def deny(user, cap, session):
+        raise ForbiddenException("no capability")
+
+    original = fr.require_funds_capability
+    fr.require_funds_capability = deny  # type: ignore[assignment]
+    try:
+        # The move is ALSO invalid, but the 403 must win.
+        with pytest.raises(ForbiddenException):
+            service._authorise_stage(
+                request,
+                FundsRequestStatus.LOADED,
+                FundsCapability.LOAD,
+                session=None,
+                current_user=None,
+            )
+    finally:
+        fr.require_funds_capability = original  # type: ignore[assignment]
+
+
+def test_a_valid_move_passes_authorisation():
+    from app.services.funds_request import get_funds_request_service
+    from app.utils.enums import FundsCapability
+
+    service = get_funds_request_service()
+    request = make_request(status=FundsRequestStatus.APPROVED)
+
+    import app.services.funds_request as fr
+
+    sentinel = object()
+    original = fr.require_funds_capability
+    fr.require_funds_capability = lambda user, cap, session: sentinel  # type: ignore[assignment]
+    try:
+        assert (
+            service._authorise_stage(
+                request,
+                FundsRequestStatus.LOADED,
+                FundsCapability.LOAD,
+                session=None,
+                current_user=None,
+            )
+            is sentinel
+        )
+    finally:
+        fr.require_funds_capability = original  # type: ignore[assignment]

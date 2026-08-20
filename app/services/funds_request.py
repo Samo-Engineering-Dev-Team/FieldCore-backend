@@ -517,12 +517,14 @@ class _FundsRequestService:
         The loader states what was actually loaded at stage 2 (spec §6).
         """
         request = self._get_request(request_id, session)
-        assignment = self._require_stage_capability(request, session, current_user)
-
-        try:
-            request.transition_to(FundsRequestStatus.APPROVED)
-        except InvalidFundsTransition as e:
-            raise ConflictException(str(e))
+        assignment = self._authorise_stage(
+            request,
+            FundsRequestStatus.APPROVED,
+            FundsCapability.APPROVE,
+            session,
+            current_user,
+        )
+        request.transition_to(FundsRequestStatus.APPROVED)
 
         disbursement = Disbursement(
             funds_request_id=request.id,
@@ -553,13 +555,17 @@ class _FundsRequestService:
         spec §3.4 has them reporting weekly on amount issued, so the issued figure
         is theirs to state rather than an echo of the request."""
         request = self._get_request(request_id, session)
-        self._require_stage_capability(request, session, current_user)
+        self._authorise_stage(
+            request,
+            FundsRequestStatus.LOADED,
+            FundsCapability.LOAD,
+            session,
+            current_user,
+        )
+        # Only fetched once the move is known to be legal; before that its
+        # absence is expected, not an error worth a 500.
         disbursement = self._require_disbursement(request.id, session)
-
-        try:
-            request.transition_to(FundsRequestStatus.LOADED)
-        except InvalidFundsTransition as e:
-            raise ConflictException(str(e))
+        request.transition_to(FundsRequestStatus.LOADED)
 
         if amount_issued is not None:
             disbursement.amount_issued = amount_issued
@@ -576,13 +582,15 @@ class _FundsRequestService:
     ) -> FundsRequestResponse:
         """Stage 3. The technician can now act on the funds."""
         request = self._get_request(request_id, session)
-        self._require_stage_capability(request, session, current_user)
+        self._authorise_stage(
+            request,
+            FundsRequestStatus.RELEASED,
+            FundsCapability.RELEASE,
+            session,
+            current_user,
+        )
         disbursement = self._require_disbursement(request.id, session)
-
-        try:
-            request.transition_to(FundsRequestStatus.RELEASED)
-        except InvalidFundsTransition as e:
-            raise ConflictException(str(e))
+        request.transition_to(FundsRequestStatus.RELEASED)
 
         disbursement.released_by_user_id = current_user.user_id
         disbursement.released_at = utcnow()
@@ -624,6 +632,38 @@ class _FundsRequestService:
             session,
         )
         return self._to_response(request, session)
+
+    def _authorise_stage(
+        self,
+        request: FundsRequest,
+        target: FundsRequestStatus,
+        capability: FundsCapability,
+        session: Session,
+        current_user: TokenData,
+    ):
+        """Check the capability the ACTION needs, then that the move is legal.
+
+        Order matters. Capability first, so an unauthorised caller gets 403
+        rather than a description of the request's state. Transition second, so
+        calling /load on a pending request gets a 409 naming the stage problem
+        instead of a 500 about a disbursement that was never supposed to exist
+        yet.
+
+        The capability is the one the action requires, NOT the one the current
+        stage happens to map to — those coincide on the happy path and diverge
+        precisely when the caller is doing something invalid, which is when a
+        clear message matters most.
+        """
+        assignment = require_funds_capability(current_user, capability, session)
+        if not request.can_transition_to(target):
+            allowed = ", ".join(
+                s.value for s in request.ALLOWED_TRANSITIONS.get(request.status, ())
+            ) or "nothing"
+            raise ConflictException(
+                f"Cannot move a {request.status.value} request to {target.value}. "
+                f"From {request.status.value} the only valid next step is: {allowed}."
+            )
+        return assignment
 
     def _require_stage_capability(
         self, request: FundsRequest, session: Session, current_user: TokenData
