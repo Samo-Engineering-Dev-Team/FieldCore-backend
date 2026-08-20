@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 from datetime import timedelta
 
 from fastapi import Response
+import pytest
 
 from app.core import (
     SecurityUtils,
@@ -11,6 +12,7 @@ from app.core import (
     set_session_cookies,
 )
 from app.core.settings import app_settings
+from app.exceptions.http import UnauthorizedException
 from app.models import User
 from app.services.auth import get_current_user
 from app.utils.enums import UserRole, UserStatus
@@ -43,7 +45,6 @@ def test_set_auth_cookie_uses_httponly_access_token_cookie() -> None:
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
     )
     response = Response()
 
@@ -64,7 +65,6 @@ def test_set_session_cookies_stores_access_and_refresh_tokens() -> None:
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
     )
     response = Response()
 
@@ -96,7 +96,6 @@ def test_get_current_user_accepts_auth_cookie_without_authorization_header() -> 
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
     )
     decoded = SecurityUtils.verify_access_token(token.access_token)
     assert decoded.iat is not None
@@ -119,7 +118,6 @@ def test_get_current_user_refreshes_active_session_near_expiry() -> None:
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
         exp=utcnow() + timedelta(minutes=1),
     )
     decoded = SecurityUtils.verify_access_token(token.access_token)
@@ -147,7 +145,6 @@ def test_get_current_user_renews_expired_access_token_with_refresh_cookie() -> N
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
         exp=utcnow() - timedelta(minutes=1),
     )
     refresh = SecurityUtils.create_refresh_token(
@@ -155,7 +152,6 @@ def test_get_current_user_renews_expired_access_token_with_refresh_cookie() -> N
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
     )
     decoded_refresh = SecurityUtils.verify_refresh_token(refresh.access_token)
     assert decoded_refresh.iat is not None
@@ -176,6 +172,25 @@ def test_get_current_user_renews_expired_access_token_with_refresh_cookie() -> N
     assert current_user.token_type == "access"
     assert any(header.startswith(f"{app_settings.AUTH_COOKIE_NAME}=") for header in headers)
     assert response.headers["X-FieldCore-Session-Refreshed"] == "true"
+
+
+def test_get_current_user_rejects_token_issued_before_credentials_update() -> None:
+    user = build_user()
+    token = SecurityUtils.create_token(
+        user.id,
+        user.role,
+        user.name,
+        user.surname,
+    )
+    decoded = SecurityUtils.verify_access_token(token.access_token)
+    assert decoded.iat is not None
+
+    user.credentials_updated_at = decoded.iat + timedelta(seconds=1)
+    session = MagicMock()
+    session.exec.return_value.first.return_value = user
+
+    with pytest.raises(UnauthorizedException, match="Session expired"):
+        get_current_user(Response(), token=token.access_token, session=session)
 
 
 def test_performance_hint_cookies_are_small_and_script_readable() -> None:

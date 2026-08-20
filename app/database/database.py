@@ -84,7 +84,6 @@ class Database:
         )
         missing_user_columns = (
             {
-                "must_change_password",
                 "credentials_updated_at",
                 "sessions_revoked_at",
             }
@@ -177,19 +176,6 @@ class Database:
                 )
                 LOG.warning(
                     "Applied schema compatibility fix: added users.sessions_revoked_at column"
-                )
-
-            if "must_change_password" in missing_user_columns:
-                connection.execute(
-                    text(
-                        """
-                        ALTER TABLE users
-                        ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE
-                        """
-                    )
-                )
-                LOG.warning(
-                    "Applied schema compatibility fix: added users.must_change_password column"
                 )
 
             if "credentials_updated_at" in missing_user_columns:

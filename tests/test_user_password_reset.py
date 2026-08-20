@@ -38,13 +38,12 @@ def test_reset_password_updates_hash_and_commits() -> None:
 
     assert response == {"message": "Password reset successfully"}
     assert SecurityUtils.check_password("NewPassword1!", user.password_hash)
-    assert user.must_change_password is True
     assert user.credentials_updated_at >= original_credentials_updated_at
     session.commit.assert_called_once()
     session.refresh.assert_called_once_with(user)
 
 
-def test_create_user_requires_password_change_on_first_login() -> None:
+def test_create_user_hashes_password() -> None:
     session = MagicMock()
     service = _UserService()
 
@@ -56,11 +55,9 @@ def test_create_user_requires_password_change_on_first_login() -> None:
         password="NewPassword1!",
     )
 
-    response = service.create_user(payload, session)
+    service.create_user(payload, session)
 
     created_user = session.add.call_args.args[0]
-    assert created_user.must_change_password is True
-    assert response.must_change_password is True
     assert SecurityUtils.check_password("NewPassword1!", created_user.password_hash)
     session.commit.assert_called_once()
     session.refresh.assert_called_once_with(created_user)
@@ -111,7 +108,6 @@ def test_reset_password_revokes_existing_access_token() -> None:
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
     )
 
     payload = AdminPasswordReset(

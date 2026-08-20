@@ -32,7 +32,6 @@ class _UserService:
         user = User(
             **data.model_dump(exclude={"password"}),
             password_hash=SecurityUtils.hash_password(data.password),
-            must_change_password=True,
             status=UserStatus.ACTIVE,
         )
         try:
@@ -159,7 +158,6 @@ class _UserService:
 
         user.password_hash = SecurityUtils.hash_password(payload.new_password)
         user.credentials_updated_at = utcnow()
-        user.must_change_password = True
         user.touch()
 
         try:

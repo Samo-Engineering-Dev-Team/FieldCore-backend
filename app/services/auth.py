@@ -44,7 +44,6 @@ from app.models import (
     PasskeyMutationResponse,
     PasskeyRegistrationVerification,
     PasswordChange,
-    PasswordResetCompletion,
     Token,
     TokenData,
     User,
@@ -168,7 +167,6 @@ class _AuthService:
             user.role,
             user.name,
             user.surname,
-            user.must_change_password,
         )
 
     def start_passkey_registration(
@@ -363,21 +361,6 @@ class _AuthService:
                 "This account has been deactivated. Please contact your admin."
             )
 
-        if user.must_change_password:
-            _record_login(
-                session,
-                email=user.email,
-                success=False,
-                user_id=user.id,
-                role=str(user.role),
-                failure_reason="Password reset required",
-                ip_address=ip_address,
-                user_agent=user_agent,
-            )
-            raise UnauthorizedException(
-                "Password reset required. Please sign in with your password."
-            )
-
         if user.role not in PASSKEY_ELIGIBLE_ROLES:
             _record_login(
                 session,
@@ -441,7 +424,6 @@ class _AuthService:
             user.role,
             user.name,
             user.surname,
-            user.must_change_password,
         )
 
     def list_passkeys(
@@ -498,46 +480,10 @@ class _AuthService:
 
         user.password_hash = SecurityUtils.hash_password(payload.new_password)
         user.credentials_updated_at = utcnow()
-        user.must_change_password = False
         session.add(user)
         session.commit()
 
         return {"message": "Password changed successfully"}
-
-    def complete_password_reset(
-        self,
-        user_id: UUID,
-        payload: PasswordResetCompletion,
-        session: Session,
-    ) -> Token:
-        """Replace temporary password with user's final password and clear reset flag."""
-        user = self._get_user(user_id, session)
-
-        if not user.must_change_password:
-            raise BadRequestException("Password reset is not required for this account")
-
-        if payload.new_password != payload.confirm_password:
-            raise BadRequestException("New password and confirmation do not match")
-
-        if SecurityUtils.check_password(payload.new_password, user.password_hash):
-            raise BadRequestException(
-                "New password must be different from temporary password"
-            )
-
-        user.password_hash = SecurityUtils.hash_password(payload.new_password)
-        user.credentials_updated_at = utcnow()
-        user.must_change_password = False
-        session.add(user)
-        session.commit()
-        session.refresh(user)
-
-        return SecurityUtils.create_token(
-            user.id,
-            user.role,
-            user.name,
-            user.surname,
-            user.must_change_password,
-        )
 
     def logout(self, user_id: UUID, session: Session) -> dict:
         """Revoke all outstanding tokens for the user.
@@ -562,7 +508,6 @@ class _AuthService:
             role=user.role,
             name=user.name,
             surname=user.surname,
-            must_change_password=user.must_change_password,
             exp=current_user.exp,
             token_type=current_user.token_type,
             iat=current_user.iat,
@@ -588,10 +533,6 @@ class _AuthService:
         self._require_passkey_role(user.role)
         if not user.is_active():
             raise ForbiddenException("Only active users can manage passkeys")
-        if user.must_change_password:
-            raise ForbiddenException(
-                "Complete your password reset before managing passkeys"
-            )
 
     def _list_user_passkey_models(
         self, user_id: UUID, session: Session
@@ -798,7 +739,6 @@ def _token_response_from_user(user: User, token_data: TokenData) -> TokenData:
         role=user.role,
         name=user.name,
         surname=user.surname,
-        must_change_password=user.must_change_password,
         exp=token_data.exp,
         token_type=token_data.token_type,
         iat=token_data.iat,
@@ -821,7 +761,6 @@ def _refresh_access_cookie(response: Response, user: User) -> TokenData:
         user.role,
         user.name,
         user.surname,
-        user.must_change_password,
     )
     set_auth_cookie(response, token)
     response.headers["X-FieldCore-Session-Refreshed"] = "true"

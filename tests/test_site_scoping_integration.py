@@ -143,7 +143,7 @@ def _as(app, user_id, role):
     from app.services.auth import get_current_user
 
     app.dependency_overrides[get_current_user] = lambda: TokenData(
-        user_id=user_id, role=role, name="T", surname="U", must_change_password=False
+        user_id=user_id, role=role, name="T", surname="U"
     )
 
 
