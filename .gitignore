@@ -12,6 +12,10 @@ wheels/
 
 # Secret — real secrets only. .env.example is committed as a placeholder template.
 .env
+# Local-only overrides (e.g. .env.local pointing at a developer's own Postgres).
+# Matches .env.local, .env.test, etc. — never commit any of them.
+.env.*
+!.env.example
 
 # Agent / vector-store tooling artifacts (not part of the application)
 *.rvf

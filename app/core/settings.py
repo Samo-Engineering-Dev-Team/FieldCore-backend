@@ -1,3 +1,5 @@
+import os
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -220,7 +222,18 @@ class AppSettings(BaseSettings):
 
         return self
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # ENV_FILE lets a developer point the whole app at a different env file
+    # without editing .env, which normally holds production credentials:
+    #
+    #     ENV_FILE=.env.local uv run alembic upgrade head
+    #
+    # Naming the file explicitly is the point — the alternative (swapping .env
+    # in place) leaves a window where a migration runs against production
+    # because the swap was forgotten. OS environment variables still win over
+    # whichever file is chosen, per pydantic-settings precedence.
+    model_config = SettingsConfigDict(
+        env_file=os.getenv("ENV_FILE", ".env"), extra="ignore"
+    )
 
 
 app_settings = AppSettings()
