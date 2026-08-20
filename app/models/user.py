@@ -71,7 +71,6 @@ class User(BaseDB, BaseUser, table=True):
             server_default=func.now(),
         ),
     )
-    must_change_password: bool = Field(default=False, nullable=False)
     sessions_revoked_at: datetime | None = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True),
@@ -139,5 +138,4 @@ class UserStatusUpdate(SQLModel):
 class UserResponse(BaseDB, BaseUser):
     """"""
 
-    must_change_password: bool = False
     status: UserStatus

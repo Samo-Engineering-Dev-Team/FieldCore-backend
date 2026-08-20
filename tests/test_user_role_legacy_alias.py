@@ -20,7 +20,6 @@ def test_super_admin_serializes_as_super_admin() -> None:
             "surname": "User",
             "email": "admin@example.com",
             "role": UserRole.SUPER_ADMIN,
-            "must_change_password": False,
             "status": "active",
         }
     )

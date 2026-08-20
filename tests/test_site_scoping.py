@@ -51,7 +51,6 @@ def _token(role: UserRole) -> TokenData:
         role=role,
         name="Test",
         surname="User",
-        must_change_password=False,
     )
 
 

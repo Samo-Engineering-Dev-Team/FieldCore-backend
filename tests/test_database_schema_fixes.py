@@ -56,7 +56,6 @@ def test_apply_schema_fixes_adds_missing_user_columns(monkeypatch) -> None:
         str(call.args[0]) for call in begin_connection.execute.call_args_list
     )
     assert "ALTER TABLE users" in executed_sql
-    assert "must_change_password" in executed_sql
     assert "credentials_updated_at" in executed_sql
     assert "sessions_revoked_at" in executed_sql
 
@@ -65,7 +64,6 @@ def test_apply_schema_fixes_skips_when_columns_and_indexes_exist(monkeypatch) ->
     inspector = make_inspector(
         {
             "users": [
-                "must_change_password",
                 "credentials_updated_at",
                 "sessions_revoked_at",
             ],
@@ -97,7 +95,6 @@ def test_apply_schema_fixes_replaces_legacy_technician_unique_constraints(
     inspector = make_inspector(
         {
             "users": [
-                "must_change_password",
                 "credentials_updated_at",
                 "sessions_revoked_at",
             ],
@@ -139,7 +136,6 @@ def test_apply_schema_fixes_adds_missing_report_type_columns(monkeypatch) -> Non
     inspector = make_inspector(
         {
             "users": [
-                "must_change_password",
                 "credentials_updated_at",
                 "sessions_revoked_at",
             ],

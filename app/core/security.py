@@ -61,7 +61,6 @@ class SecurityUtils:
         role: UserRole,
         name: str,
         surname: str,
-        must_change_password: bool = False,
         exp: datetime | None = None,
     ) -> Token:
         """
@@ -88,7 +87,6 @@ class SecurityUtils:
             "role": role,
             "name": name,
             "surname": surname,
-            "must_change_password": must_change_password,
             "exp": expiration,
             "iat": utcnow(),
             "type": "access",
@@ -109,7 +107,6 @@ class SecurityUtils:
         role: UserRole,
         name: str,
         surname: str,
-        must_change_password: bool = False,
         exp: datetime | None = None,
     ) -> Token:
         """
@@ -136,7 +133,6 @@ class SecurityUtils:
             "role": role,
             "name": name,
             "surname": surname,
-            "must_change_password": must_change_password,
             "exp": expiration,
             "iat": utcnow(),
             "type": "refresh",
@@ -178,9 +174,6 @@ class SecurityUtils:
             role: str | None = decoded.get("role")
             name: str | None = decoded.get("name")
             surname: str | None = decoded.get("surname")
-            must_change_password: bool = bool(
-                decoded.get("must_change_password", False)
-            )
             exp: int | None = decoded.get("exp")
             iat: int | None = decoded.get("iat")
             token_type: str | None = decoded.get("type")
@@ -203,7 +196,6 @@ class SecurityUtils:
                 role=UserRole(role),
                 name=name,
                 surname=surname,
-                must_change_password=must_change_password,
                 exp=expiration,
                 token_type=token_type,
                 iat=issued_at,

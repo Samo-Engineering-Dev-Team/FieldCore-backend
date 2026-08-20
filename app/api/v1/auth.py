@@ -11,7 +11,6 @@ from app.models import (
     PasskeyMutationResponse,
     PasskeyRegistrationVerification,
     PasswordChange,
-    PasswordResetCompletion,
     PerformanceHintCookies,
     Token,
     TokenData,
@@ -94,20 +93,6 @@ def change_password(
 ) -> dict:
     """Change the current user's password."""
     return service.change_password(current_user.user_id, payload, session)
-
-
-@router.post("/complete-password-reset", response_model=Token, status_code=200)
-def complete_password_reset(
-    payload: PasswordResetCompletion,
-    response: Response,
-    current_user: CurrentUser,
-    service: AuthService,
-    session: SessionDep,
-) -> Token:
-    """Replace temporary password with a final password after admin reset."""
-    token = service.complete_password_reset(current_user.user_id, payload, session)
-    set_session_cookies(response, token)
-    return token
 
 
 @router.get(

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.core import SecurityUtils
-from app.exceptions.http import ForbiddenException, UnauthorizedException
+from app.exceptions.http import ForbiddenException
 from app.models import (
     PasskeyAuthenticationVerification,
     PasskeyChallenge,
@@ -35,7 +35,6 @@ class FakeExecResult:
 def build_user(
     *,
     role: UserRole = UserRole.ADMIN,
-    must_change_password: bool = False,
 ) -> User:
     return User(
         name="Jane",
@@ -44,7 +43,6 @@ def build_user(
         role=role,
         status=UserStatus.ACTIVE,
         password_hash=SecurityUtils.hash_password("TempPass1!"),
-        must_change_password=must_change_password,
     )
 
 
@@ -54,7 +52,6 @@ def build_current_user(user: User) -> TokenData:
         role=user.role,
         name=user.name,
         surname=user.surname,
-        must_change_password=user.must_change_password,
         token_type="access",
     )
 
@@ -142,38 +139,6 @@ def test_finish_passkey_registration_saves_passkey(monkeypatch) -> None:
     assert ceremony.consumed_at is not None
     session.commit.assert_called_once()
     session.refresh.assert_called_once_with(passkey)
-
-
-def test_finish_passkey_authentication_blocks_password_reset_accounts() -> None:
-    user = build_user(role=UserRole.NOC, must_change_password=True)
-    ceremony = PasskeyChallenge(
-        flow=PasskeyCeremonyType.AUTHENTICATION,
-        challenge="c2F2ZWQ",
-        rp_id="fieldcore.example.com",
-        origin="https://fieldcore.example.com",
-        expires_at=utcnow() + timedelta(minutes=5),
-    )
-    passkey = PasskeyCredential(
-        user_id=user.id,
-        name="Phone",
-        credential_id="credential-1",
-        public_key="cHVibGljLWtleQ",
-        sign_count=1,
-    )
-    session = MagicMock()
-    session.exec.side_effect = [
-        FakeExecResult(first=ceremony),
-        FakeExecResult(first=passkey),
-        FakeExecResult(first=user),
-    ]
-
-    payload = PasskeyAuthenticationVerification(
-        ceremony_id=ceremony.id,
-        credential={"id": "credential-1"},
-    )
-
-    with pytest.raises(UnauthorizedException, match="Password reset required"):
-        _AuthService().finish_passkey_authentication(payload, session)
 
 
 def test_finish_passkey_authentication_updates_sign_count_and_returns_token(monkeypatch) -> None:
