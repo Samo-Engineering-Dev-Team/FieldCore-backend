@@ -62,7 +62,6 @@ def set_session_cookies(response: Response, access_token: Token) -> None:
         token_data.role,
         token_data.name or "",
         token_data.surname or "",
-        token_data.must_change_password,
     )
 
     set_auth_cookie(response, access_token)
