@@ -337,7 +337,12 @@ class FundsRequestResponse(BaseDB, BaseFundsRequest):
     technician_region: str | None = Field(default=None)
     site_name: str | None = Field(default=None)
     generator_display_name: str | None = Field(default=None)
+    # Exposed so a client can open a reconciliation against this request without
+    # a second lookup. Null until an approver has acted, since the disbursement is
+    # created at approval.
+    disbursement_id: UUID | None = Field(default=None)
     amount_issued: float | None = Field(
         default=None, description="From the linked disbursement, once one exists"
     )
+    reconciliation_id: UUID | None = Field(default=None)
     reconciliation_status: str | None = Field(default=None)

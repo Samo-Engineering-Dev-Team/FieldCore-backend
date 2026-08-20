@@ -118,11 +118,14 @@ class _FundsRequestService:
 
         disbursement = self._find_disbursement(request.id, session)
         recon_status = None
+        recon_id = None
         amount_issued = None
         if disbursement is not None:
             amount_issued = _money(disbursement.amount_issued)
             recon = self._find_reconciliation(disbursement.id, session)
-            recon_status = recon.status.value if recon else None
+            if recon is not None:
+                recon_id = recon.id
+                recon_status = recon.status.value
 
         return FundsRequestResponse(
             id=request.id,
@@ -166,7 +169,9 @@ class _FundsRequestService:
             generator_display_name=(
                 request.generator.display_name if request.generator else None
             ),
+            disbursement_id=disbursement.id if disbursement else None,
             amount_issued=amount_issued,
+            reconciliation_id=recon_id,
             reconciliation_status=recon_status,
         )
 
