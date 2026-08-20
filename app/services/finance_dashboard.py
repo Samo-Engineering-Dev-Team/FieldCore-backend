@@ -235,8 +235,24 @@ class _FinanceDashboardService:
             "sites_refueled": refuel["sites_refueled"],
             "total_sites": refuel["total_sites"],
             "recon_rate": recon_rate,
-            "recon_rate_status": self._recon_rate_status(recon_rate, session),
+            "recon_rate_status": self._recon_rate_status_for(
+                reconciled_technicians, len(technicians_issued), session
+            ),
         }
+
+    def _recon_rate_status_for(
+        self, reconciled: int, issued: int, session: Session
+    ) -> str | None:
+        """Badge for the Recon Rate card, or None when there is nothing to rate.
+
+        A period where nobody received funds has a rate of 0% purely because the
+        denominator is zero. Labelling that "Critical" would have Finance chasing
+        technicians who were never issued anything, so an empty period reports no
+        status at all rather than a failing one.
+        """
+        if issued <= 0:
+            return None
+        return self._recon_rate_status(_pct(reconciled, issued), session)
 
     def _recon_rate_status(self, rate: float, session: Session) -> str:
         settings = get_system_settings_service()

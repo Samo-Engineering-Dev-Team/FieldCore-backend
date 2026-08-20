@@ -737,3 +737,33 @@ def test_money_conversion_at_the_dashboard_boundary():
     assert _money(None) == 0.0
     # Legacy diesel amounts arrive as floats; both must pass through unharmed.
     assert _money(99.5) == 99.5
+
+
+def _status_for(reconciled: int, issued: int) -> str | None:
+    import app.services.finance_dashboard as fd
+
+    service = fd.get_finance_dashboard_service()
+    original = fd.get_system_settings_service
+    fd.get_system_settings_service = lambda: _FakeSettings()  # type: ignore[assignment]
+    try:
+        return service._recon_rate_status_for(reconciled, issued, session=None)
+    finally:
+        fd.get_system_settings_service = original  # type: ignore[assignment]
+
+
+def test_no_recon_rate_status_when_nobody_received_funds():
+    """0 out of 0 is 0% only because the denominator is zero. Labelling a quiet
+    week "Critical" would have Finance chasing technicians who were never issued
+    anything. Found against a real data copy whose current period was empty."""
+    assert _status_for(0, 0) is None
+
+
+def test_a_genuine_zero_percent_is_still_critical():
+    """The guard must not swallow a real failure: funds issued to four
+    technicians and none reconciled is exactly what Critical is for."""
+    assert _status_for(0, 4) == "Critical"
+
+
+def test_status_returns_for_a_normal_period():
+    assert _status_for(4, 4) == "Excellent"
+    assert _status_for(3, 4) == "Good"
