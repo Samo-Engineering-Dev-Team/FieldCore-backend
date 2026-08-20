@@ -19,19 +19,26 @@ enum label. There is no backfill, no NOT NULL added to an existing table, no
 type change to an existing column, and no write to any existing row — nothing
 that can affect the usability of the production database.
 
-Enum storage follows what SQLModel actually generates for each case, which is
-not uniform in this codebase:
+Every enum here is a NATIVE Postgres type whose labels are member NAMES
+(uppercase), because that is what SQLModel generates and what the rest of this
+schema already uses — `sites.region` is a real `region` type holding 'GAUTENG',
+'KZN', and so on, and `users.role` is `userrole`.
 
-  * Plain StrEnum fields (every enum on the new tables) become VARCHAR holding
-    the member VALUE, matching `sites.region`. Widening a VARCHAR later is far
-    cheaper than ALTER TYPE, and these are new tables where nothing else
-    depends on the representation.
-  * `users.role` is the exception: user.py declares it explicitly as
-    SAEnum(UserRole, name="userrole"), so it is a native Postgres enum whose
-    labels are member NAMES. Adding FINANCE therefore needs
-    `ALTER TYPE userrole ADD VALUE 'FINANCE'` (uppercase), which cannot run
-    inside a transaction — hence the autocommit_block, same as the reporttype
-    migration.
+An earlier revision of this file created these columns as VARCHAR instead. That
+came from inspecting column types via `str(col.type)`, which renders `sa.Enum`
+as `VARCHAR(n)` when no dialect is bound — compile against the postgres dialect
+and the same column renders as `fundsrequeststatus`. The app still worked
+(SQLAlchemy writes the label into a varchar quite happily), but the models and
+the schema disagreed, so `--autogenerate` wanted to ALTER all six columns on
+every future run. That is precisely the drift the baseline migration warns
+about, so it is fixed here rather than layered over.
+
+`technicians.region` reuses the existing `region` type via create_type=False;
+emitting CREATE TYPE for it would fail because sites.region already created it.
+
+Adding FINANCE to `userrole` needs `ALTER TYPE ... ADD VALUE` (uppercase
+label), which cannot run inside a transaction — hence the autocommit_block,
+same as the reporttype migration.
 
 DEPLOY NOTE: as with the reporttype migration, applying this to the live DB is
 a deliberate deploy-time step requiring its own explicit go-ahead, not a side
@@ -44,6 +51,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "b7f21c9e40aa"
@@ -95,7 +103,11 @@ def upgrade() -> None:
     op.create_table(
         "funds_capabilities",
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("capability", sa.String(length=12), nullable=False),
+        sa.Column(
+            "capability",
+            sa.Enum("APPROVE", "LOAD", "RELEASE", "FINANCE_LEAD", name="fundscapability"),
+            nullable=False,
+        ),
         sa.Column("is_fallback", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -125,7 +137,13 @@ def upgrade() -> None:
     op.create_table(
         "funds_requests",
         sa.Column("technician_id", sa.Uuid(), nullable=False),
-        sa.Column("type", sa.String(length=16), nullable=False),
+        sa.Column(
+            "type",
+            sa.Enum(
+                "WEEKLY_TRIP", "GENERATOR_REFUEL", "MISC", name="fundsrequesttype"
+            ),
+            nullable=False,
+        ),
         # Weekly trip inputs. Stored for audit beside the submitted amount; the
         # external calculator stays the source of truth (spec §3.1).
         sa.Column("distance_km", sa.Float(), nullable=True),
@@ -136,8 +154,22 @@ def upgrade() -> None:
         sa.Column("requested_liters", sa.Float(), nullable=True),
         sa.Column("gen_runtime_hours", sa.Float(), nullable=True),
         sa.Column("description", sa.String(length=2000), nullable=True),
-        sa.Column("status", sa.String(length=9), nullable=False),
-        sa.Column("priority", sa.String(length=6), nullable=False),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "PENDING",
+                "APPROVED",
+                "LOADED",
+                "RELEASED",
+                "REJECTED",
+                "CANCELLED",
+                name="fundsrequeststatus",
+            ),
+            nullable=False,
+        ),
+        sa.Column(
+            "priority", sa.Enum("NORMAL", "HIGH", name="fundspriority"), nullable=False
+        ),
         # Money is NUMERIC, never double precision. These are the first exact
         # money columns in the schema; legacy diesel amounts live as floats
         # inside report JSON and must never be summed into these without an
@@ -243,7 +275,13 @@ def upgrade() -> None:
     op.create_table(
         "reconciliations",
         sa.Column("disbursement_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sa.String(length=9), nullable=False),
+        sa.Column(
+            "status",
+            sa.Enum(
+                "DRAFT", "SUBMITTED", "APPROVED", "REJECTED", name="reconciliationstatus"
+            ),
+            nullable=False,
+        ),
         sa.Column(
             "total_used",
             sa.Numeric(precision=12, scale=2),
@@ -296,7 +334,11 @@ def upgrade() -> None:
     op.create_table(
         "reconciliation_lines",
         sa.Column("reconciliation_id", sa.Uuid(), nullable=False),
-        sa.Column("category", sa.String(length=4), nullable=False),
+        sa.Column(
+            "category",
+            sa.Enum("FUEL", "TOLL", "MISC", name="expensecategory"),
+            nullable=False,
+        ),
         sa.Column("description", sa.String(length=500), nullable=True),
         sa.Column("incurred_on", sa.Date(), nullable=False),
         sa.Column("amount", sa.Numeric(precision=12, scale=2), nullable=False),
@@ -326,7 +368,14 @@ def upgrade() -> None:
     # same Region StrEnum ('kwazulu-natal' being the longest value). Rows left
     # NULL group under "Unassigned" on the dashboard.
     op.add_column(
-        "technicians", sa.Column("region", sa.String(length=13), nullable=True)
+        "technicians",
+        sa.Column(
+            "region",
+            # create_type=False: the `region` enum already exists, created with
+            # sites.region. Letting SQLAlchemy emit CREATE TYPE here would fail.
+            postgresql.ENUM(name="region", create_type=False),
+            nullable=True,
+        ),
     )
 
 
@@ -406,3 +455,17 @@ def downgrade() -> None:
         postgresql_where=sa.text("deleted_at IS NULL"),
     )
     op.drop_table("generators")
+
+    # drop_table does not drop the enum types create_table brought into being,
+    # so a downgrade/upgrade cycle would fail on "type already exists" without
+    # this. The `region` type is deliberately NOT dropped — it predates this
+    # migration and sites.region still uses it.
+    for enum_name in (
+        "fundscapability",
+        "fundsrequesttype",
+        "fundsrequeststatus",
+        "fundspriority",
+        "reconciliationstatus",
+        "expensecategory",
+    ):
+        op.execute(f"DROP TYPE IF EXISTS {enum_name}")
