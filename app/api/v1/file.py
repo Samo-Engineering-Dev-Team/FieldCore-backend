@@ -24,7 +24,19 @@ ALLOWED_CONTENT_TYPES = {
 # "sheq" holds both signature PNGs and checklist evidence photos
 # (SHEQ-CHECKLISTS-PLAN.md §7.3) — a flat folder, like every other entry here;
 # _validate_folder below is an exact match, not a path-prefix check.
-ALLOWED_FOLDERS = {"incidents", "reports", "tasks", "routine", "avatars", "misc", "sheq"}
+# "recon-slips" holds expense slips attached to reconciliation lines
+# (docs/FieldCore_Finance_Technician_Workflow_Spec.md §3.1.5). Flat, like every
+# other entry — _validate_folder is an exact match, not a path-prefix check.
+ALLOWED_FOLDERS = {
+    "incidents",
+    "reports",
+    "tasks",
+    "routine",
+    "avatars",
+    "misc",
+    "sheq",
+    "recon-slips",
+}
 
 # Max files a client may request signed URLs for in one call.
 MAX_FILES_PER_REQUEST = 10

@@ -480,6 +480,47 @@ class NotificationTemplates:
         )
 
 
+    # ── Reconciliation (spec §3.1.6–7) ────────────────────────────────────
+
+    @staticmethod
+    def reconciliation_submitted(
+        technician_name: str, total_used: str, outstanding: str
+    ) -> NotificationTemplate:
+        return NotificationTemplate(
+            title="Reconciliation submitted",
+            message=(
+                f"{technician_name} accounted for {total_used}, leaving "
+                f"{outstanding} outstanding. Review the slips to clear them for "
+                "their next request."
+            ),
+            priority=NotificationPriority.NORMAL,
+        )
+
+    @staticmethod
+    def reconciliation_approved(
+        total_used: str, outstanding: str
+    ) -> NotificationTemplate:
+        return NotificationTemplate(
+            title="Reconciliation approved",
+            message=(
+                f"Finance accepted {total_used} of spend, with {outstanding} "
+                "outstanding. You are cleared to request funds again."
+            ),
+            priority=NotificationPriority.NORMAL,
+        )
+
+    @staticmethod
+    def reconciliation_rejected(reason: str | None) -> NotificationTemplate:
+        return NotificationTemplate(
+            title="Reconciliation sent back",
+            message=(
+                "Finance returned your reconciliation. "
+                f"Reason: {NotificationTemplates._preview(reason)}"
+            ),
+            priority=NotificationPriority.HIGH,
+        )
+
+
 class _NotificationService:
     def notification_to_response(
         self, notification: Notification

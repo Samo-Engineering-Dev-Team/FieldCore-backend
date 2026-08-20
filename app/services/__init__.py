@@ -31,6 +31,7 @@ from .sheq_compliance import SheqComplianceService, get_sheq_compliance_service
 from .generator import GeneratorService, get_generator_service
 from .funds_capability import FundsCapabilityService, get_funds_capability_service
 from .funds_request import FundsRequestService, get_funds_request_service
+from .reconciliation import ReconciliationService, get_reconciliation_service
 
 __all__ = [
     "AuthService",
@@ -79,4 +80,6 @@ __all__ = [
     "get_funds_capability_service",
     "FundsRequestService",
     "get_funds_request_service",
+    "ReconciliationService",
+    "get_reconciliation_service",
 ]

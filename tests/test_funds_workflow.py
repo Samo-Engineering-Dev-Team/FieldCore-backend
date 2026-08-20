@@ -526,3 +526,99 @@ def test_hard_block_setting_key_is_stable():
     from app.services.funds_request import HARD_BLOCK_SETTING_KEY
 
     assert HARD_BLOCK_SETTING_KEY == "funds.hard_block_unreconciled"
+
+
+# ── Phase 3: reconciliation editability and sign-off gating ────────────────
+
+
+def test_only_draft_and_rejected_reconciliations_are_editable():
+    """A SUBMITTED recon must not change under the reviewer, and an APPROVED one
+    is a closed record. REJECTED is editable because Finance sent it back."""
+    from app.services.reconciliation import EDITABLE_STATUSES
+
+    assert set(EDITABLE_STATUSES) == {
+        ReconciliationStatus.DRAFT,
+        ReconciliationStatus.REJECTED,
+    }
+
+
+def test_editable_statuses_exclude_submitted_and_approved():
+    from app.services.reconciliation import EDITABLE_STATUSES
+
+    assert ReconciliationStatus.SUBMITTED not in EDITABLE_STATUSES
+    assert ReconciliationStatus.APPROVED not in EDITABLE_STATUSES
+
+
+def test_a_returned_reconciliation_becomes_editable_again():
+    """The technician has to be able to fix what Finance objected to."""
+    from app.services.reconciliation import EDITABLE_STATUSES
+
+    recon = make_recon(["100.00"])
+    recon.mark_submitted()
+    assert recon.status not in EDITABLE_STATUSES
+
+    recon.mark_rejected(uuid4(), "Toll slip missing")
+    assert recon.status in EDITABLE_STATUSES
+
+
+def test_recon_slips_folder_is_allowed_for_upload():
+    """Slips reuse the existing Supabase signed-upload flow; without the folder on
+    the allowlist every slip upload 400s."""
+    from app.api.v1.file import ALLOWED_FOLDERS
+
+    assert "recon-slips" in ALLOWED_FOLDERS
+
+
+def test_recon_slip_folder_did_not_displace_existing_folders():
+    from app.api.v1.file import ALLOWED_FOLDERS
+
+    for folder in ("incidents", "reports", "tasks", "routine", "avatars", "misc", "sheq"):
+        assert folder in ALLOWED_FOLDERS
+
+
+def test_finance_lead_is_what_signs_off_a_reconciliation():
+    """Recon approval is gated on FINANCE_LEAD, which holds no chain stage — so
+    signing off a recon can never double as releasing funds."""
+    from app.services.funds_request import STAGE_CAPABILITY
+    from app.utils.enums import FundsCapability
+
+    assert FundsCapability.FINANCE_LEAD not in STAGE_CAPABILITY.values()
+
+
+def test_reconciliation_totals_are_recomputed_not_incremented():
+    """Recompute must be idempotent: calling it twice on unchanged lines gives the
+    same answer. An incrementing total would drift from the lines that justify it.
+    """
+    recon = make_recon(["120.00", "80.00"])
+    recon.recompute(Decimal("300.00"))
+    first = (recon.total_used, recon.outstanding_balance)
+    recon.recompute(Decimal("300.00"))
+    assert (recon.total_used, recon.outstanding_balance) == first
+    assert recon.total_used == Decimal("200.00")
+
+
+def test_removing_a_line_moves_the_balance_back():
+    recon = make_recon(["120.00", "80.00"])
+    recon.recompute(Decimal("300.00"))
+    assert recon.outstanding_balance == Decimal("100.00")
+
+    # Soft delete, as remove_line does — the slip may already be in storage.
+    next(line for line in recon.lines if line.amount == Decimal("80.00")).soft_delete()
+    recon.recompute(Decimal("300.00"))
+    assert recon.total_used == Decimal("120.00")
+    assert recon.outstanding_balance == Decimal("180.00")
+
+
+def test_reconciliation_notification_templates_state_the_numbers():
+    """Finance decides from the notification whether to open the recon at all."""
+    from app.services.notification import NotificationTemplates as T
+
+    submitted = T.reconciliation_submitted("Thabo M", "R820.00", "R180.00")
+    assert "R820.00" in submitted.message and "R180.00" in submitted.message
+
+    approved = T.reconciliation_approved("R820.00", "R180.00")
+    assert "cleared" in approved.message.lower()
+
+    rejected = T.reconciliation_rejected("Toll slip missing")
+    assert "Toll slip missing" in rejected.message
+    assert rejected.priority.value == "high"
