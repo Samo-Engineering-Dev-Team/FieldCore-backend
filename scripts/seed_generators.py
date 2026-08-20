@@ -52,7 +52,10 @@ FIND_PAIRS_SQL = text(
     FROM reports r
     CROSS JOIN LATERAL jsonb_array_elements(r.data->'diesel_fillups') AS fillup
     WHERE r.deleted_at IS NULL
-      AND r.report_type = 'diesel'
+      -- 'DIESEL', not 'diesel': reporttype is a native Postgres enum and
+      -- SQLAlchemy maps enum members by NAME, so the stored label is uppercase
+      -- (same convention as the ALTER TYPE in the Phase 1 migration).
+      AND r.report_type = 'DIESEL'
       AND jsonb_typeof(r.data->'diesel_fillups') = 'array'
       AND fillup->>'site_id' IS NOT NULL
     """
