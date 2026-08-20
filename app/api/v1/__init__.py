@@ -29,6 +29,7 @@ from .generator import router as generator_router
 from .funds_capability import router as funds_capability_router
 from .funds_request import router as funds_request_router
 from .reconciliation import router as reconciliation_router
+from .finance_dashboard import router as finance_dashboard_router
 from app.services.auth import get_current_user
 from os import getenv
 
@@ -76,6 +77,9 @@ router.include_router(
 router.include_router(funds_request_router, dependencies=[Depends(get_current_user)])
 router.include_router(
     reconciliation_router, dependencies=[Depends(get_current_user)]
+)
+router.include_router(
+    finance_dashboard_router, dependencies=[Depends(get_current_user)]
 )
 if _allow_dev:
     router.include_router(dev_client_router)

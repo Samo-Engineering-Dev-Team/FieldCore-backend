@@ -622,3 +622,118 @@ def test_reconciliation_notification_templates_state_the_numbers():
     rejected = T.reconciliation_rejected("Toll slip missing")
     assert "Toll slip missing" in rejected.message
     assert rejected.priority.value == "high"
+
+
+# ── Phase 4: Finance Dashboard aggregation rules ───────────────────────────
+
+
+class _FakeSettings:
+    """Stands in for SystemSettingsService without a DB."""
+
+    def __init__(self, values: dict | None = None):
+        self._values = values or {}
+
+    def get_setting(self, key, session, default=None):
+        return self._values.get(key, default)
+
+
+def _status_with(rate: float, values: dict | None = None) -> str:
+    import app.services.finance_dashboard as fd
+
+    service = fd.get_finance_dashboard_service()
+    original = fd.get_system_settings_service
+    fd.get_system_settings_service = lambda: _FakeSettings(values)  # type: ignore[assignment]
+    try:
+        return service._recon_rate_status(rate, session=None)
+    finally:
+        fd.get_system_settings_service = original  # type: ignore[assignment]
+
+
+@pytest.mark.parametrize(
+    "rate,expected",
+    [
+        (0.0, "Critical"),
+        (69.9, "Critical"),
+        (70.0, "Good"),
+        (89.9, "Good"),
+        (90.0, "Excellent"),
+        (100.0, "Excellent"),
+    ],
+)
+def test_recon_rate_thresholds_match_the_spec_proposal(rate, expected):
+    """Spec §5.1: <70 Critical, 70–89 Good, >=90 Excellent. Boundaries included
+    in the higher band, so exactly 70% is Good rather than Critical."""
+    assert _status_with(rate) == expected
+
+
+def test_recon_rate_thresholds_are_configurable():
+    """Finance signs the numbers off after go-live (spec §7 Q3), so they must be
+    changeable without a deploy."""
+    from app.services.finance_dashboard import (
+        RECON_RATE_EXCELLENT_KEY,
+        RECON_RATE_GOOD_KEY,
+    )
+
+    strict = {RECON_RATE_GOOD_KEY: 85.0, RECON_RATE_EXCELLENT_KEY: 95.0}
+    assert _status_with(80.0, strict) == "Critical"
+    assert _status_with(85.0, strict) == "Good"
+    assert _status_with(95.0, strict) == "Excellent"
+
+
+def test_inverted_thresholds_fall_back_to_defaults():
+    """A mis-set pair would make Excellent unreachable and label a healthy week
+    Critical. Falling back is safer than honouring nonsense."""
+    from app.services.finance_dashboard import (
+        RECON_RATE_EXCELLENT_KEY,
+        RECON_RATE_GOOD_KEY,
+    )
+
+    inverted = {RECON_RATE_GOOD_KEY: 95.0, RECON_RATE_EXCELLENT_KEY: 60.0}
+    assert _status_with(95.0, inverted) == "Excellent"
+    assert _status_with(75.0, inverted) == "Good"
+    assert _status_with(50.0, inverted) == "Critical"
+
+
+def test_percentage_helper_guards_division_by_zero():
+    """A period where nobody received funds must read 0%, not crash — this is the
+    normal state of a quiet week."""
+    from app.services.finance_dashboard import _pct
+
+    assert _pct(0, 0) == 0.0
+    assert _pct(3, 4) == 75.0
+    assert _pct(1, 3) == 33.3
+
+
+def test_dashboard_period_defaults_to_the_current_friday_thursday_window():
+    from app.services.finance_dashboard import get_finance_dashboard_service
+
+    service = get_finance_dashboard_service()
+    assert service._resolve_period(None, None) == funds_period()
+
+
+def test_a_half_specified_period_is_ignored_rather_than_half_applied():
+    """Reporting half a window as if it were whole would misstate every KPI."""
+    from app.services.finance_dashboard import get_finance_dashboard_service
+
+    service = get_finance_dashboard_service()
+    only_start = datetime(2026, 8, 14, tzinfo=SAST)
+    assert service._resolve_period(only_start, None) == funds_period()
+    assert service._resolve_period(None, only_start) == funds_period()
+
+
+def test_an_explicit_period_is_used_verbatim():
+    from app.services.finance_dashboard import get_finance_dashboard_service
+
+    service = get_finance_dashboard_service()
+    start = datetime(2026, 7, 3, tzinfo=SAST)
+    end = datetime(2026, 7, 9, 23, 59, 59, tzinfo=SAST)
+    assert service._resolve_period(start, end) == (start, end)
+
+
+def test_money_conversion_at_the_dashboard_boundary():
+    from app.services.finance_dashboard import _money
+
+    assert _money(Decimal("1234.56")) == 1234.56
+    assert _money(None) == 0.0
+    # Legacy diesel amounts arrive as floats; both must pass through unharmed.
+    assert _money(99.5) == 99.5
