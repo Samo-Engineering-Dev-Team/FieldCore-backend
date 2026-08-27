@@ -95,6 +95,8 @@ class _ReportService:
         if not seacom_ref and report.task:
             seacom_ref = report.task.seacom_ref
 
+        site = report.task.site if report.task else None
+
         # Build response, excluding seacom_ref from dump to avoid duplicate
         report_data = report.model_dump(exclude={"seacom_ref", "attachments"})
         return ReportResponse(
@@ -103,6 +105,8 @@ class _ReportService:
             num_attachments=num_attachments,
             technician_fullname=technician_name,
             seacom_ref=seacom_ref,
+            site_id=site.id if site else None,
+            site_name=site.name if site else None,
         )
 
     def _get_technician_by_user(self, user_id: UUID, session: Session) -> Technician:
