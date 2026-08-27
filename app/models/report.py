@@ -55,3 +55,5 @@ class ReportResponse(BaseDB, BaseReport):
     status: ReportStatus = Field()
     technician_fullname: str = Field(default="")
     num_attachments: int = Field(default=0, ge=0)
+    site_id: UUID | None = Field(default=None)
+    site_name: str | None = Field(default=None)
