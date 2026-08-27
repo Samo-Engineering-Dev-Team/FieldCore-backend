@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -7,7 +9,9 @@ class AppSettings(BaseSettings):
 
     # Deployment environment: "development" | "staging" | "production".
     # Controls how strict startup validation is (see _validate_required).
-    ENVIRONMENT: str = Field(default="development")
+    ENVIRONMENT: Literal["development", "staging", "production"] = Field(
+        default="development"
+    )
 
     # Database
     DB_HOST: str = ""
