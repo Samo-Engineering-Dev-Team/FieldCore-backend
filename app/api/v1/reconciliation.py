@@ -34,8 +34,10 @@ def create_reconciliation(
     session: SessionDep,
     current_user: CurrentUser,
 ) -> ReconciliationResponse:
-    """Open a draft against a released disbursement. Nothing can be reconciled
-    before release — approval and loading are not disbursement."""
+    """Open a draft, either against a released disbursement (the normal flow —
+    nothing can be reconciled before release, since approval and loading are not
+    disbursement) or standalone via `declared_amount`, for funds a technician
+    already holds but that were never re-requested."""
     return service.create_reconciliation(payload, session, current_user)
 
 

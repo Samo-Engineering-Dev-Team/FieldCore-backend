@@ -61,7 +61,7 @@ from app.utils.enums import (
     ReconciliationStatus,
     UserRole,
 )
-from app.utils.funcs import utcnow
+from app.utils.funcs import funds_period, utcnow
 
 _ZERO = Decimal("0.00")
 
@@ -111,6 +111,16 @@ class _ReconciliationService:
                 technician_name = (
                     f"{request.technician.user.name} {request.technician.user.surname}"
                 )
+        else:
+            # Standalone recon: no disbursement/funds_request chain to walk, so
+            # go straight to the technician_id stored on the recon itself.
+            technician = session.exec(
+                select(Technician).where(Technician.id == recon.technician_id)
+            ).first()
+            if technician:
+                region = technician.region
+                if technician.user:
+                    technician_name = f"{technician.user.name} {technician.user.surname}"
 
         approver_name = None
         if recon.finance_approved_by_user_id:
@@ -127,9 +137,11 @@ class _ReconciliationService:
             deleted_at=recon.deleted_at,
             disbursement_id=recon.disbursement_id,
             status=recon.status,
+            reference_no=recon.reference_no,
             total_used=_money(recon.total_used),
             outstanding_balance=_money(recon.outstanding_balance),
-            amount_issued=_money(disbursement.amount_issued) if disbursement else 0.0,
+            amount_issued=_money(recon.reference_amount),
+            description=recon.description,
             period_start=recon.period_start,
             period_end=recon.period_end,
             submitted_at=recon.submitted_at,
@@ -183,10 +195,9 @@ class _ReconciliationService:
         raise NotFoundException("reconciliation line not found")
 
     def _technician_id_for(self, recon: Reconciliation) -> UUID | None:
-        disbursement = recon.disbursement
-        if disbursement is None or disbursement.funds_request is None:
-            return None
-        return disbursement.funds_request.technician_id
+        # Stored directly on every recon (standalone or disbursement-linked) at
+        # creation, so ownership never has to walk disbursement -> funds_request.
+        return recon.technician_id
 
     # ── Access ────────────────────────────────────────────────────────────
 
@@ -217,18 +228,105 @@ class _ReconciliationService:
 
     # ── Create ────────────────────────────────────────────────────────────
 
+    def _resolve_technician_id(
+        self,
+        supplied: UUID | None,
+        session: Session,
+        current_user: TokenData,
+    ) -> UUID:
+        """A technician reconciles for themselves; management may open one on a
+        technician's behalf. Mirrors FundsRequestService._resolve_technician_id."""
+        if current_user.role == UserRole.TECHNICIAN:
+            own_id = get_technician_id_for_user(current_user.user_id, session)
+            if supplied is not None and supplied != own_id:
+                raise ForbiddenException(
+                    "You can only open reconciliations for yourself."
+                )
+            return own_id
+
+        if supplied is None:
+            raise BadRequestException(
+                "technician_id is required when opening a reconciliation on "
+                "someone's behalf."
+            )
+        if current_user.role not in ADMIN_MANAGER_ROLES:
+            raise ForbiddenException(
+                "Only a technician, an administrator or a manager may open a "
+                "reconciliation."
+            )
+        technician = session.exec(
+            select(Technician).where(
+                Technician.id == supplied,
+                Technician.deleted_at.is_(None),  # type: ignore
+            )
+        ).first()
+        if technician is None:
+            raise NotFoundException("technician not found")
+        return supplied
+
+    def _next_reference_no(self, technician_id: UUID, session: Session) -> str:
+        """"FR-01", "FR-02", ... per technician. The row lock from FOR UPDATE
+        serialises concurrent creates for the same technician, so two requests
+        racing to reconcile can't be handed the same number."""
+        technician = session.exec(
+            select(Technician)
+            .where(Technician.id == technician_id)
+            .with_for_update()
+        ).first()
+        if technician is None:
+            raise NotFoundException("technician not found")
+        technician.recon_sequence += 1
+        session.add(technician)
+        return f"FR-{technician.recon_sequence:02d}"
+
     def create_reconciliation(
         self,
         payload: ReconciliationCreate,
         session: Session,
         current_user: TokenData,
     ) -> ReconciliationResponse:
-        """Open a DRAFT against a released disbursement.
+        """Open a DRAFT, either against a released disbursement or standalone.
 
         Lines may be supplied up front or added over the week — a technician
         collects slips as they spend, not in one sitting on Thursday.
         """
-        disbursement = self._get_disbursement(payload.disbursement_id, session)
+        if (payload.disbursement_id is None) == (payload.declared_amount is None):
+            raise BadRequestException(
+                "Provide either disbursement_id (to account for a released "
+                "disbursement) or declared_amount (to open a standalone "
+                "reconciliation for funds you already hold), not both or neither."
+            )
+
+        if payload.disbursement_id is not None:
+            recon = self._open_for_disbursement(payload, session, current_user)
+        else:
+            recon = self._open_standalone(payload, session, current_user)
+
+        for line_payload in payload.lines:
+            recon.lines.append(self._build_line(recon.id, line_payload))
+        recon.recompute(recon.reference_amount)
+
+        try:
+            session.add(recon)
+            session.commit()
+            session.refresh(recon)
+            return self._to_response(recon, session)
+        except IntegrityError as e:
+            session.rollback()
+            raise ConflictException(f"Error opening reconciliation: {e.orig}")
+        except Exception as e:
+            session.rollback()
+            raise InternalServerErrorException(
+                f"Unexpected error opening reconciliation: {e}"
+            )
+
+    def _open_for_disbursement(
+        self,
+        payload: ReconciliationCreate,
+        session: Session,
+        current_user: TokenData,
+    ) -> Reconciliation:
+        disbursement = self._get_disbursement(payload.disbursement_id, session)  # type: ignore[arg-type]
         request = disbursement.funds_request
 
         # Nothing to account for until the money actually reached the technician.
@@ -245,11 +343,18 @@ class _ReconciliationService:
                 raise ForbiddenException(
                     "You may only reconcile your own disbursements."
                 )
+            technician_id = own_id
         elif current_user.role not in ADMIN_MANAGER_ROLES:
             raise ForbiddenException(
                 "Only the technician, an administrator or a manager may open a "
                 "reconciliation."
             )
+        else:
+            if request is None:
+                raise ConflictException(
+                    "This disbursement has no funds request behind it."
+                )
+            technician_id = request.technician_id
 
         existing = session.exec(
             select(Reconciliation).where(
@@ -263,31 +368,40 @@ class _ReconciliationService:
                 "that one instead of starting another."
             )
 
-        recon = Reconciliation(
+        return Reconciliation(
             disbursement_id=disbursement.id,
+            technician_id=technician_id,
+            reference_no=self._next_reference_no(technician_id, session),
             status=ReconciliationStatus.DRAFT,
             # Copied from the request so the recon reports in the period the money
             # was raised in, not the period it happened to be captured in.
             period_start=request.period_start if request else utcnow(),
             period_end=request.period_end if request else utcnow(),
         )
-        for line_payload in payload.lines:
-            recon.lines.append(self._build_line(recon.id, line_payload))
-        recon.recompute(disbursement.amount_issued)
 
-        try:
-            session.add(recon)
-            session.commit()
-            session.refresh(recon)
-            return self._to_response(recon, session)
-        except IntegrityError as e:
-            session.rollback()
-            raise ConflictException(f"Error opening reconciliation: {e.orig}")
-        except Exception as e:
-            session.rollback()
-            raise InternalServerErrorException(
-                f"Unexpected error opening reconciliation: {e}"
-            )
+    def _open_standalone(
+        self,
+        payload: ReconciliationCreate,
+        session: Session,
+        current_user: TokenData,
+    ) -> Reconciliation:
+        """A recon with no disbursement behind it — funds the technician already
+        holds (e.g. leftover from an earlier trip) and is accounting for now,
+        rather than money just released to them."""
+        technician_id = self._resolve_technician_id(
+            payload.technician_id, session, current_user
+        )
+        period_start, period_end = funds_period()
+        return Reconciliation(
+            disbursement_id=None,
+            technician_id=technician_id,
+            reference_no=self._next_reference_no(technician_id, session),
+            status=ReconciliationStatus.DRAFT,
+            declared_amount=payload.declared_amount,
+            description=payload.description,
+            period_start=period_start,
+            period_end=period_end,
+        )
 
     def _build_line(
         self, reconciliation_id: UUID, payload: ReconciliationLineCreate
@@ -354,7 +468,7 @@ class _ReconciliationService:
     def _commit_lines(
         self, recon: Reconciliation, session: Session
     ) -> ReconciliationResponse:
-        recon.recompute(recon.disbursement.amount_issued)
+        recon.recompute(recon.reference_amount)
         try:
             session.add(recon)
             session.commit()
@@ -397,7 +511,7 @@ class _ReconciliationService:
                 "attached. Every expense needs proof before Finance can approve it."
             )
 
-        recon.recompute(recon.disbursement.amount_issued)
+        recon.recompute(recon.reference_amount)
         recon.mark_submitted()
 
         try:
@@ -497,18 +611,18 @@ class _ReconciliationService:
         offset: int = 0,
         limit: int = 100,
     ) -> List[ReconciliationResponse]:
-        statement = (
-            select(Reconciliation)
-            .join(Disbursement, Disbursement.id == Reconciliation.disbursement_id)  # type: ignore[arg-type]
-            .join(FundsRequest, FundsRequest.id == Disbursement.funds_request_id)  # type: ignore[arg-type]
-            .where(Reconciliation.deleted_at.is_(None))  # type: ignore
+        # technician_id lives directly on Reconciliation now (spec: standalone
+        # recons have no Disbursement/FundsRequest to join through), so this no
+        # longer needs to join out to either.
+        statement = select(Reconciliation).where(
+            Reconciliation.deleted_at.is_(None)  # type: ignore
         )
 
         if not can_read_all_funds(current_user):
             own_id = get_technician_id_for_user(current_user.user_id, session)
-            statement = statement.where(FundsRequest.technician_id == own_id)
+            statement = statement.where(Reconciliation.technician_id == own_id)
         elif technician_id is not None:
-            statement = statement.where(FundsRequest.technician_id == technician_id)
+            statement = statement.where(Reconciliation.technician_id == technician_id)
 
         if status is not None:
             statement = statement.where(Reconciliation.status == status)
@@ -621,6 +735,14 @@ class _ReconciliationService:
                 technician_name = (
                     f"{request.technician.user.name} {request.technician.user.surname}"
                 )
+            else:
+                technician = session.exec(
+                    select(Technician).where(Technician.id == recon.technician_id)
+                ).first()
+                if technician and technician.user:
+                    technician_name = (
+                        f"{technician.user.name} {technician.user.surname}"
+                    )
             get_notification_service().create_notifications_from_template(
                 recipients,
                 NotificationTemplates.reconciliation_submitted(

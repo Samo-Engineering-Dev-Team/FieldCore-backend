@@ -73,6 +73,15 @@ class Technician(BaseDB, BaseTechnician, table=True):
         description="Technician's assigned region, for dashboard grouping (spec §4)",
     )
 
+    # Backs Reconciliation.reference_no ("FR-01", "FR-02", ...). Incremented with
+    # an UPDATE ... RETURNING in the same transaction as the reconciliation
+    # insert, so the row lock serialises concurrent creates for one technician
+    # without a separate sequence table.
+    recon_sequence: int = Field(
+        default=0,
+        description="Last reconciliation reference number issued to this technician",
+    )
+
     user: "User" = Relationship()
     tasks: List["Task"] = Relationship(back_populates="technician")
     access_requests: List["AccessRequest"] = Relationship(back_populates="technician")

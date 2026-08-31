@@ -71,8 +71,13 @@ class ReconciliationLine(BaseDB, BaseReconciliationLine, table=True):
 
 
 class BaseReconciliation(SQLModel, ABC):
-    disbursement_id: UUID = Field(
-        foreign_key="disbursements.id", description="The disbursement being accounted for"
+    # Nullable: a reconciliation may stand alone, accounting for leftover funds a
+    # technician still holds from an earlier disbursement rather than a specific
+    # released request (e.g. R250 left over from a R700 trip, spent elsewhere).
+    disbursement_id: UUID | None = Field(
+        default=None,
+        foreign_key="disbursements.id",
+        description="The disbursement being accounted for, or null for a standalone recon",
     )
 
 
@@ -96,9 +101,42 @@ class Reconciliation(BaseDB, BaseReconciliation, table=True):
             "period_start",
             postgresql_where=text("deleted_at IS NULL"),
         ),
+        # Scoped per technician, not global: two technicians can each have "FR-01".
+        Index(
+            "uq_reconciliations_technician_reference",
+            "technician_id",
+            "reference_no",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
     )
 
     status: ReconciliationStatus = Field(default=ReconciliationStatus.DRAFT)
+
+    technician_id: UUID = Field(
+        foreign_key="technicians.id",
+        description="Set directly at creation for every recon (standalone or "
+        "disbursement-linked) so ownership and the reference sequence don't "
+        "depend on walking disbursement -> funds_request -> technician.",
+    )
+    reference_no: str = Field(
+        max_length=20,
+        description='Per-technician sequence, e.g. "FR-01", "FR-02" — human-friendly '
+        "reference for Finance conversations, independent of the UUID.",
+    )
+    declared_amount: Decimal | None = Field(
+        default=None,
+        sa_column=Column(Numeric(12, 2), nullable=True),
+        description="Self-declared amount being accounted for on a standalone "
+        "recon (no disbursement_id). Plays the role amount_issued plays for a "
+        "disbursement-linked recon.",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=500,
+        description="What a standalone recon is accounting for, e.g. leftover "
+        "cash from a prior disbursement spent on a different job.",
+    )
 
     total_used: Decimal = Field(
         default=_ZERO,
@@ -135,6 +173,10 @@ class Reconciliation(BaseDB, BaseReconciliation, table=True):
     )
     rejection_reason: str | None = Field(default=None, max_length=1000)
 
+    # Typed non-optional per SQLModel/SQLAlchemy convention elsewhere in this
+    # codebase (the ORM attribute is genuinely None at runtime for a standalone
+    # recon; a "X | None" string annotation breaks SQLAlchemy's string-based
+    # relationship class resolution, which does a literal name lookup).
     disbursement: "Disbursement" = Relationship(back_populates="reconciliation")
     lines: List["ReconciliationLine"] = Relationship(
         back_populates="reconciliation",
@@ -144,6 +186,14 @@ class Reconciliation(BaseDB, BaseReconciliation, table=True):
     # ── Behaviour ─────────────────────────────────────────────────────────
     # Pure arithmetic and status mutation, no session access, so the balance
     # maths is testable without a DB.
+
+    @property
+    def reference_amount(self) -> Decimal:
+        """The figure a recon is measured against: the disbursement's issued
+        amount when linked to one, otherwise the technician's own declaration."""
+        if self.disbursement_id is not None:
+            return self.disbursement.amount_issued if self.disbursement else _ZERO
+        return self.declared_amount if self.declared_amount is not None else _ZERO
 
     def recompute(self, amount_issued: Decimal) -> None:
         """
@@ -216,8 +266,22 @@ class ReconciliationLineResponse(BaseDB, BaseReconciliationLine):
 
 class ReconciliationCreate(BaseReconciliation):
     """Opens a DRAFT. Lines are added afterwards so a technician can capture slips
-    incrementally over the week rather than in one sitting."""
+    incrementally over the week rather than in one sitting.
 
+    Exactly one of `disbursement_id` or `declared_amount` must be supplied: the
+    former is the normal "account for this released disbursement" flow, the
+    latter opens a standalone recon for funds the technician holds that were
+    never re-requested (e.g. leftover from an earlier trip, spent on something
+    else). `technician_id` lets management open one on a technician's behalf,
+    the same convention as FundsRequestCreate; a technician always reconciles
+    their own.
+    """
+
+    technician_id: UUID | None = Field(default=None)
+    declared_amount: Decimal | None = Field(
+        default=None, gt=0, max_digits=12, decimal_places=2
+    )
+    description: str | None = Field(default=None, max_length=500)
     lines: List[ReconciliationLineCreate] = Field(default_factory=list)
 
 
@@ -227,9 +291,15 @@ class ReconciliationRejection(SQLModel):
 
 class ReconciliationResponse(BaseDB, BaseReconciliation):
     status: ReconciliationStatus
+    reference_no: str = ""
     total_used: float = 0.0
     outstanding_balance: float = 0.0
-    amount_issued: float = Field(default=0.0, description="From the linked disbursement")
+    amount_issued: float = Field(
+        default=0.0,
+        description="From the linked disbursement, or the technician's own "
+        "declared_amount when this recon is standalone.",
+    )
+    description: str | None = Field(default=None)
     period_start: datetime | None = None
     period_end: datetime | None = None
     submitted_at: datetime | None = None

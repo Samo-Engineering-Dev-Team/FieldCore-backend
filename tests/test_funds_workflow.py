@@ -235,6 +235,33 @@ def test_totals_and_balance():
     assert recon.outstanding_balance == Decimal("100.00")
 
 
+def test_reference_amount_uses_declared_amount_when_standalone():
+    """A recon with no disbursement (opened for funds a technician already
+    holds) is measured against its own declared_amount, not a disbursement."""
+    start, end = funds_period(datetime(2026, 8, 17, 8, 0, tzinfo=SAST))
+    recon = Reconciliation(
+        disbursement_id=None,
+        technician_id=uuid4(),
+        reference_no="FR-01",
+        declared_amount=Decimal("250.00"),
+        period_start=start,
+        period_end=end,
+    )
+    assert recon.reference_amount == Decimal("250.00")
+
+
+def test_reference_amount_is_zero_for_a_standalone_recon_with_no_declaration():
+    start, end = funds_period(datetime(2026, 8, 17, 8, 0, tzinfo=SAST))
+    recon = Reconciliation(
+        disbursement_id=None,
+        technician_id=uuid4(),
+        reference_no="FR-01",
+        period_start=start,
+        period_end=end,
+    )
+    assert recon.reference_amount == Decimal("0.00")
+
+
 def test_balance_is_negative_when_the_technician_overspent():
     recon = make_recon(["600.00"])
     recon.recompute(Decimal("500.00"))

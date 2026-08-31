@@ -317,6 +317,23 @@ class _FundsRequestService:
         ).all()
         return list(rows)
 
+    def outstanding_standalone_reconciliations(
+        self, technician_id: UUID, session: Session
+    ) -> List[Reconciliation]:
+        """Standalone recons (no disbursement) still unapproved. Counts toward
+        eligibility the same as a disbursement-linked one: an open reconciliation
+        is an open reconciliation regardless of where the money it accounts for
+        came from."""
+        rows = session.exec(
+            select(Reconciliation).where(
+                Reconciliation.technician_id == technician_id,
+                Reconciliation.disbursement_id.is_(None),  # type: ignore
+                Reconciliation.deleted_at.is_(None),  # type: ignore
+                Reconciliation.status != ReconciliationStatus.APPROVED,
+            )
+        ).all()
+        return list(rows)
+
     def check_eligibility(
         self,
         technician_id: UUID,
@@ -331,16 +348,20 @@ class _FundsRequestService:
         chase paperwork, not to strand a site.
         """
         outstanding = self.outstanding_reconciliations(technician_id, session)
+        standalone = self.outstanding_standalone_reconciliations(technician_id, session)
         settings = get_system_settings_service()
         enforced = bool(settings.get_setting(HARD_BLOCK_SETTING_KEY, session, False))
         exempt = request_type is FundsRequestType.GENERATOR_REFUEL
 
-        blocked = bool(outstanding) and enforced and not exempt
+        blocked = bool(outstanding or standalone) and enforced and not exempt
 
-        # Funds still physically held: the full issued amount, whatever has or
-        # hasn't been documented against it yet.
+        # Funds still physically held: the full issued/declared amount, whatever
+        # has or hasn't been documented against it yet.
         funds_in_possession = sum(
             (disbursement.amount_issued for _, disbursement, _ in outstanding),
+            start=Decimal("0.00"),
+        ) + sum(
+            (recon.declared_amount or Decimal("0.00") for recon in standalone),
             start=Decimal("0.00"),
         )
         # What is actually unaccounted for: issued minus whatever has already
@@ -353,13 +374,16 @@ class _FundsRequestService:
                 for _, disbursement, recon in outstanding
             ),
             start=Decimal("0.00"),
+        ) + sum(
+            (recon.outstanding_balance for recon in standalone),
+            start=Decimal("0.00"),
         )
 
         return {
             "eligible": not blocked,
             "enforcement_enabled": enforced,
             "exempt_from_enforcement": exempt,
-            "outstanding_count": len(outstanding),
+            "outstanding_count": len(outstanding) + len(standalone),
             "outstanding_request_ids": [r.id for r, _, _ in outstanding],
             # Kept as the true unaccounted-for figure (was previously the sum of
             # requested_amount, which overstated a partially-reconciled disbursement).
