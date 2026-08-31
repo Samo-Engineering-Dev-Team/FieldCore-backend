@@ -289,15 +289,17 @@ class _FundsRequestService:
 
     def outstanding_reconciliations(
         self, technician_id: UUID, session: Session
-    ) -> List[FundsRequest]:
+    ) -> List[tuple[FundsRequest, Disbursement, Reconciliation | None]]:
         """Released disbursements whose reconciliation is missing or unapproved.
 
         Approval of the recon is what clears a technician (§3.1.7), so a
         SUBMITTED-but-unapproved recon still counts as outstanding — the money is
-        not accounted for until Finance says it is.
+        not accounted for until Finance says it is. Returns the disbursement and
+        (if any) reconciliation alongside the request, since eligibility needs the
+        actual issued/spent figures, not the originally requested amount.
         """
         rows = session.exec(
-            select(FundsRequest)
+            select(FundsRequest, Disbursement, Reconciliation)
             .join(Disbursement, Disbursement.funds_request_id == FundsRequest.id)  # type: ignore[arg-type]
             .outerjoin(
                 Reconciliation,
@@ -334,15 +336,36 @@ class _FundsRequestService:
         exempt = request_type is FundsRequestType.GENERATOR_REFUEL
 
         blocked = bool(outstanding) and enforced and not exempt
+
+        # Funds still physically held: the full issued amount, whatever has or
+        # hasn't been documented against it yet.
+        funds_in_possession = sum(
+            (disbursement.amount_issued for _, disbursement, _ in outstanding),
+            start=Decimal("0.00"),
+        )
+        # What is actually unaccounted for: issued minus whatever has already
+        # been reconciled (even in a SUBMITTED, not-yet-approved recon) — not the
+        # full issued amount, or a partially-documented disbursement would still
+        # read as fully outstanding.
+        unreconciled_amount = sum(
+            (
+                recon.outstanding_balance if recon is not None else disbursement.amount_issued
+                for _, disbursement, recon in outstanding
+            ),
+            start=Decimal("0.00"),
+        )
+
         return {
             "eligible": not blocked,
             "enforcement_enabled": enforced,
             "exempt_from_enforcement": exempt,
             "outstanding_count": len(outstanding),
-            "outstanding_request_ids": [r.id for r in outstanding],
-            "outstanding_total": _money(
-                sum((r.requested_amount for r in outstanding), start=Decimal("0.00"))
-            ),
+            "outstanding_request_ids": [r.id for r, _, _ in outstanding],
+            # Kept as the true unaccounted-for figure (was previously the sum of
+            # requested_amount, which overstated a partially-reconciled disbursement).
+            "outstanding_total": _money(unreconciled_amount),
+            "funds_in_possession": _money(funds_in_possession),
+            "unreconciled_amount": _money(unreconciled_amount),
         }
 
     # ── Create / update / cancel ──────────────────────────────────────────
