@@ -27,6 +27,12 @@ class AppSettings(BaseSettings):
     # the SSRF guard still apply to every host listed here.
     PDF_IMAGE_ALLOWED_HOSTS: str = ""
 
+    # In development, uploads are written to disk on this machine instead of
+    # Supabase Storage (see app/services/file.py) — no cloud bucket needed for
+    # local work. This is the base URL the backend itself is reachable at, used
+    # to build the URLs handed back to clients for those local files.
+    LOCAL_UPLOAD_BASE_URL: str = "http://localhost:8000"
+
     # Security
     JWT_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -191,6 +197,10 @@ class AppSettings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENVIRONMENT.strip().lower() == "production"
 
+    @property
+    def is_development(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() == "development"
+
     @model_validator(mode="after")
     def _validate_required(self) -> "AppSettings":
         """Fail fast on missing required config instead of starting broken (H6).
@@ -232,7 +242,7 @@ class AppSettings(BaseSettings):
     # because the swap was forgotten. OS environment variables still win over
     # whichever file is chosen, per pydantic-settings precedence.
     model_config = SettingsConfigDict(
-        env_file=os.getenv("ENV_FILE", ".env"), extra="ignore"
+        env_file=os.getenv("ENV_FILE", ".env.local"), extra="ignore"
     )
 
 

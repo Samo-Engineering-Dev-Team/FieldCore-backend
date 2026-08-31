@@ -22,3 +22,7 @@ wheels/
 *.rvf.lock
 ruvector.db
 **/ruvector.db
+
+# Local file storage used in place of Supabase Storage when ENVIRONMENT=development
+# (see app/services/file.py) — whatever a developer uploads locally stays local.
+/uploads/

@@ -1,5 +1,8 @@
+import hashlib
+import hmac
 import re
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -9,9 +12,59 @@ from storage3._sync.file_api import SyncBucketProxy
 
 from app.core.settings import app_settings
 
+# In development, uploads never touch Supabase — they are written to this
+# folder on the machine running the backend, so local work needs no cloud
+# storage credentials. Resolved from this file's location rather than the
+# process cwd, since uvicorn's --reload can be launched from anywhere.
+LOCAL_UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
+
+LOCAL_UPLOAD_BUCKET = "local"
+
+
+def _local_disk_path(file_path: str) -> Path:
+    """Resolve file_path under LOCAL_UPLOAD_ROOT, rejecting anything that
+    escapes it (e.g. "../../etc/passwd") via ".." segments or an absolute
+    path. file_path reaches here from client-controlled input (the delete
+    endpoint takes it straight off the URL), so containment is enforced here
+    rather than trusted at each call site."""
+    root = LOCAL_UPLOAD_ROOT.resolve()
+    disk_path = (root / file_path).resolve()
+    if not disk_path.is_relative_to(root):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path.",
+        )
+    return disk_path
+
+
+def _local_url(file_path: str) -> str:
+    base = app_settings.LOCAL_UPLOAD_BASE_URL.rstrip("/")
+    return f"{base}/local-uploads/{file_path}"
+
+
+def sign_local_upload_token(file_path: str) -> str:
+    """HMAC over the path, keyed by the JWT secret. Stateless stand-in for a
+    Supabase signed-upload token: the local PUT endpoint checks a caller was
+    actually handed this exact path by create_signed_upload_url, without a
+    server-side token table to expire or clean up."""
+    return hmac.new(
+        app_settings.JWT_SECRET_KEY.encode(), file_path.encode(), hashlib.sha256
+    ).hexdigest()
+
+
+def verify_local_upload_token(file_path: str, token: str) -> bool:
+    return hmac.compare_digest(sign_local_upload_token(file_path), token)
+
+
+def write_local_file(file_path: str, content: bytes) -> None:
+    disk_path = _local_disk_path(file_path)
+    disk_path.parent.mkdir(parents=True, exist_ok=True)
+    disk_path.write_bytes(content)
+
 
 class FileService:
-    """Service for managing file uploads/downloads via Supabase Storage."""
+    """Manages file uploads/downloads: Supabase Storage in staging/production,
+    local disk in development (see LOCAL_UPLOAD_ROOT above)."""
 
     def __init__(self) -> None:
         self.supabase_url: str = app_settings.SUPABASE_URL
@@ -58,6 +111,8 @@ class FileService:
         return f"{folder}/{unique_name}"
 
     def _public_url(self, file_path: str) -> str:
+        if app_settings.is_development:
+            return _local_url(file_path)
         return (
             f"{self.supabase_url}/storage/v1/object/public/{self.bucket}/{file_path}"
         )
@@ -79,19 +134,22 @@ class FileService:
         content_type: str,
         folder: str = "incidents",
     ) -> dict[str, Any]:
-        """Upload a file to Supabase Storage (async)."""
-        self._require_storage_config()
+        """Upload a file (async)."""
         file_path = self._build_file_path(filename, folder)
 
-        try:
-            await self._async_bucket().upload(
-                file_path, file_content, {"content-type": content_type}
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload file: {exc}",
-            )
+        if app_settings.is_development:
+            write_local_file(file_path, file_content)
+        else:
+            self._require_storage_config()
+            try:
+                await self._async_bucket().upload(
+                    file_path, file_content, {"content-type": content_type}
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to upload file: {exc}",
+                )
 
         signed_url: str | None = None
         try:
@@ -118,7 +176,9 @@ class FileService:
     ) -> dict[str, Any]:
         """
         Mint a short-lived signed upload URL so the client can PUT bytes
-        directly to Supabase Storage (bypassing the serverless body cap).
+        directly to storage (bypassing the serverless body cap) — Supabase in
+        staging/production, this backend's own local-upload endpoint in
+        development.
 
         The object path is chosen server-side (uuid + sanitized extension),
         so the client can never inject a path or overwrite an arbitrary object.
@@ -126,9 +186,17 @@ class FileService:
         Returns:
             dict with path, token, predicted public_url, and bucket
         """
-        self._require_storage_config()
         file_path = self._build_file_path(filename, folder)
 
+        if app_settings.is_development:
+            return {
+                "path": file_path,
+                "token": sign_local_upload_token(file_path),
+                "public_url": _local_url(file_path),
+                "bucket": LOCAL_UPLOAD_BUCKET,
+            }
+
+        self._require_storage_config()
         try:
             result = await self._async_bucket().create_signed_upload_url(file_path)
         except Exception as exc:
@@ -161,18 +229,21 @@ class FileService:
         """
         Synchronous variant used by synchronous services (e.g., PDF export flow).
         """
-        self._require_storage_config()
         file_path = self._build_file_path(filename, folder)
 
-        try:
-            self._sync_bucket().upload(
-                file_path, file_content, {"content-type": content_type}
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload file: {exc}",
-            )
+        if app_settings.is_development:
+            write_local_file(file_path, file_content)
+        else:
+            self._require_storage_config()
+            try:
+                self._sync_bucket().upload(
+                    file_path, file_content, {"content-type": content_type}
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to upload file: {exc}",
+                )
 
         signed_url: str | None = None
         try:
@@ -192,7 +263,14 @@ class FileService:
         }
 
     async def delete_file(self, file_path: str) -> bool:
-        """Delete a file from Supabase Storage. Returns True if deleted."""
+        """Delete a file. Returns True if deleted."""
+        if app_settings.is_development:
+            disk_path = _local_disk_path(file_path)
+            if not disk_path.is_file():
+                return False
+            disk_path.unlink()
+            return True
+
         if not self.supabase_url or not self.service_key:
             return False
 
@@ -208,6 +286,9 @@ class FileService:
 
     async def get_signed_url(self, file_path: str, expires_in: int = 3600) -> str:
         """Get a signed URL for private file access (async)."""
+        if app_settings.is_development:
+            return _local_url(file_path)
+
         self._require_storage_config()
         try:
             result = await self._async_bucket().create_signed_url(
@@ -224,6 +305,9 @@ class FileService:
 
     def get_signed_url_sync(self, file_path: str, expires_in: int = 3600) -> str:
         """Synchronous variant for signed URL generation."""
+        if app_settings.is_development:
+            return _local_url(file_path)
+
         self._require_storage_config()
         try:
             result = self._sync_bucket().create_signed_url(file_path, expires_in)

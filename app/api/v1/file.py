@@ -1,11 +1,13 @@
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel
 
+from app.core.settings import app_settings
 from app.services import CurrentUser
-from app.services.authorization import require_management
-from app.services.file import FileService
+from app.services.authorization import is_management, require_management
+from app.services.file import FileService, verify_local_upload_token, write_local_file
+from app.utils.enums import UserRole
 
 router = APIRouter(prefix="/files", tags=["Files"])
 
@@ -146,6 +148,34 @@ async def create_signed_upload_urls(
     return SignedUploadResponse(uploads=uploads)
 
 
+@router.put("/local-upload/{file_path:path}", status_code=204)
+async def local_upload(
+    file_path: str,
+    request: Request,
+    current_user: CurrentUser,
+    token: str = Query(...),
+) -> None:
+    """
+    Development-only counterpart to Supabase's direct-PUT signed upload: the
+    client PUTs raw bytes here instead of to Supabase, and they land on this
+    machine's disk (see FileService / LOCAL_UPLOAD_ROOT). Never minted outside
+    ENVIRONMENT=development — see create_signed_upload_urls above — so this
+    404s if someone calls it directly against a staging/production backend.
+    """
+    if not app_settings.is_development:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    _validate_folder(file_path.split("/", 1)[0] if "/" in file_path else "")
+    if not verify_local_upload_token(file_path, token):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or expired upload token.",
+        )
+
+    body = await request.body()
+    write_local_file(file_path, body)
+
+
 @router.delete("/{file_path:path}", status_code=204)
 async def delete_file(file_path: str, current_user: CurrentUser) -> None:
     """Delete a file from storage."""
@@ -173,9 +203,18 @@ async def get_signed_url(
 
     Useful for private files that need temporary access.
     """
-    require_management(
-        current_user, "Only NOC, managers, or admins can generate signed URLs."
+    # Finance reviews reconciliations, which means opening the expense slips
+    # attached to them (ReconciliationReviewDialog) — recon-slips is opened to
+    # Finance on top of the usual management roles. Every other folder stays
+    # management-only.
+    folder = file_path.split("/", 1)[0] if "/" in file_path else ""
+    allowed = is_management(current_user) or (
+        folder == "recon-slips" and current_user.role == UserRole.FINANCE
     )
+    if not allowed:
+        require_management(
+            current_user, "Only NOC, managers, or admins can generate signed URLs."
+        )
     file_service = FileService()
     signed_url = await file_service.get_signed_url(file_path, expires_in)
     return {"signed_url": signed_url, "expires_in": expires_in}

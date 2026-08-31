@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 # from strawberry.fastapi import GraphQLRouter
 from loguru import logger as LOG
@@ -18,6 +19,7 @@ from app.core.rate_limiter import limiter
 from app.core.scheduler import shutdown_scheduler, start_scheduler
 from app.core.security_headers import SecurityHeadersMiddleware
 from app.database import Database
+from app.services.file import LOCAL_UPLOAD_ROOT
 
 # from app.graphql.schema import schema
 
@@ -76,6 +78,15 @@ if not _cors_origins:
     )
 
 fastapi_app.include_router(router)
+
+if app_settings.is_development:
+    # Serves what app/services/file.py writes to disk in development, so an
+    # uploaded slip/photo/report attachment can be fetched back by the same
+    # URL a Supabase-backed upload would have produced.
+    LOCAL_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    fastapi_app.mount(
+        "/local-uploads", StaticFiles(directory=LOCAL_UPLOAD_ROOT), name="local-uploads"
+    )
 
 # GraphQL router
 # graphql_app = GraphQLRouter(schema)
