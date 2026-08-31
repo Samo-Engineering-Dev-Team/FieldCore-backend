@@ -334,6 +334,49 @@ class _FundsRequestService:
         ).all()
         return list(rows)
 
+    def released_disbursements(
+        self, technician_id: UUID, session: Session
+    ) -> List[tuple[FundsRequest, Disbursement, Reconciliation | None]]:
+        """Every released disbursement, whatever its reconciliation's status.
+
+        Unlike outstanding_reconciliations, this is NOT scoped to unapproved
+        recons — it's for "funds still physically held", and approval signs off
+        the paperwork, it does not hand any leftover cash back. A R450
+        disbursement reconciled for R400 and approved still leaves the
+        technician holding R50 until they account for it (e.g. via a later
+        standalone recon), whatever Finance's sign-off status on the R400 says.
+        """
+        rows = session.exec(
+            select(FundsRequest, Disbursement, Reconciliation)
+            .join(Disbursement, Disbursement.funds_request_id == FundsRequest.id)  # type: ignore[arg-type]
+            .outerjoin(
+                Reconciliation,
+                (Reconciliation.disbursement_id == Disbursement.id)  # type: ignore[arg-type]
+                & Reconciliation.deleted_at.is_(None),  # type: ignore
+            )
+            .where(
+                FundsRequest.technician_id == technician_id,
+                FundsRequest.deleted_at.is_(None),  # type: ignore
+                Disbursement.deleted_at.is_(None),  # type: ignore
+                Disbursement.released_at.is_not(None),  # type: ignore
+            )
+        ).all()
+        return list(rows)
+
+    def all_standalone_reconciliations(
+        self, technician_id: UUID, session: Session
+    ) -> List[Reconciliation]:
+        """Every standalone recon, whatever its status — same reasoning as
+        released_disbursements above."""
+        rows = session.exec(
+            select(Reconciliation).where(
+                Reconciliation.technician_id == technician_id,
+                Reconciliation.disbursement_id.is_(None),  # type: ignore
+                Reconciliation.deleted_at.is_(None),  # type: ignore
+            )
+        ).all()
+        return list(rows)
+
     def check_eligibility(
         self,
         technician_id: UUID,
@@ -355,19 +398,12 @@ class _FundsRequestService:
 
         blocked = bool(outstanding or standalone) and enforced and not exempt
 
-        # Funds still physically held: the full issued/declared amount, whatever
-        # has or hasn't been documented against it yet.
-        funds_in_possession = sum(
-            (disbursement.amount_issued for _, disbursement, _ in outstanding),
-            start=Decimal("0.00"),
-        ) + sum(
-            (recon.declared_amount or Decimal("0.00") for recon in standalone),
-            start=Decimal("0.00"),
-        )
-        # What is actually unaccounted for: issued minus whatever has already
-        # been reconciled (even in a SUBMITTED, not-yet-approved recon) — not the
-        # full issued amount, or a partially-documented disbursement would still
-        # read as fully outstanding.
+        # What is actually unaccounted for, i.e. still needs Finance's sign-off:
+        # issued minus whatever has already been reconciled (even in a
+        # SUBMITTED, not-yet-approved recon) — not the full issued amount, or a
+        # partially-documented disbursement would still read as fully
+        # outstanding. Scoped to unapproved recons only — this is the compliance
+        # queue, and approval is what clears it (spec §3.1.7).
         unreconciled_amount = sum(
             (
                 recon.outstanding_balance if recon is not None else disbursement.amount_issued
@@ -376,6 +412,29 @@ class _FundsRequestService:
             start=Decimal("0.00"),
         ) + sum(
             (recon.outstanding_balance for recon in standalone),
+            start=Decimal("0.00"),
+        )
+
+        # Funds still physically held, independent of sign-off: approval settles
+        # the paperwork on whatever WAS documented, it does not hand back
+        # whatever wasn't spent. A R450 disbursement reconciled for R400 and
+        # approved still leaves R50 in the technician's pocket until they
+        # account for it — so this sums every released disbursement and every
+        # standalone recon regardless of status, clamping each to >= 0 (an
+        # overspent line means they're owed money, not holding any).
+        all_disbursements = self.released_disbursements(technician_id, session)
+        all_standalone = self.all_standalone_reconciliations(technician_id, session)
+        funds_in_possession = sum(
+            (
+                max(
+                    Decimal("0.00"),
+                    recon.outstanding_balance if recon is not None else disbursement.amount_issued,
+                )
+                for _, disbursement, recon in all_disbursements
+            ),
+            start=Decimal("0.00"),
+        ) + sum(
+            (max(Decimal("0.00"), recon.outstanding_balance) for recon in all_standalone),
             start=Decimal("0.00"),
         )
 
