@@ -4,9 +4,10 @@ Reads are open to any authenticated user; writes are management-only
 (super_admin, admin, manager, noc) and enforced in the service layer, not here.
 """
 
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 
 from app.database import SessionDep
 from app.models import (
@@ -15,6 +16,7 @@ from app.models import (
     GeneratorResponse,
     GeneratorUpdate,
 )
+from app.models.report_data import GeneratorDieselHistory
 from app.services import CurrentUser
 from app.services.generator import GeneratorService
 
@@ -56,6 +58,59 @@ def read_generator(
     current_user: CurrentUser,
 ) -> GeneratorResponse:
     return service.read_generator(generator_id, session)
+
+
+
+@router.get(
+    "/{generator_id}/diesel-history",
+    response_model=GeneratorDieselHistory,
+    status_code=200,
+)
+def read_generator_diesel_history(
+    generator_id: UUID,
+    service: GeneratorService,
+    session: SessionDep,
+    current_user: CurrentUser,
+    date_from: datetime | None = Query(
+        None, description="Only include refuels from this date onward"
+    ),
+    date_to: datetime | None = Query(
+        None, description="Only include refuels up to this date"
+    ),
+) -> GeneratorDieselHistory:
+    """Every refuel recorded against one unit, merging the legacy diesel-report
+    fills with the funds ledger."""
+    return service.read_diesel_history(
+        generator_id, session, current_user, date_from, date_to
+    )
+
+
+@router.get("/{generator_id}/diesel-history/export/pdf", status_code=200)
+def export_generator_diesel_history_pdf(
+    generator_id: UUID,
+    service: GeneratorService,
+    session: SessionDep,
+    current_user: CurrentUser,
+    date_from: datetime | None = Query(
+        None, description="Only include refuels from this date onward"
+    ),
+    date_to: datetime | None = Query(
+        None, description="Only include refuels up to this date"
+    ),
+) -> Response:
+    """Export one unit's refuel history as a PDF document."""
+    pdf_buffer, filename = service.export_diesel_history_pdf(
+        generator_id, session, current_user, date_from, date_to
+    )
+    pdf_bytes = pdf_buffer.getvalue()
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(pdf_bytes)),
+        },
+    )
 
 
 @router.patch("/{generator_id}", response_model=GeneratorResponse, status_code=200)

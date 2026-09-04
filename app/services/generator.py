@@ -11,6 +11,8 @@ needs its own validation, and `site_id=None` unassigning is explicit rather than
 indistinguishable from "field omitted".
 """
 
+from datetime import datetime
+from io import BytesIO
 from typing import Annotated
 from uuid import UUID
 
@@ -20,6 +22,7 @@ from sqlmodel import Session, select
 
 from app.exceptions.http import (
     ConflictException,
+    ForbiddenException,
     InternalServerErrorException,
     NotFoundException,
 )
@@ -31,7 +34,18 @@ from app.models import (
     Site,
 )
 from app.models.auth import TokenData
-from app.services.authorization import require_management
+from app.models.disbursement import Disbursement
+from app.models.funds_request import FundsRequest
+from app.models.report_data import GeneratorDieselHistory, GeneratorRefuelEntry
+from app.services.authorization import require_management, require_report_read
+from app.services.finance_dashboard import legacy_refuel_cutover
+from app.services.report_support import (
+    assert_site_history_in_scope,
+    diesel_reports_for_site,
+    flatten_diesel_fillups,
+)
+from app.utils.enums import FundsRequestType
+from app.utils.funcs import format_iso_week, utcnow
 
 
 class _GeneratorService:
@@ -167,6 +181,172 @@ class _GeneratorService:
         except Exception as e:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error assigning generator: {e}")
+
+
+    # ── Refuel history ────────────────────────────────────────────────────
+
+    def read_diesel_history(
+        self,
+        generator_id: UUID,
+        session: Session,
+        current_user: TokenData | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> GeneratorDieselHistory:
+        """
+        Every refuel recorded against one unit, from both sources.
+
+        A unit's refuels live in two places and neither is complete alone:
+
+        * **Diesel report JSON** — litres, runtime, fill reason, and the Rand
+          recorded in the field. Identifies the unit only by free-text `gen_no`,
+          so this leg resolves through `legacy_gen_no` and can only run for a
+          unit that has one *and* is placed at a site.
+        * **The funds ledger** — the Rand actually disbursed, against a real FK.
+          Works regardless of assignment, so an unassigned unit still shows its
+          history: the unit moved, its refuels did not vanish.
+
+        The cutover rule is the Finance Dashboard's, reused rather than
+        restated: litres always come from the report because the ledger never
+        records what was filled; Rand comes from the report before the cutover
+        and from the ledger after, so a fill is never counted twice.
+        """
+        if current_user is not None:
+            require_report_read(
+                current_user, "You do not have permission to read reports."
+            )
+
+        generator = self._get(generator_id, session)
+        entries: list[GeneratorRefuelEntry] = []
+        cutover = legacy_refuel_cutover(session)
+
+        # ── Legacy leg ────────────────────────────────────────────────────
+        if generator.site_id is not None and generator.legacy_gen_no is not None:
+            if current_user is not None:
+                assert_site_history_in_scope(
+                    generator.site_id, current_user, session
+                )
+            reports = diesel_reports_for_site(
+                session, generator.site_id, date_from, date_to
+            )
+            for entry in flatten_diesel_fillups(reports):
+                if entry.gen_no != generator.legacy_gen_no:
+                    continue
+                # Post-cutover Rand belongs to the ledger; taking it from the
+                # report too would double-count the same refuel.
+                pre_cutover = cutover is None or (
+                    entry.fill_date is not None and entry.fill_date < cutover
+                )
+                entries.append(
+                    GeneratorRefuelEntry(
+                        source="report",
+                        fill_date=entry.fill_date,
+                        iso_week=entry.iso_week,
+                        liters_filled=entry.liters_filled,
+                        amount=entry.amount_used if pre_cutover else 0.0,
+                        fill_reason=entry.fill_reason,
+                        gen_runtime_hours=entry.gen_runtime_hours,
+                        technician_name=entry.technician_name,
+                        seacom_ref=entry.seacom_ref,
+                        report_id=entry.report_id,
+                    )
+                )
+        elif current_user is not None and generator.site_id is None:
+            # An unassigned unit has no site to scope a technician against, so
+            # only management may read its history.
+            require_management(
+                current_user,
+                "That generator is not assigned to a site, so only management "
+                "can read its history.",
+            )
+
+        # ── Ledger leg ────────────────────────────────────────────────────
+        ledger_statement = (
+            select(FundsRequest, Disbursement)
+            .join(Disbursement, Disbursement.funds_request_id == FundsRequest.id)  # type: ignore[arg-type]
+            .where(
+                FundsRequest.generator_id == generator_id,
+                FundsRequest.type == FundsRequestType.GENERATOR_REFUEL,
+                FundsRequest.deleted_at.is_(None),  # type: ignore
+                Disbursement.deleted_at.is_(None),  # type: ignore
+            )
+        )
+        if date_from is not None:
+            ledger_statement = ledger_statement.where(
+                Disbursement.approved_at >= date_from  # type: ignore[arg-type]
+            )
+        if date_to is not None:
+            ledger_statement = ledger_statement.where(
+                Disbursement.approved_at <= date_to  # type: ignore[arg-type]
+            )
+
+        for request, disbursement in session.exec(ledger_statement).all():  # type: ignore[misc]
+            released = disbursement.released_at or disbursement.approved_at
+            entries.append(
+                GeneratorRefuelEntry(
+                    source="ledger",
+                    fill_date=released,
+                    iso_week=format_iso_week(released),
+                    # The ledger never records what was actually filled — only
+                    # what was requested — so litres stay with the report leg.
+                    liters_filled=0.0,
+                    amount=float(disbursement.amount_issued or 0),
+                    fill_reason=request.description,
+                    funds_request_id=str(request.id),
+                )
+            )
+
+        # Newest first: the question is almost always "when was this last
+        # filled", not "when did it start".
+        entries.sort(key=lambda e: (e.fill_date is None, e.fill_date), reverse=True)
+        fill_dates = sorted(e.fill_date for e in entries if e.fill_date)
+
+        return GeneratorDieselHistory(
+            generator_id=str(generator.id),
+            generator_name=generator.name,
+            serial_no=generator.serial_no,
+            site_id=str(generator.site_id) if generator.site_id else None,
+            site_name=generator.site.name if generator.site else "",
+            date_from=date_from,
+            date_to=date_to,
+            first_fill_date=fill_dates[0] if fill_dates else None,
+            last_fill_date=fill_dates[-1] if fill_dates else None,
+            entries=entries,
+            entry_count=len(entries),
+            total_liters=round(sum(e.liters_filled for e in entries), 2),
+            total_amount=round(sum(e.amount for e in entries), 2),
+        )
+
+
+    def export_diesel_history_pdf(
+        self,
+        generator_id: UUID,
+        session: Session,
+        current_user: TokenData | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> tuple[BytesIO, str]:
+        """Render this unit's refuel history as a PDF, with its filename."""
+        history = self.read_diesel_history(
+            generator_id, session, current_user, date_from, date_to
+        )
+        try:
+            from app.services.pdf import PDFService
+
+            pdf_buffer = PDFService().generate_generator_diesel_history_pdf(history)
+            slug = (
+                "".join(
+                    ch if ch.isalnum() else "_" for ch in history.generator_name.lower()
+                ).strip("_")
+                or "generator"
+            )
+            filename = f"refuel_history_{slug}_{utcnow().strftime('%Y%m%d')}.pdf"
+            pdf_buffer.seek(0)
+            return pdf_buffer, filename
+        except (ForbiddenException, NotFoundException):
+            raise
+        except Exception as e:
+            raise InternalServerErrorException(f"Failed to generate PDF: {e}")
 
     def delete_generator(
         self, generator_id: UUID, session: Session, current_user: TokenData

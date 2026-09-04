@@ -51,7 +51,7 @@ from app.utils.funcs import format_iso_week, parse_diesel_runtime_minutes, utcno
 
 if TYPE_CHECKING:
     from app.models import IncidentReport
-    from app.models.report_data import DieselSiteHistory
+    from app.models.report_data import DieselSiteHistory, GeneratorDieselHistory
 
 # Imported lazily inside generate_incident_report_pdf to avoid circular import at module load
 # from app.models import IncidentReport
@@ -5639,6 +5639,176 @@ class PDFService:
                 )
             )
             story.append(Spacer(1, 6 * mm))
+
+    def generate_generator_diesel_history_pdf(
+        self, history: "GeneratorDieselHistory"
+    ) -> BytesIO:
+        """Generate one unit's refuel history PDF.
+
+        Its own renderer rather than the per-site one: this history merges two
+        sources into a single flat timeline and carries a Source column, where
+        the site history is grouped into per-generator sections. Forcing one
+        into the other's shape would misreport both.
+        """
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20 * mm,
+            leftMargin=20 * mm,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+            title=f"Refuel_History_{history.generator_name}",
+        )
+
+        story: list = []
+        primary_hex, accent_hex = self._cover_palette("diesel")
+        generated_display = self._format_datetime(utcnow())
+        title = "Generator Refuel History"
+        site_label = history.site_name or "Unassigned"
+
+        def date_label(value: "datetime | None") -> str:
+            return value.strftime("%d/%m/%Y") if value else "N/A"
+
+        story.extend(
+            self._build_field_cover_page(
+                report_type_label="Generator Diesel Refill",
+                title=title,
+                site=site_label,
+                subtitle=_FIELDCORE_REPORT_LABEL,
+                descriptor=(
+                    "Every refuel recorded against this generator, compiled for "
+                    "operational review, archive, and audit traceability."
+                ),
+                detail_items=[
+                    ("Generator", history.generator_name),
+                    ("Serial Number", history.serial_no or "Not recorded"),
+                    ("Site", site_label),
+                    ("Fill Entries", str(history.entry_count)),
+                    (
+                        "Total Liters",
+                        self._format_diesel_liters(history.total_liters, fixed=True),
+                    ),
+                    ("Total Spend", self._format_diesel_amount(history.total_amount)),
+                    ("Generated", generated_display),
+                ],
+                generated_at=generated_display,
+                accent_hex=accent_hex,
+            )
+        )
+        story.extend(
+            self._build_field_page_header(
+                title=title,
+                subtitle=f"{_FIELDCORE_REPORT_LABEL} | {history.generator_name}",
+                accent_hex=accent_hex,
+            )
+        )
+
+        story.extend(
+            self._repeater_section_header("1. Unit Overview", primary_hex, accent_hex)
+        )
+        story.append(
+            self._build_field_metric_cards(
+                [
+                    ("Fill Entries", str(history.entry_count)),
+                    (
+                        "Total Liters",
+                        self._format_diesel_liters(history.total_liters, fixed=True),
+                    ),
+                    ("Total Spend", self._format_diesel_amount(history.total_amount)),
+                    (
+                        "Covered",
+                        f"{date_label(history.first_fill_date)} - "
+                        f"{date_label(history.last_fill_date)}",
+                    ),
+                ],
+                accent_hex=accent_hex,
+            )
+        )
+        story.append(Spacer(1, 4 * mm))
+
+        story.extend(
+            self._repeater_section_header("2. Refuel History", primary_hex, accent_hex)
+        )
+
+        rows: list[list[str]] = []
+        for entry in history.entries:
+            week = entry.iso_week.replace("WEEK ", "W")
+            short_date = (
+                entry.fill_date.strftime("%d/%m/%y") if entry.fill_date else "N/A"
+            )
+            rows.append(
+                [
+                    f"{short_date} {week}",
+                    # Named so a reader can see why a row has litres but no Rand,
+                    # or the reverse — the two sources record different things.
+                    "Report" if entry.source == "report" else "Ledger",
+                    self._format_diesel_liters_plain(entry.liters_filled),
+                    self._format_diesel_amount(entry.amount),
+                    self._format_diesel_runtime(entry.gen_runtime_hours),
+                    str(entry.fill_reason or "Not specified"),
+                    str(entry.technician_name or "N/A"),
+                ]
+            )
+
+        if rows:
+            rows.append(
+                [
+                    "Total",
+                    "",
+                    self._format_diesel_liters_plain(history.total_liters),
+                    self._format_diesel_amount(history.total_amount),
+                    "",
+                    f"{history.entry_count} entries",
+                    "",
+                ]
+            )
+            story.append(
+                self._build_field_data_table(
+                    headers=[
+                        "Date / Week",
+                        "Source",
+                        "Liters",
+                        "Amount (R)",
+                        "Runtime",
+                        "Fill Reason",
+                        "Technician",
+                    ],
+                    rows=rows,
+                    # Sums to the 170mm portrait content width, as the per-site
+                    # table does.
+                    col_widths=[
+                        28 * mm,
+                        18 * mm,
+                        16 * mm,
+                        24 * mm,
+                        20 * mm,
+                        32 * mm,
+                        32 * mm,
+                    ],
+                    primary_hex=primary_hex,
+                )
+            )
+        else:
+            story.append(
+                Paragraph(
+                    "<i>No refuels recorded against this unit.</i>",
+                    self.styles["Normal"],
+                )
+            )
+
+        story.append(Spacer(1, 8))
+        story.append(
+            Paragraph(
+                f"Generated on {generated_display} UTC | Generator: "
+                f"{history.generator_name}",
+                self.styles["Footer"],
+            )
+        )
+
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
 
     def generate_diesel_history_pdf(self, history: "DieselSiteHistory") -> BytesIO:
         """Generate the per-site diesel fill-up history PDF."""

@@ -78,6 +78,46 @@ added without backfilling production, so this is an expected state, not bad
 data — and Finance still needs those technicians to appear in a regional view."""
 
 
+def legacy_refuel_cutover(session: Session) -> datetime | None:
+    """The instant the funds ledger took over from diesel-report amounts.
+
+    Explicit setting wins. Otherwise the first released generator-refuel
+    disbursement: before it there was no ledger, after it every refuel should
+    have one. Returns None when neither exists, meaning every diesel report is
+    still legacy — correct before go-live, and harmless because the ledger is
+    empty then anyway.
+
+    Module-level so the per-generator refuel history applies the same boundary
+    as the Finance Dashboard; two definitions would drift and the same fill
+    would be counted differently on the two screens.
+    """
+    configured = get_system_settings_service().get_setting(
+        LEGACY_CUTOVER_KEY, session, None
+    )
+    if configured:
+        try:
+            return datetime.fromisoformat(str(configured))
+        except ValueError:
+            LOG.warning(
+                "Ignoring unparseable {} setting: {!r}",
+                LEGACY_CUTOVER_KEY,
+                configured,
+            )
+
+    return session.exec(
+        select(Disbursement.released_at)
+        .join(FundsRequest, FundsRequest.id == Disbursement.funds_request_id)  # type: ignore[arg-type]
+        .where(
+            FundsRequest.type == FundsRequestType.GENERATOR_REFUEL,
+            FundsRequest.deleted_at.is_(None),  # type: ignore
+            Disbursement.deleted_at.is_(None),  # type: ignore
+            Disbursement.released_at.is_not(None),  # type: ignore
+        )
+        .order_by(Disbursement.released_at.asc())  # type: ignore[attr-defined]
+        .limit(1)
+    ).first()
+
+
 def _money(value: Decimal | float | None) -> float:
     if value is None:
         return 0.0
@@ -285,39 +325,8 @@ class _FinanceDashboardService:
     # ── Chart 1: refuelling by site (spec §5.2) ───────────────────────────
 
     def _legacy_cutover(self, session: Session) -> datetime | None:
-        """The instant the funds ledger took over from diesel-report amounts.
-
-        Explicit setting wins. Otherwise the first released generator-refuel
-        disbursement: before it there was no ledger, after it every refuel should
-        have one. Returns None when neither exists, meaning every diesel report
-        is still legacy — correct before go-live, and harmless because the ledger
-        is empty then anyway.
-        """
-        configured = get_system_settings_service().get_setting(
-            LEGACY_CUTOVER_KEY, session, None
-        )
-        if configured:
-            try:
-                return datetime.fromisoformat(str(configured))
-            except ValueError:
-                LOG.warning(
-                    "Ignoring unparseable {} setting: {!r}",
-                    LEGACY_CUTOVER_KEY,
-                    configured,
-                )
-
-        return session.exec(
-            select(Disbursement.released_at)
-            .join(FundsRequest, FundsRequest.id == Disbursement.funds_request_id)  # type: ignore[arg-type]
-            .where(
-                FundsRequest.type == FundsRequestType.GENERATOR_REFUEL,
-                FundsRequest.deleted_at.is_(None),  # type: ignore
-                Disbursement.deleted_at.is_(None),  # type: ignore
-                Disbursement.released_at.is_not(None),  # type: ignore
-            )
-            .order_by(Disbursement.released_at.asc())  # type: ignore[attr-defined]
-            .limit(1)
-        ).first()
+        """See `legacy_refuel_cutover` — kept as a method for the callers here."""
+        return legacy_refuel_cutover(session)
 
     def _diesel_fills(
         self, session: Session, start: datetime, end: datetime

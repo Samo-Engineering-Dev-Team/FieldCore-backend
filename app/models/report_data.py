@@ -188,6 +188,56 @@ class DieselSiteHistory(BaseModel):
     total_amount: float = 0.0
 
 
+# ── Per-generator refuel history ─────────────────────────────────────────
+#
+# Read-side shapes only. A unit's refuels come from two places and neither is
+# complete on its own:
+#
+#   * diesel report JSON — litres, runtime, fill reason, and the Rand recorded
+#     in the field. Identifies the unit only by free-text gen_no.
+#   * the funds ledger — the Rand actually disbursed, against a real FK.
+#
+# `finance_dashboard` already fixes the rule: litres always come from the
+# report, because the ledger never records what was actually filled; Rand comes
+# from the report for pre-cutover fills and from the ledger after. This reuses
+# that rule rather than inventing a second one.
+
+
+class GeneratorRefuelEntry(BaseModel):
+    """One refuel against a unit, from either source."""
+
+    source: str = Field(description='"report" or "ledger"')
+    fill_date: datetime | None = None
+    iso_week: str = Field(default="N/A")
+    liters_filled: float = 0.0
+    amount: float = 0.0
+    fill_reason: str | None = None
+    gen_runtime_hours: str | float | None = None
+    technician_name: str | None = None
+    seacom_ref: str | None = None
+    # Exactly one of these is set, matching `source`.
+    report_id: str | None = None
+    funds_request_id: str | None = None
+
+
+class GeneratorDieselHistory(BaseModel):
+    """Every refuel recorded against one generator, both sources merged."""
+
+    generator_id: str
+    generator_name: str
+    serial_no: str | None = None
+    site_id: str | None = None
+    site_name: str = ""
+    date_from: datetime | None = None
+    date_to: datetime | None = None
+    first_fill_date: datetime | None = None
+    last_fill_date: datetime | None = None
+    entries: list[GeneratorRefuelEntry] = Field(default_factory=list)
+    entry_count: int = 0
+    total_liters: float = 0.0
+    total_amount: float = 0.0
+
+
 # ── Routine Drive / Route Patrol ─────────────────────────────────────────
 
 

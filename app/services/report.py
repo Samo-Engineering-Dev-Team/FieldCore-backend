@@ -19,7 +19,6 @@ from app.models import (
     Site,
     Task,
     Technician,
-    TechnicianSite,
 )
 from app.models.auth import TokenData
 from app.models.report_data import (
@@ -41,15 +40,16 @@ from app.services.authorization import (
 )
 from app.services.maintenance_schedule import get_maintenance_schedule_service
 from app.services.report_support import (
-    coerce_diesel_gen_no,
+    assert_site_history_in_scope,
+    diesel_reports_for_site,
+    flatten_diesel_fillups,
     record_generator_meter_readings,
-    coerce_diesel_number,
     create_noc_notifications,
     normalize_attachment_item,
     normalize_attachments,
     validate_report_data_schema,
 )
-from app.utils.funcs import format_iso_week, parse_diesel_runtime_minutes, utcnow
+from app.utils.funcs import parse_diesel_runtime_minutes, utcnow
 
 
 class _ReportService:
@@ -610,27 +610,9 @@ class _ReportService:
         current_user: TokenData,
         session: Session,
     ) -> None:
-        """
-        Narrow technicians to their assigned sites.
-
-        Per-report export already restricts a technician to their own reports
-        (`_assert_can_access_report`). Site history spans every technician's
-        fill-ups, so the equivalent boundary here is site assignment.
-        """
-        if current_user.role != UserRole.TECHNICIAN:
-            return
-
-        technician = self._get_technician_by_user(current_user.user_id, session)
-        assignment = session.exec(
-            select(TechnicianSite).where(
-                TechnicianSite.technician_id == technician.id,
-                TechnicianSite.site_id == site_id,
-            )
-        ).first()
-        if assignment is None:
-            raise ForbiddenException(
-                "Technicians can only view diesel history for their assigned sites"
-            )
+        """See `assert_site_history_in_scope` — shared with the per-generator
+        history so a technician cannot reach through one what the other denies."""
+        assert_site_history_in_scope(site_id, current_user, session)
 
     def read_diesel_site_history(
         self,
@@ -666,66 +648,15 @@ class _ReportService:
         if current_user is not None:
             self._assert_site_history_in_scope(site_id, current_user, session)
 
-        conditions = [
-            Report.report_type == ReportType.DIESEL,
-            Report.status == ReportStatus.COMPLETED,
-            Report.deleted_at.is_(None),  # type: ignore[union-attr]
-            Task.site_id == site_id,
-        ]
-        if date_from is not None:
-            conditions.append(Report.created_at >= date_from)  # type: ignore[arg-type]
-        if date_to is not None:
-            conditions.append(Report.created_at <= date_to)  # type: ignore[arg-type]
-
-        statement = (
-            select(Report)
-            .join(Task, Task.id == Report.task_id)  # type: ignore[arg-type]
-            .options(
-                selectinload(Report.task).selectinload(Task.site),  # type: ignore[arg-type]
-                selectinload(Report.technician).selectinload(Technician.user),  # type: ignore[arg-type]
-            )
-            .where(*conditions)
-            .order_by(Report.created_at)  # type: ignore[arg-type]
-        )
-        reports: list[Report] = list(session.exec(statement).all())
+        # The query and the flatten both live in report_support so the
+        # per-generator history (GeneratorService) reads fill-ups exactly the
+        # same way — including coerce_diesel_gen_no's rule that an entry with
+        # no usable gen_no lands in generator 1.
+        reports = diesel_reports_for_site(session, site_id, date_from, date_to)
 
         buckets: dict[int, list[DieselHistoryEntry]] = {1: [], 2: []}
-        for report in reports:
-            data = report.data if isinstance(report.data, dict) else {}
-            fillups = data.get("diesel_fillups")
-            if not isinstance(fillups, list):
-                continue
-
-            technician_name = None
-            if report.technician and report.technician.user:
-                technician_name = (
-                    f"{report.technician.user.name} {report.technician.user.surname}"
-                )
-            seacom_ref = report.seacom_ref or (
-                report.task.seacom_ref if report.task else None
-            )
-
-            for raw in fillups:
-                if not isinstance(raw, dict):
-                    continue
-                gen_no, inferred = coerce_diesel_gen_no(raw.get("gen_no"))
-                buckets[gen_no].append(
-                    DieselHistoryEntry(
-                        report_id=str(report.id),
-                        fill_date=report.created_at,
-                        iso_week=format_iso_week(report.created_at),
-                        gen_no=gen_no,
-                        gen_no_inferred=inferred,
-                        liters_filled=coerce_diesel_number(raw.get("liters_filled")),
-                        amount_used=coerce_diesel_number(raw.get("amount_used")),
-                        fill_reason=(
-                            str(raw["fill_reason"]) if raw.get("fill_reason") else None
-                        ),
-                        gen_runtime_hours=raw.get("gen_runtime_hours"),
-                        technician_name=technician_name,
-                        seacom_ref=seacom_ref,
-                    )
-                )
+        for entry in flatten_diesel_fillups(reports):
+            buckets[entry.gen_no].append(entry)
 
         generators: list[DieselGeneratorHistory] = []
         for gen_no in (1, 2):
