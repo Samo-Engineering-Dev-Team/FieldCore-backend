@@ -125,3 +125,75 @@ def funds_period_label(start: datetime) -> str:
     if start_local.year == end_local.year:
         return f"{start_local:%-d %b} – {end_local:%-d %b %Y}"
     return f"{start_local:%-d %b %Y} – {end_local:%-d %b %Y}"
+
+
+# ── Generator hour meter ─────────────────────────────────────────────────
+#
+# A generator's hour meter is captured as `HHMM:SS` — a 4-digit (or longer)
+# hours block, then minutes, joined by a colon the UI inserts itself. Readings
+# are stored as an integer number of seconds so they subtract exactly:
+# `hours_since_last_service` is a plain integer difference, not a rounded
+# Decimal. Mirrored client-side by `parseHourMeter`/`formatHourMeter` in the
+# frontend's `src/lib/hour-meter.ts` and mobile's `lib/hour-meter.ts` — keep
+# all three in step.
+
+_HOUR_METER_COLON = re.compile(r"^(\d{1,6}):([0-5]?\d)$")
+# Legacy notation already in the diesel payloads, e.g. "2345H45M" / "12H30M".
+_HOUR_METER_HM = re.compile(r"^(\d{1,6})H(?:([0-5]?\d)M?)?$", re.IGNORECASE)
+
+MAX_HOUR_METER_HOURS = 999999
+
+
+def parse_hour_meter(value: Any) -> int | None:
+    """
+    Parse an hour-meter reading into total seconds.
+
+    Accepts the canonical `HHMM:SS` form ("2345:45"), the legacy H/M notation
+    still sitting in historical diesel payloads ("2345H45M"), and a bare number
+    of hours ("1234.2", 1234.2) — the one decimal reading the seed data carries.
+
+    Returns None when the value is missing or unparseable, rather than raising:
+    a technician's submission must never be rejected over a meter reading, and
+    the caller records nothing instead (see the routine-inspection writeback).
+    """
+    if value is None or isinstance(value, bool):
+        return None
+
+    if isinstance(value, (int, float)):
+        if value < 0:
+            return None
+        return round(float(value) * 3600)
+
+    text_value = str(value).strip().upper().replace(" ", "")
+    if not text_value:
+        return None
+
+    match = _HOUR_METER_COLON.match(text_value) or _HOUR_METER_HM.match(text_value)
+    if match:
+        hours = int(match.group(1))
+        minutes = int(match.group(2)) if match.group(2) else 0
+        if hours > MAX_HOUR_METER_HOURS:
+            return None
+        return hours * 3600 + minutes * 60
+
+    try:
+        hours_only = float(text_value)
+    except ValueError:
+        return None
+    if hours_only < 0 or hours_only > MAX_HOUR_METER_HOURS:
+        return None
+    return round(hours_only * 3600)
+
+
+def format_hour_meter(total_seconds: int | None) -> str | None:
+    """
+    Render stored seconds back as `HHMM:SS`, e.g. 8444700 -> "2345:45".
+
+    Seconds below a whole minute are dropped, not rounded up: a meter reads in
+    minutes, so showing 2345:46 for 2345:45:59 would overstate the reading.
+    """
+    if total_seconds is None or total_seconds < 0:
+        return None
+    hours, remainder = divmod(int(total_seconds), 3600)
+    minutes = remainder // 60
+    return f"{hours}:{minutes:02d}"

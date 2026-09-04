@@ -167,7 +167,7 @@ class _FundsRequestService:
             technician_region=region.value if region else None,
             site_name=request.site.name if request.site else None,
             generator_display_name=(
-                request.generator.display_name if request.generator else None
+                request.generator.name if request.generator else None
             ),
             disbursement_id=disbursement.id if disbursement else None,
             amount_issued=amount_issued,
@@ -275,6 +275,13 @@ class _FundsRequestService:
         ).first()
         if generator is None:
             raise NotFoundException("generator not found")
+        if generator.site_id is None:
+            # A unit may now be registered without a site. It cannot be refuelled
+            # until it is placed, because the refuel is invoiced against the site.
+            raise BadRequestException(
+                f"{generator.name} is not assigned to a site yet. Assign it to the "
+                "site being refuelled before raising the request."
+            )
         if generator.site_id != site_id:
             raise BadRequestException(
                 "That generator belongs to a different site. Pick a unit at the "
@@ -282,7 +289,7 @@ class _FundsRequestService:
             )
         if not generator.is_active:
             raise BadRequestException(
-                f"{generator.display_name} is decommissioned and cannot be refuelled."
+                f"{generator.name} is decommissioned and cannot be refuelled."
             )
 
     # ── Eligibility (spec §6, §7 Q1) ──────────────────────────────────────

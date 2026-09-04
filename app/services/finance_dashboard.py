@@ -418,10 +418,19 @@ class _FinanceDashboardService:
                 select(Site).where(Site.deleted_at.is_(None))  # type: ignore
             ).all()
         }
+        # Keyed on legacy_gen_no, not the unit's name: legacy diesel report JSON
+        # identifies a unit only by that free-text number and is never rewritten,
+        # so it stays the only way to resolve a historical fill. Units registered
+        # after the asset register landed carry no legacy number and simply do
+        # not resolve here — correctly, since they have no legacy fills.
         generators = {
-            (gen.site_id, gen.gen_no): gen
+            (gen.site_id, gen.legacy_gen_no): gen
             for gen in session.exec(
-                select(Generator).where(Generator.deleted_at.is_(None))  # type: ignore
+                select(Generator).where(
+                    Generator.deleted_at.is_(None),  # type: ignore
+                    Generator.site_id.is_not(None),  # type: ignore
+                    Generator.legacy_gen_no.is_not(None),  # type: ignore
+                )
             ).all()
         }
 
@@ -458,8 +467,8 @@ class _FinanceDashboardService:
             gen_no = 1
             if request.generator_id is not None:
                 generator = session.get(Generator, request.generator_id)
-                if generator is not None:
-                    gen_no = generator.gen_no
+                if generator is not None and generator.legacy_gen_no is not None:
+                    gen_no = generator.legacy_gen_no
             bucket(request.site_id, gen_no)["amount"] += float(
                 disbursement.amount_issued or _ZERO
             )
@@ -479,7 +488,7 @@ class _FinanceDashboardService:
                             {
                                 "gen_no": gen_no,
                                 "display_name": (
-                                    generators[(site_id, gen_no)].display_name
+                                    generators[(site_id, gen_no)].name
                                     if (site_id, gen_no) in generators
                                     else f"Gen {gen_no}"
                                 ),

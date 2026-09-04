@@ -1,11 +1,17 @@
-"""Generator unit registry (spec §4).
+"""Generator asset register.
 
-Small CRUD service. Exists in Phase 2 because a technician cannot raise a
-generator refuel request without picking a unit, and the units have to be
-registered before that picker has anything in it.
+CRUD over the physical units, plus site assignment. Writes are management-only
+(`require_management` — super_admin, admin, manager, noc); reads are open to any
+authenticated user, because a technician has to list units to pick the one they
+are refuelling.
+
+Site assignment is its own operation rather than a field on the generic update:
+it is the one change with a real-world action behind it (a unit was moved), it
+needs its own validation, and `site_id=None` unassigning is explicit rather than
+indistinguishable from "field omitted".
 """
 
-from typing import Annotated, List
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends
@@ -30,18 +36,7 @@ from app.services.authorization import require_management
 
 class _GeneratorService:
     def _to_response(self, generator: Generator) -> GeneratorResponse:
-        return GeneratorResponse(
-            id=generator.id,
-            created_at=generator.created_at,
-            updated_at=generator.updated_at,
-            deleted_at=generator.deleted_at,
-            site_id=generator.site_id,
-            gen_no=generator.gen_no,
-            label=generator.label,
-            is_active=generator.is_active,
-            display_name=generator.display_name,
-            site_name=generator.site.name if generator.site else "",
-        )
+        return GeneratorResponse.from_generator(generator)
 
     def _get(self, generator_id: UUID, session: Session) -> Generator:
         generator = session.exec(
@@ -54,18 +49,49 @@ class _GeneratorService:
             raise NotFoundException("generator not found")
         return generator
 
+    def _get_site(self, site_id: UUID, session: Session) -> Site:
+        site = session.exec(
+            select(Site).where(
+                Site.id == site_id,
+                Site.deleted_at.is_(None),  # type: ignore
+            )
+        ).first()
+        if site is None:
+            raise NotFoundException("site not found")
+        return site
+
+    def _duplicate_serial(self, serial_no: str | None) -> ConflictException:
+        # The partial unique index on serial_no is the only realistic cause of an
+        # IntegrityError here; name the unit rather than surfacing the raw
+        # constraint error.
+        return ConflictException(
+            f"Serial number {serial_no} is already registered to another generator. "
+            "Check the plate, or reactivate the existing unit."
+        )
+
     def read_generators(
         self,
         session: Session,
         site_id: UUID | None = None,
+        unassigned: bool = False,
         include_inactive: bool = False,
-    ) -> List[GeneratorResponse]:
+    ) -> list[GeneratorResponse]:
+        """
+        List units, newest naming order aside — ordered by name so the grid reads
+        alphabetically rather than by insertion.
+
+        `site_id` and `unassigned` are separate filters on purpose: `unassigned`
+        cannot be expressed as a site id, and asking for both is a contradiction
+        the caller resolves, not this method (site_id wins).
+        """
         statement = select(Generator).where(Generator.deleted_at.is_(None))  # type: ignore
         if site_id is not None:
             statement = statement.where(Generator.site_id == site_id)
+        elif unassigned:
+            statement = statement.where(Generator.site_id.is_(None))  # type: ignore
         if not include_inactive:
             statement = statement.where(Generator.is_active)  # type: ignore[arg-type]
-        statement = statement.order_by(Generator.site_id, Generator.gen_no)  # type: ignore[arg-type]
+        statement = statement.order_by(Generator.name)  # type: ignore[arg-type]
         return [self._to_response(g) for g in session.exec(statement).all()]
 
     def read_generator(self, generator_id: UUID, session: Session) -> GeneratorResponse:
@@ -76,14 +102,10 @@ class _GeneratorService:
     ) -> GeneratorResponse:
         require_management(current_user, "Only management may register a generator")
 
-        site = session.exec(
-            select(Site).where(
-                Site.id == payload.site_id,
-                Site.deleted_at.is_(None),  # type: ignore
-            )
-        ).first()
-        if site is None:
-            raise NotFoundException("site not found")
+        # A site is optional — a unit can be registered before it is placed — so
+        # it is validated only when one was given.
+        if payload.site_id is not None:
+            self._get_site(payload.site_id, session)
 
         generator = Generator(**payload.model_dump())
         try:
@@ -93,12 +115,7 @@ class _GeneratorService:
             return self._to_response(generator)
         except IntegrityError:
             session.rollback()
-            # The partial unique index on (site_id, gen_no) is the only realistic
-            # cause; name it rather than surfacing the raw constraint error.
-            raise ConflictException(
-                f"{site.name} already has a Gen {payload.gen_no}. "
-                "Use a different unit number, or reactivate the existing one."
-            )
+            raise self._duplicate_serial(payload.serial_no)
         except Exception as e:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error creating generator: {e}")
@@ -122,12 +139,34 @@ class _GeneratorService:
             return self._to_response(generator)
         except IntegrityError:
             session.rollback()
-            raise ConflictException(
-                f"Another active unit at this site already uses Gen {payload.gen_no}."
-            )
+            raise self._duplicate_serial(payload.serial_no)
         except Exception as e:
             session.rollback()
             raise InternalServerErrorException(f"Unexpected error updating generator: {e}")
+
+    def assign_site(
+        self,
+        generator_id: UUID,
+        site_id: UUID | None,
+        session: Session,
+        current_user: TokenData,
+    ) -> GeneratorResponse:
+        """Assign a unit to a site, or unassign it when `site_id` is None."""
+        require_management(current_user, "Only management may assign a generator to a site")
+        generator = self._get(generator_id, session)
+        if site_id is not None:
+            self._get_site(site_id, session)
+
+        generator.site_id = site_id
+        generator.touch()
+        try:
+            session.add(generator)
+            session.commit()
+            session.refresh(generator)
+            return self._to_response(generator)
+        except Exception as e:
+            session.rollback()
+            raise InternalServerErrorException(f"Unexpected error assigning generator: {e}")
 
     def delete_generator(
         self, generator_id: UUID, session: Session, current_user: TokenData

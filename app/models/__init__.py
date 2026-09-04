@@ -126,6 +126,7 @@ from .sheq_submission import (
 )
 from .generator import (
     Generator,
+    GeneratorAssignSite,
     GeneratorCreate,
     GeneratorUpdate,
     GeneratorResponse,
@@ -281,6 +282,7 @@ __all__ = [
     "SheqSubmissionResponse",
     "SheqSignatureCreate",
     "Generator",
+    "GeneratorAssignSite",
     "GeneratorCreate",
     "GeneratorUpdate",
     "GeneratorResponse",
