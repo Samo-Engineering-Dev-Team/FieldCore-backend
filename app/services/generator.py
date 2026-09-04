@@ -217,15 +217,31 @@ class _GeneratorService:
             )
 
         generator = self._get(generator_id, session)
+
+        # Authorization depends only on where the unit is, never on which data
+        # source happens to have rows. Tying it to a leg left a unit that is
+        # placed at a site but has no legacy_gen_no — every unit registered
+        # through the asset register — checked by neither branch, while the
+        # ledger leg below still returned its history.
+        if current_user is not None:
+            if generator.site_id is not None:
+                assert_site_history_in_scope(generator.site_id, current_user, session)
+            else:
+                # An unassigned unit has no site to scope a technician against,
+                # so only management may read it.
+                require_management(
+                    current_user,
+                    "That generator is not assigned to a site, so only management "
+                    "can read its history.",
+                )
+
         entries: list[GeneratorRefuelEntry] = []
         cutover = legacy_refuel_cutover(session)
 
         # ── Legacy leg ────────────────────────────────────────────────────
+        # Only resolvable for a unit that is placed and carries a legacy number;
+        # a unit registered through the asset register has no legacy fills.
         if generator.site_id is not None and generator.legacy_gen_no is not None:
-            if current_user is not None:
-                assert_site_history_in_scope(
-                    generator.site_id, current_user, session
-                )
             reports = diesel_reports_for_site(
                 session, generator.site_id, date_from, date_to
             )
@@ -251,14 +267,6 @@ class _GeneratorService:
                         report_id=entry.report_id,
                     )
                 )
-        elif current_user is not None and generator.site_id is None:
-            # An unassigned unit has no site to scope a technician against, so
-            # only management may read its history.
-            require_management(
-                current_user,
-                "That generator is not assigned to a site, so only management "
-                "can read its history.",
-            )
 
         # ── Ledger leg ────────────────────────────────────────────────────
         ledger_statement = (
