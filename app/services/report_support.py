@@ -428,3 +428,69 @@ def append_attachment_entry(
     items.append(entry)
     payload[bucket] = items
     return payload
+
+
+# ── Generator hour-meter writeback ───────────────────────────────────────
+
+
+def section_hour_meter_reading(data: Any, section: str) -> Any:
+    """
+    Pull `standbyHourMeterAfterTest` out of one generator section.
+
+    `data` is untyped JSONB, so nothing guarantees the shape. The web and mobile
+    forms nest the answers under `questions`, but drafts written by older
+    clients put them flat on the section — read both rather than losing a
+    reading to a shape difference.
+    """
+    if not isinstance(data, dict):
+        return None
+    block = data.get(section)
+    if not isinstance(block, dict):
+        return None
+    questions = block.get("questions")
+    if isinstance(questions, dict) and "standbyHourMeterAfterTest" in questions:
+        return questions.get("standbyHourMeterAfterTest")
+    return block.get("standbyHourMeterAfterTest")
+
+
+def record_generator_meter_readings(inspection: Any, session: Session) -> None:
+    """
+    Carry an inspection's hour-meter readings onto the units it was filled in
+    against.
+
+    This is what keeps `Generator.current_run_seconds` from going stale: the
+    inspection is the only moment someone actually reads the meter. Shared by
+    the repeater report (where inspections are really captured) and the routine
+    inspection service, so the two cannot drift apart.
+
+    Takes anything carrying `data`, `gen1_generator` and `gen2_generator` —
+    both models expose exactly that.
+
+    Two rules, both deliberate:
+
+    * An unparseable reading is skipped, not raised. The submission is the
+      technician's work and must not be rejected over a meter value.
+    * A reading is only ever carried forward, never backwards, so re-submitting
+      an older report cannot rewind a unit's meter.
+    """
+    from app.utils.funcs import parse_hour_meter
+
+    for section, generator in (
+        ("gen1", getattr(inspection, "gen1_generator", None)),
+        ("gen2", getattr(inspection, "gen2_generator", None)),
+    ):
+        if generator is None:
+            continue
+        seconds = parse_hour_meter(
+            section_hour_meter_reading(getattr(inspection, "data", None), section)
+        )
+        if seconds is None:
+            continue
+        if (
+            generator.current_run_seconds is not None
+            and seconds <= generator.current_run_seconds
+        ):
+            continue
+        generator.current_run_seconds = seconds
+        generator.touch()
+        session.add(generator)

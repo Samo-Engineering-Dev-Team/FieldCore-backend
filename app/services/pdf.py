@@ -6339,21 +6339,38 @@ class PDFService:
         story.append(Spacer(1, 6 * mm))
 
         # ── 2 & 3. Generator Inspections ──────────────────────────────────
-        for idx, (sec_title, gen_key) in enumerate(
+        for idx, (sec_title, gen_key, unit) in enumerate(
             [
-                ("2. Generator 1 Inspection", "gen1"),
-                ("3. Generator 2 Inspection", "gen2"),
+                # getattr, not attribute access: a PDF should degrade to the
+                # payload rather than fail to render if the relation is absent.
+                ("2. Generator 1 Inspection", "gen1", getattr(report, "gen1_generator", None)),
+                ("3. Generator 2 Inspection", "gen2", getattr(report, "gen2_generator", None)),
             ],
             start=1,
         ):
             gen_data: dict = data.get(gen_key) or {}
+
+            # A report linked to a registered unit prints that unit's identity;
+            # anything recorded before the asset register existed falls back to
+            # the free-text serial captured in the payload, which is all it has.
+            section_title = sec_title
+            if unit is not None:
+                descriptor = " · ".join(
+                    part for part in (unit.name, unit.model) if part
+                )
+                section_title = f"{sec_title} — {descriptor}"
+                if unit.serial_no:
+                    # The registered serial is authoritative over a serial typed
+                    # into the form months ago.
+                    gen_data = {**gen_data, "serialNumber": unit.serial_no}
+
             story.extend(
-                self._repeater_section_header(sec_title, primary_hex, accent_hex)
+                self._repeater_section_header(section_title, primary_hex, accent_hex)
             )
             if gen_data:
                 story.extend(
                     self._render_generator_table(
-                        gen_data, sec_title, primary_hex, accent_hex
+                        gen_data, section_title, primary_hex, accent_hex
                     )
                 )
             else:

@@ -11,6 +11,7 @@ import time
 
 from app.utils.enums import ReportType, ReportStatus, TaskType, UserRole
 from app.models import (
+    InspectionGeneratorSummary,
     Report,
     ReportCreate,
     ReportUpdate,
@@ -41,6 +42,7 @@ from app.services.authorization import (
 from app.services.maintenance_schedule import get_maintenance_schedule_service
 from app.services.report_support import (
     coerce_diesel_gen_no,
+    record_generator_meter_readings,
     coerce_diesel_number,
     create_noc_notifications,
     normalize_attachment_item,
@@ -103,6 +105,12 @@ class _ReportService:
             num_attachments=num_attachments,
             technician_fullname=technician_name,
             seacom_ref=seacom_ref,
+            gen1_generator=InspectionGeneratorSummary.from_generator(
+                report.gen1_generator
+            ),
+            gen2_generator=InspectionGeneratorSummary.from_generator(
+                report.gen2_generator
+            ),
         )
 
     def _get_technician_by_user(self, user_id: UUID, session: Session) -> Technician:
@@ -492,6 +500,10 @@ class _ReportService:
         report = self._get_report(report_id, session)
         self._assert_can_access_report(report, current_user, session, "complete")
         report.complete()
+        # The repeater visit is where a generator's meter is actually read, so
+        # completing one is what keeps the unit's run hours current. A no-op for
+        # every other report type, and for sections with no linked unit.
+        record_generator_meter_readings(report, session)
         self._complete_field_work_context(report, session)
         try:
             session.commit()

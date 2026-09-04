@@ -830,3 +830,53 @@ def test_diesel_history_pdf_survives_malformed_runtime_and_zero_fillups() -> Non
     # Missing values degrade to placeholders rather than raising.
     assert "NOT SPECIFIED" in extracted
     assert "N/A" in extracted
+
+
+def test_repeater_pdf_prefers_the_registered_unit_over_the_typed_serial() -> None:
+    """
+    A report linked to a registered generator prints that unit's identity.
+
+    The serial typed into the form may be months old or mis-keyed; the asset
+    register is authoritative once the section is linked to a unit.
+    """
+    service = PDFService()
+    report = _sample_repeater_report()
+    report.gen1_generator = SimpleNamespace(
+        name="East yard Cummins",
+        model="Cummins C60D5",
+        serial_no="REGISTERED-123",
+    )
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+    )
+    service._fetch_image_bytes = lambda url: BytesIO(png_bytes)  # type: ignore[method-assign]
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "EAST YARD CUMMINS" in extracted
+    assert "CUMMINS C60D5" in extracted
+    assert "REGISTERED-123" in extracted
+
+
+def test_repeater_pdf_falls_back_to_the_payload_serial_when_unlinked() -> None:
+    """Every report recorded before the asset register existed has no link and
+    must still render exactly as it always did."""
+    service = PDFService()
+    report = _sample_repeater_report()  # carries no gen*_generator attributes
+
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm7sAAAAASUVORK5CYII="
+    )
+    service._fetch_image_bytes = lambda url: BytesIO(png_bytes)  # type: ignore[method-assign]
+    service._resolve_cover_image_path = lambda cover_key: None  # type: ignore[method-assign]
+
+    pdf_buffer = service.generate_report_pdf(report)
+    with pdfplumber.open(BytesIO(pdf_buffer.getvalue())) as pdf:
+        extracted = " ".join((page.extract_text() or "") for page in pdf.pages).upper()
+
+    assert "2. GENERATOR 1 INSPECTION" in extracted
+    assert "EAST YARD CUMMINS" not in extracted

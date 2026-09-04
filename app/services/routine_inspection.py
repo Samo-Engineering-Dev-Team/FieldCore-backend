@@ -6,6 +6,7 @@ from sqlalchemy import and_
 from fastapi import Depends
 
 from app.models import (
+    InspectionGeneratorSummary,
     Notification,
     RoutineInspection,
     RoutineInspectionCreate,
@@ -22,6 +23,7 @@ from app.exceptions.http import (
     ForbiddenException,
 )
 from app.services.notification import NotificationTemplates
+from app.services.report_support import record_generator_meter_readings
 from app.utils.enums import UserRole
 
 
@@ -48,7 +50,19 @@ class _RoutineInspectionService:
             site_name=site_name,
             technician_fullname=technician_fullname,
             seacom_ref=seacom_ref,
+            gen1_generator=InspectionGeneratorSummary.from_generator(
+                inspection.gen1_generator
+            ),
+            gen2_generator=InspectionGeneratorSummary.from_generator(
+                inspection.gen2_generator
+            ),
         )
+
+    def _record_meter_readings(
+        self, inspection: RoutineInspection, session: Session
+    ) -> None:
+        """Delegates to the shared writeback — see report_support."""
+        record_generator_meter_readings(inspection, session)
 
     def create_inspection(
         self, data: RoutineInspectionCreate, session: Session
@@ -186,6 +200,7 @@ class _RoutineInspectionService:
 
         inspection.status = "completed"
         inspection.touch()
+        self._record_meter_readings(inspection, session)
 
         try:
             session.commit()

@@ -56,6 +56,7 @@ from .routine_issues import (
     RoutineIssueUpdate,
 )
 from .routine_inspection import (
+    InspectionGeneratorSummary,
     RoutineInspection,
     RoutineInspectionCreate,
     RoutineInspectionUpdate,
@@ -224,6 +225,7 @@ __all__ = [
     "RoutineIssueCreate",
     "RoutineIssueResponse",
     "RoutineIssueUpdate",
+    "InspectionGeneratorSummary",
     "RoutineInspection",
     "RoutineInspectionCreate",
     "RoutineInspectionUpdate",
