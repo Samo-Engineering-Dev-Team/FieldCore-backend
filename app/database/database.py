@@ -1,10 +1,12 @@
 from contextlib import contextmanager
-from typing import Annotated, Generator, List
+from typing import Annotated
+from collections.abc import Generator
 
 from fastapi import Depends
 from loguru import logger as LOG
 from sqlalchemy import Engine, inspect, text
-from sqlmodel import SQLModel, Session as _Session, create_engine
+from sqlmodel import Session as _Session
+from sqlmodel import SQLModel, create_engine
 
 
 class Database:
@@ -58,9 +60,9 @@ class Database:
         try:
             SQLModel.metadata.create_all(cls.connection)
             cls._apply_schema_fixes()
-            table_names: List[str] = [key for key in SQLModel.metadata.tables.keys()]
+            table_names: list[str] = [key for key in SQLModel.metadata.tables.keys()]
             LOG.debug(
-                f"Initialized {cls.connection.url.database} database and created tables: {', '.join(table_names)}"
+                f"Initialized {cls.connection.url.database} database and created {len(table_names)} tables: {', '.join(table_names)}"
             )
         except Exception as e:
             message: str = (
@@ -100,9 +102,7 @@ class Database:
             else set()
         )
         missing_access_request_columns = (
-            {"report_type"} - access_request_columns
-            if has_access_requests
-            else set()
+            {"report_type"} - access_request_columns if has_access_requests else set()
         )
 
         has_tasks = inspector.has_table("tasks")
