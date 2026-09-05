@@ -39,6 +39,8 @@ class _RoutineInspectionService:
 
         site_name = site.name if site else None
         site_region = site.region if site else None
+        site_type = site.site_type if site else None
+        site_geofence_radius = site.geofence_radius if site else None
         coords = site.get_coordinates() if site else None
         technician_fullname = (
             f"{technician.user.name} {technician.user.surname}"
@@ -51,6 +53,8 @@ class _RoutineInspectionService:
             **inspection.model_dump(),
             site_name=site_name,
             site_region=site_region,
+            site_type=site_type,
+            site_geofence_radius=site_geofence_radius,
             site_latitude=coords[0] if coords else None,
             site_longitude=coords[1] if coords else None,
             technician_fullname=technician_fullname,

@@ -150,6 +150,8 @@ class GeneratorResponse(BaseDB, BaseGenerator):
     seconds_since_last_service: int | None = Field(default=None)
     site_name: str = Field(default="", description="Denormalised for grid display")
     site_region: str | None = Field(default=None)
+    site_type: str | None = Field(default=None)
+    site_geofence_radius: int | None = Field(default=None)
     site_latitude: float | None = Field(
         default=None, description="Site latitude coordinate for map links"
     )
@@ -182,6 +184,10 @@ class GeneratorResponse(BaseDB, BaseGenerator):
             seconds_since_last_service=since,
             site_name=generator.site.name if generator.site else "",
             site_region=generator.site.region if generator.site else None,
+            site_type=generator.site.site_type if generator.site else None,
+            site_geofence_radius=(
+                generator.site.geofence_radius if generator.site else None
+            ),
             site_latitude=coords[0] if coords else None,
             site_longitude=coords[1] if coords else None,
             current_run_display=format_hour_meter(generator.current_run_seconds),

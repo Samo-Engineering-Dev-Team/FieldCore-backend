@@ -79,6 +79,8 @@ class _TaskService:
             technician_fullname=f"{user.name} {user.surname}",
             num_attachments=num_attachments,
             site_region=task.site.region,
+            site_type=task.site.site_type if task.site else None,
+            site_geofence_radius=task.site.geofence_radius if task.site else None,
             additional_technician_names=additional_names,
             site_latitude=coords[0] if coords else None,
             site_longitude=coords[1] if coords else None,

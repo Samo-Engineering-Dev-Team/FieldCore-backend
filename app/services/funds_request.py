@@ -168,6 +168,10 @@ class _FundsRequestService:
             technician_region=region.value if region else None,
             site_name=request.site.name if request.site else None,
             site_region=request.site.region if request.site else None,
+            site_type=request.site.site_type if request.site else None,
+            site_geofence_radius=(
+                request.site.geofence_radius if request.site else None
+            ),
             site_latitude=coords[0] if coords else None,
             site_longitude=coords[1] if coords else None,
             generator_display_name=(

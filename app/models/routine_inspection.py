@@ -116,6 +116,8 @@ class RoutineInspectionResponse(BaseDB, BaseRoutineInspection):
 
     site_name: str | None = Field(default=None)
     site_region: str | None = Field(default=None)
+    site_type: str | None = Field(default=None)
+    site_geofence_radius: int | None = Field(default=None)
     site_latitude: float | None = Field(
         default=None, description="Site latitude coordinate for map links"
     )
