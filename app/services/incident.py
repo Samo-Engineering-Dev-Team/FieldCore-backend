@@ -202,6 +202,7 @@ class _IncidentService:
         return IncidentResponse(
             **incident_data,
             site_name=incident.site.name,
+            site_region=incident.site.region if incident.site else None,
             site_latitude=coords[0] if coords else None,
             site_longitude=coords[1] if coords else None,
             technician_fullname=f"{user.name} {user.surname}",

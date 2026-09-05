@@ -38,6 +38,8 @@ class _RoutineInspectionService:
         task = inspection.task if hasattr(inspection, "task") else None
 
         site_name = site.name if site else None
+        site_region = site.region if site else None
+        coords = site.get_coordinates() if site else None
         technician_fullname = (
             f"{technician.user.name} {technician.user.surname}"
             if technician and technician.user
@@ -48,6 +50,9 @@ class _RoutineInspectionService:
         return RoutineInspectionResponse(
             **inspection.model_dump(),
             site_name=site_name,
+            site_region=site_region,
+            site_latitude=coords[0] if coords else None,
+            site_longitude=coords[1] if coords else None,
             technician_fullname=technician_fullname,
             seacom_ref=seacom_ref,
             gen1_generator=InspectionGeneratorSummary.from_generator(

@@ -58,3 +58,10 @@ class RoutePatrolUpdate(SQLModel):
 class RoutePatrolResponse(BaseDB, BaseRoutePatrol):
     technician_fullname: str = Field(default="")
     site_name: str = Field(default="")
+    site_region: str | None = Field(default=None)
+    site_latitude: float | None = Field(
+        default=None, description="Site latitude coordinate for map links"
+    )
+    site_longitude: float | None = Field(
+        default=None, description="Site longitude coordinate for map links"
+    )

@@ -68,6 +68,8 @@ def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
 
     tech_name = ""
     site_name = ""
+    site_region = None
+    coords = None
 
     tech = session.get(Technician, patrol.technician_id)
     if tech and tech.user:
@@ -77,10 +79,15 @@ def _enrich(patrol: RoutePatrol, session: Session) -> RoutePatrolResponse:
         site = session.get(Site, patrol.site_id)
         if site:
             site_name = site.name
+            site_region = site.region
+            coords = site.get_coordinates()
 
     resp = RoutePatrolResponse.model_validate(patrol)
     resp.technician_fullname = tech_name
     resp.site_name = site_name
+    resp.site_region = site_region
+    resp.site_latitude = coords[0] if coords else None
+    resp.site_longitude = coords[1] if coords else None
     return resp
 
 

@@ -336,6 +336,13 @@ class FundsRequestResponse(BaseDB, BaseFundsRequest):
     technician_name: str = Field(default="")
     technician_region: str | None = Field(default=None)
     site_name: str | None = Field(default=None)
+    site_region: str | None = Field(default=None)
+    site_latitude: float | None = Field(
+        default=None, description="Site latitude coordinate for map links"
+    )
+    site_longitude: float | None = Field(
+        default=None, description="Site longitude coordinate for map links"
+    )
     generator_display_name: str | None = Field(default=None)
     # Exposed so a client can open a reconciliation against this request without
     # a second lookup. Null until an approver has acted, since the disbursement is

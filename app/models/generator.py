@@ -149,6 +149,13 @@ class GeneratorResponse(BaseDB, BaseGenerator):
     is_active: bool = Field(default=True)
     seconds_since_last_service: int | None = Field(default=None)
     site_name: str = Field(default="", description="Denormalised for grid display")
+    site_region: str | None = Field(default=None)
+    site_latitude: float | None = Field(
+        default=None, description="Site latitude coordinate for map links"
+    )
+    site_longitude: float | None = Field(
+        default=None, description="Site longitude coordinate for map links"
+    )
 
     # Formatted alongside the raw seconds so no client re-implements HHMM:SS.
     current_run_display: str | None = Field(default=None)
@@ -158,6 +165,7 @@ class GeneratorResponse(BaseDB, BaseGenerator):
     @classmethod
     def from_generator(cls, generator: Generator) -> "GeneratorResponse":
         since = generator.seconds_since_last_service
+        coords = generator.site.get_coordinates() if generator.site else None
         return cls(
             id=generator.id,
             created_at=generator.created_at,
@@ -173,6 +181,9 @@ class GeneratorResponse(BaseDB, BaseGenerator):
             is_active=generator.is_active,
             seconds_since_last_service=since,
             site_name=generator.site.name if generator.site else "",
+            site_region=generator.site.region if generator.site else None,
+            site_latitude=coords[0] if coords else None,
+            site_longitude=coords[1] if coords else None,
             current_run_display=format_hour_meter(generator.current_run_seconds),
             run_at_service_display=format_hour_meter(generator.run_seconds_at_service),
             since_service_display=format_hour_meter(since),

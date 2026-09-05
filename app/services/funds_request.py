@@ -116,6 +116,7 @@ class _FundsRequestService:
                     f"{request.technician.user.name} {request.technician.user.surname}"
                 )
 
+        coords = request.site.get_coordinates() if request.site else None
         disbursement = self._find_disbursement(request.id, session)
         recon_status = None
         recon_id = None
@@ -166,6 +167,9 @@ class _FundsRequestService:
             technician_name=technician_name,
             technician_region=region.value if region else None,
             site_name=request.site.name if request.site else None,
+            site_region=request.site.region if request.site else None,
+            site_latitude=coords[0] if coords else None,
+            site_longitude=coords[1] if coords else None,
             generator_display_name=(
                 request.generator.name if request.generator else None
             ),

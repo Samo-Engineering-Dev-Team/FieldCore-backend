@@ -115,6 +115,13 @@ class RoutineInspectionResponse(BaseDB, BaseRoutineInspection):
     """Response schema for routine inspections"""
 
     site_name: str | None = Field(default=None)
+    site_region: str | None = Field(default=None)
+    site_latitude: float | None = Field(
+        default=None, description="Site latitude coordinate for map links"
+    )
+    site_longitude: float | None = Field(
+        default=None, description="Site longitude coordinate for map links"
+    )
     technician_fullname: str | None = Field(default=None)
     seacom_ref: str | None = Field(default=None)
     gen1_generator: InspectionGeneratorSummary | None = Field(default=None)

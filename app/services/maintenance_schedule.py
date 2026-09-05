@@ -97,9 +97,13 @@ def _enrich(
     from app.models import Site
 
     site_name = ""
+    site_region = None
+    coords = None
     site = session.get(Site, schedule.site_id)
     if site:
         site_name = site.name
+        site_region = site.region
+        coords = site.get_coordinates()
 
     coverage = _active_coverage_for_schedule(schedule.id, session)
     default_tech_name = _tech_name(schedule.assigned_technician_id, session)
@@ -120,6 +124,9 @@ def _enrich(
 
     resp = MaintenanceScheduleResponse.model_validate(schedule)
     resp.site_name = site_name
+    resp.site_region = site_region
+    resp.site_latitude = coords[0] if coords else None
+    resp.site_longitude = coords[1] if coords else None
     resp.technician_fullname = default_tech_name
     resp.is_overdue = is_overdue
     resp.completed_this_week = completed_this_week
